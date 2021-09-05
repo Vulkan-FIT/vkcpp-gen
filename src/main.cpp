@@ -468,13 +468,14 @@ void parseExtensions(XMLNode *node) {
     XMLElement *extension = node->FirstChildElement();
     while (extension) { //iterate contents of <extensions>
         if (strcmp(extension->Value(), "extension") == 0) { //filter only <extension>
-            const char *platform = extension->Attribute("platform");
+            const char *platform = extension->Attribute("platform");            
             if (platform) {
-                XMLElement *require = extension->FirstChildElement(); //iterate contents of <extension>
-                while (require) {
-                    if (strcmp(require->Value(), "require") == 0) { //filter only <require>
-                        auto it = platforms.find(platform);
-                        if (it != platforms.end()) {
+                auto it = platforms.find(platform);
+                if (it != platforms.end()) {
+                    XMLElement *require = extension->FirstChildElement(); //iterate contents of <extension>
+                    while (require) {
+                        if (strcmp(require->Value(), "require") == 0) { //filter only <require>
+
                              //iterate contents of <require>
                             XMLElement *entry = require->FirstChildElement();
                             while (entry) {
@@ -484,13 +485,10 @@ void parseExtensions(XMLNode *node) {
                                 }
                                 entry = entry->NextSiblingElement();
                             }
-
                         }
-
+                        require = require->NextSiblingElement();
                     }
-                    require = require->NextSiblingElement();
                 }
-
             }
         }
 
@@ -543,7 +541,7 @@ std::vector<ClassMemberData> parseClassMembers(const std::vector<XMLElement*> &e
         XMLElement *child = e->FirstChildElement();
         while (child) { //iterate contents of <command>
             //<proto> section
-            if (strcmp(child->Value(), "proto") == 0) {
+            if (std::string_view(child->Value()) == "proto") {
                 //get <name> field in proto
                 XMLElement *nameElement = child->FirstChildElement("name");
                 if (nameElement) {
@@ -556,7 +554,7 @@ std::vector<ClassMemberData> parseClassMembers(const std::vector<XMLElement*> &e
                 }
             }
             //<param> section
-            else if (strcmp(child->Value(), "param") == 0) {
+            else if (std::string_view(child->Value()) == "param") {
                 //parse inside of param
                 XMLVariableParser parser {child};
                 //add proto data to list
@@ -612,38 +610,30 @@ void generateClassUniversal(const std::string &className,
         }
 
         writeWithProtect(m.name, [&]{
-            std::string protoName = m.name;
-            if (m.name.size() >= 3) {
-                protoName.erase(0, 2);
-                protoName[0] = tolower(protoName[0]);
-            }
-            std::string params;
-            for (size_t i = 0; i < m.params.size(); ++i) {
-                if (m.params[i].type() == "Vk" + className) {
-                    continue;
-                }
-                params += m.params[i].proto();
-                if (i != m.params.size() - 1) {
-                    params += ", ";
-                }
-            }
+            std::string protoName{m.name}; //prototype name (without vk)
+            strStripPrefix(protoName, "vk");
+            if (protoName.size() > 0) { //convert first letter to lowercase
+                protoName[0] = std::tolower(protoName[0]);
+            }         
 
             std::string protoArgs = m.createProtoArguments(className);
-            file.writeLine("inline " + m.type + " " + protoName + "(" + protoArgs + ") {");
-            file.pushIndent();
-            std::string out;
-            if (m.type != "void") {
-                out += "return ";
-            }
             std::string innerArgs = m.createPFNArguments(className, handle);
-            out += ("m_" + m.name + "(" + innerArgs + ");");
-            file.writeLine(out);
+            file.writeLine("inline " + m.type + " " + protoName + "(" + protoArgs + ") {");
+
+            file.pushIndent();
+            std::string cmdCall;
+            if (m.type != "void") {
+                cmdCall += "return ";
+            }
+            cmdCall += ("m_" + m.name + "(" + innerArgs + ");");
+            file.writeLine(cmdCall);
             file.popIndent();
+
             file.writeLine("}");
 #define EXPERIMENTAL
 #ifdef EXPERIMENTAL
-            if (m.type == "VkResult") {
-                VariableData r = m.params.at(m.params.size() - 1);//access check?
+            if (m.type == "VkResult" && m.params.size() > 0) {
+                VariableData r = m.params.at(m.params.size() - 1);
                 std::string returnType = r.prefix() + r.type() + r.suffix();
 
                 bool hasReturn = true;
