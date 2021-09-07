@@ -33,6 +33,7 @@ SOFTWARE.
 
 #include "ArgumentsParser.hpp"
 #include "XMLVariableParser.hpp"
+#include "XMLUtils.hpp"
 #include "FileHandle.hpp"
 
 #include "tinyxml2.h"
@@ -50,9 +51,9 @@ static const std::string FILEPROTECT {"VULKAN_20_HPP"};
 
 static FileHandle file; //main output file
 static std::string sourceDir; //additional source files directory
- //list of names from <types>
+//list of names from <types>
 static std::unordered_set<std::string> structNames;
- //list of tags from <tags>
+//list of tags from <tags>
 static std::unordered_set<std::string> tags;
 //maps platform name to protect (#if defined PROTECT)
 static std::map<std::string, std::string> platforms;
@@ -244,13 +245,13 @@ static std::string enumConvertCamel(const std::string &enumName, std::string val
 }
 
 static void parseXML(XMLElement *root) {
+
     //maps all root XMLNodes to their tag identifier
     std::map<std::string, XMLNode*> rootTable;
-    XMLNode *node = root->FirstChild();
-    while (node) {
-        rootTable.emplace(node->Value(), node);
-        node = node->NextSibling();
+    for (XMLNode &node : Nodes(root)) {
+        rootTable.emplace(node.Value(), &node);
     }
+
     //call each function in rootParseOrder with corresponding XMLNode
     for (auto &key : rootParseOrder) {
         auto it = rootTable.find(key.first);//find tag id
@@ -335,6 +336,7 @@ int main(int argc, char** argv) {
         }
 
         sourceDir = sourceOption.value;
+
         file.open(destOpton.value);
 
         XMLDocument doc;
@@ -362,13 +364,11 @@ int main(int argc, char** argv) {
 
 std::vector<std::string> parseStructMembers(XMLElement *node, std::string &structType, std::string &structTypeValue) {
     std::vector<std::string> members;
-    XMLElement *e = node->FirstChildElement();
-    while (e) {  //iterate contents of <type>
-
-        if (strcmp(e->Value(), "member") == 0) {
+    //iterate contents of <type>, filter only <member> children
+    for (XMLElement *member : Elements(node) | ValueFilter("member")) {
             std::string out;
 
-            XMLVariableParser parser{e}; //parse <member>
+            XMLVariableParser parser{member}; //parse <member>
 
             std::string type = strStripVk(parser.type());
             std::string name = parser.identifier();
@@ -381,7 +381,7 @@ std::vector<std::string> parseStructMembers(XMLElement *node, std::string &struc
             out += parser.suffix();
             out += name;
 
-            if (const char *values = e->Attribute("values")) {
+            if (const char *values = member->ToElement()->Attribute("values")) {
                 std::string value = enumConvertCamel(type, values);
                 out += (" = " + type + "::" + value);
                 if (name == "sType") { //save sType information for structType
@@ -398,9 +398,7 @@ std::vector<std::string> parseStructMembers(XMLElement *node, std::string &struc
 
             out += ";";
             members.push_back(out);
-        }
 
-        e = e->NextSiblingElement();
     }
     return members;
 }
@@ -443,124 +441,97 @@ void parseStruct(XMLElement *node, std::string name) {
     });
 }
 
-
 void parsePlatforms(XMLNode *node) {
     std::cout << "Parsing platforms" << ENDL;
-
-    XMLElement *e = node->FirstChildElement();
-    while (e) { //iterate contents of <platforms>
-        if (strcmp(e->Value(), "platform") == 0) {
-            const char *name = e->Attribute("name");
-            const char *protect = e->Attribute("protect");
-            if (name && protect) {
-                platforms.emplace(name, protect);
-            }
-
+    //iterate contents of <platforms>, filter only <platform> children
+    for (XMLElement *platform : Elements(node) | ValueFilter("platform")) {
+        const char *name = platform->Attribute("name");
+        const char *protect = platform->Attribute("protect");
+        if (name && protect) {
+            platforms.emplace(name, protect);
         }
-        e = e->NextSiblingElement();
     }
-
     std::cout << "Parsing platforms done" << ENDL;
 }
 
 void parseExtensions(XMLNode *node) {
-    std::cout << "Parsing extensions" << ENDL;
-    XMLElement *extension = node->FirstChildElement();
-    while (extension) { //iterate contents of <extensions>
-        if (strcmp(extension->Value(), "extension") == 0) { //filter only <extension>
-            const char *platform = extension->Attribute("platform");            
-            if (platform) {
-                auto it = platforms.find(platform);
-                if (it != platforms.end()) {
-                    XMLElement *require = extension->FirstChildElement(); //iterate contents of <extension>
-                    while (require) {
-                        if (strcmp(require->Value(), "require") == 0) { //filter only <require>
-
-                             //iterate contents of <require>
-                            XMLElement *entry = require->FirstChildElement();
-                            while (entry) {
-                                const char *name = entry->Attribute("name");
-                                if (name) { //pair extension name with platform protect
-                                    extensions.emplace(name, &it->second);
-                                }
-                                entry = entry->NextSiblingElement();
-                            }
+    std::cout << "Parsing extensions" << ENDL;   
+    //iterate contents of <extensions>, filter only <extension> children
+    for (XMLElement *extension : Elements(node) | ValueFilter("extension")) {
+        const char *platform = extension->Attribute("platform");
+        if (platform) {
+            auto it = platforms.find(platform);
+            if (it != platforms.end()) {
+                //iterate contents of <extension>, filter only <require> children
+                for (XMLElement *require : Elements(extension) | ValueFilter("require")) {
+                    //iterate contents of <require>
+                    for (XMLElement &entry : Elements(require)) {
+                        const char *name = entry.Attribute("name");
+                        if (name) { //pair extension name with platform protect
+                            extensions.emplace(name, &it->second);
                         }
-                        require = require->NextSiblingElement();
                     }
                 }
             }
         }
-
-        extension = extension->NextSiblingElement();
     }
     std::cout << "Parsing extensions done" << ENDL;
 }
 
 void parseTags(XMLNode *node) {
     std::cout << "Parsing tags" << ENDL;
-    XMLElement *e = node->FirstChildElement();
-    while (e) { //iterate contents of <tags>
-        if (std::string_view(e->Value()) == "tag") {
-            const char *name = e->Attribute("name");
-            if (name) {
-                tags.emplace(name);
-            }
+    //iterate contents of <tags>, filter only <tag> children
+    for (XMLElement *tag : Elements(node) | ValueFilter("tag")) {
+        const char *name = tag->Attribute("name");
+        if (name) {
+            tags.emplace(name);
         }
-        e = e->NextSiblingElement();
     }
     std::cout << "Parsing tags done" << ENDL;
 }
 
 void parseTypes(XMLNode *node) {
     std::cout << "Parsing types" << std::endl;
-
-    XMLElement *e = node->FirstChildElement();
-    while (e) { //iterate contents of <types>
-        if (strcmp(e->Value(), "type") == 0) { //<type>
-            const char *cat = e->Attribute("category");
-            const char *name = e->Attribute("name");
-            if (cat && name) {
-                if (strcmp(cat, "struct") == 0) {
-                    parseStruct(e, name);
-                }
+    //iterate contents of <types>, filter only <type> children
+    for (XMLElement *type : Elements(node) | ValueFilter("type")) {
+        const char *cat = type->Attribute("category");
+        const char *name = type->Attribute("name");
+        if (cat && name) {
+            if (strcmp(cat, "struct") == 0) {
+                parseStruct(type, name);
             }
         }
-        e = e->NextSiblingElement();
     }
-
     std::cout << "Parsing types done" << ENDL;
 }
 
 std::vector<ClassMemberData> parseClassMembers(const std::vector<XMLElement*> &elements) {
     std::vector<ClassMemberData> list;
-    for (XMLElement *e : elements) {
+    for (XMLElement *command : elements) {
 
         ClassMemberData m;
-
-        XMLElement *child = e->FirstChildElement();
-        while (child) { //iterate contents of <command>
+        //iterate contents of <command>
+        for (XMLElement &child : Elements(command) ) {
             //<proto> section
-            if (std::string_view(child->Value()) == "proto") {
+            if (std::string_view(child.Value()) == "proto") {
                 //get <name> field in proto
-                XMLElement *nameElement = child->FirstChildElement("name");
+                XMLElement *nameElement = child.FirstChildElement("name");
                 if (nameElement) {
                     m.name = nameElement->GetText();
                 }
                 //get <type> field in proto
-                XMLElement *typeElement = child->FirstChildElement("type");
+                XMLElement *typeElement = child.FirstChildElement("type");
                 if (typeElement) {
                     m.type = typeElement->GetText();
                 }
             }
             //<param> section
-            else if (std::string_view(child->Value()) == "param") {
+            else if (std::string_view(child.Value()) == "param") {
                 //parse inside of param
-                XMLVariableParser parser {child};
+                XMLVariableParser parser {&child};
                 //add proto data to list
                 m.params.push_back(parser);
-            }
-            child = child->NextSiblingElement();
+            }            
         }
 
         list.push_back(m);
@@ -719,32 +690,27 @@ void parseCommands(XMLNode *node) {
     std::vector<XMLElement*> elementsInstance;
     std::vector<XMLElement*> elementsOther;
 
-    XMLElement *e = node->FirstChildElement();
-    while (e) { //iterate contents of <commands>
-        if (strcmp(e->Value(), "command") == 0) {
-            //default destination is elementsOther
-            std::vector<XMLElement*> *target = &elementsOther;
+    //iterate contents of <commands>, filter only <command> children
+    for (XMLElement *command : Elements(node) | ValueFilter("command")) {
 
-            XMLElement *ce = e->FirstChildElement();
-            while (ce) { //iterate contents of <command>
-                if (strcmp(ce->Value(), "param") == 0) {
-                    XMLElement *typeElement = ce->FirstChildElement("type");
-                    if (typeElement) {
-                        const char* type = typeElement->GetText();
-                        if (strcmp(type, "VkDevice") == 0) { //command is for device
-                            target = &elementsDevice;
-                        }
-                        else if (strcmp(type, "VkInstance") == 0) { //command is for instance
-                            target = &elementsInstance;
-                        }
-                    }
+        //default destination is elementsOther
+        std::vector<XMLElement*> *target = &elementsOther;
+
+        //iterate contents of <command>, filter only <param> children
+        for (XMLElement *param : Elements(command) | ValueFilter("param")) {
+            XMLElement *typeElement = param->FirstChildElement("type");
+            if (typeElement) {
+                const char* type = typeElement->GetText();
+                if (std::string_view(type) == "VkDevice") { //command is for device
+                    target = &elementsDevice;
                 }
-                ce = ce->NextSiblingElement();
+                else if (std::string_view(type) == "VkInstance") { //command is for instance
+                    target = &elementsInstance;
+                }
             }
-
-            target->push_back(e);
         }
-        e = e->NextSiblingElement();
+
+        target->push_back(command);
     }
 
     genInstanceClass(elementsInstance);

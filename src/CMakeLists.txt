@@ -9,6 +9,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 SET(HEADERS
     ArgumentsParser.hpp
     XMLVariableParser.hpp
+    XMLUtils.hpp
     FileHandle.hpp
     )
 
