@@ -284,10 +284,8 @@ static void generateFile(XMLElement *root) {
     file.writeLine("#ifdef _WIN32");
     file.writeLine("# define WIN32_LEAN_AND_MEAN");
     file.writeLine("# include <windows.h>");
-    file.writeLine("#define LIBHANDLE HINSTANCE");
     file.writeLine("#else");
     file.writeLine("# include <dlfcn.h>");
-    file.writeLine("#define LIBHANDLE void*");
     file.writeLine("#endif");
 
     file.writeLine("// Windows defines MemoryBarrier which is deprecated and collides");
