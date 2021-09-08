@@ -51,14 +51,12 @@ static const std::string FILEPROTECT {"VULKAN_20_HPP"};
 
 static FileHandle file; //main output file
 static std::string sourceDir; //additional source files directory
-//list of names from <types>
-static std::unordered_set<std::string> structNames;
-//list of tags from <tags>
-static std::unordered_set<std::string> tags;
-//maps platform name to protect (#if defined PROTECT)
-static std::map<std::string, std::string> platforms;
-//maps extension to protect as reference
-static std::map<std::string, std::string*> extensions;
+
+static std::unordered_set<std::string> structNames; //list of names from <types>
+static std::unordered_set<std::string> tags; //list of tags from <tags>
+
+static std::map<std::string, std::string> platforms; //maps platform name to protect (#if defined PROTECT)
+static std::map<std::string, std::string*> extensions; //maps extension to protect as reference
 
 //main parse functions
 static void parsePlatforms(XMLNode*);
@@ -76,7 +74,7 @@ static const std::vector<std::pair<std::string, std::function<void(XMLNode*)>>> 
     {"commands", parseCommands}
 };
 
-//hold information about class member (function)
+//holds information about class member (function)
 struct ClassMemberData {
     std::string name; //identifier
     std::string type; //return type
@@ -380,6 +378,9 @@ std::vector<std::string> parseStructMembers(XMLElement *node, std::string &struc
             out += type;
             out += parser.suffix();
             out += name;
+            if (parser.hasArrayLength()) {
+                out += "[" + parser.arrayLength() + "]";
+            }
 
             if (const char *values = member->ToElement()->Attribute("values")) {
                 std::string value = enumConvertCamel(type, values);
@@ -390,10 +391,12 @@ std::vector<std::string> parseStructMembers(XMLElement *node, std::string &struc
                 }
             }
             else {
-                //if (name == "sType") {
-                    //eApplicationInfo (0) is same as {}
-                //}
-                out += " = {}";
+                if (name == "sType") {
+                    out += " = StructureType::eApplicationInfo";
+                }
+                else {
+                    out += " = {}";
+                }
             }
 
             out += ";";
@@ -685,6 +688,7 @@ void genDeviceClass(const std::vector<XMLElement*> &commands) {
 
 void parseCommands(XMLNode *node) {
     std::cout << "Parsing commands" << ENDL;
+
     //command data is stored in XMLElement*
     std::vector<XMLElement*> elementsDevice;
     std::vector<XMLElement*> elementsInstance;
