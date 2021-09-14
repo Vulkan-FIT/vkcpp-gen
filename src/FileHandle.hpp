@@ -28,8 +28,8 @@ SOFTWARE.
 #include <queue>
 #include <stdexcept>
 
-static const std::string INDENT {"    "};
-static const std::string ENDL {'\n'};
+static constexpr char const* INDENT {"    "};
+static constexpr char const* ENDL   {"\n"};
 
 //file class wrapper, handles identation in stateful manner
 class FileHandle {
