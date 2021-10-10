@@ -160,8 +160,20 @@ static void writeWithProtect(const std::string &name, std::function<void()> func
 }
 
 static void strStripPrefix(std::string &str, const std::string_view &prefix) {
+    if (prefix.size() > str.size()) {
+        return;
+    }
     if (str.substr(0, prefix.size()) == prefix) {
         str.erase(0, prefix.size());
+    }
+}
+
+static void strStripSuffix(std::string &str, const std::string_view &suffix) {
+    if (suffix.size() > str.size()) {
+        return;
+    }
+    if (str.substr(str.size() - suffix.size(), std::string::npos) == suffix) {
+        str.erase(str.size() - suffix.size(), std::string::npos);
     }
 }
 
@@ -436,6 +448,10 @@ void parseStruct(XMLElement *node, std::string name) {
 
         file.writeLine("operator "+ NAMESPACE + "::" + name + "*() { return this; }");
         file.writeLine("operator vk::" + name + "&() { return *reinterpret_cast<vk::" + name + "*>(this); }");
+
+        file.writeLine("operator Vk" + name + " const&() const { return *reinterpret_cast<const Vk" + name + "*>(this); }");
+        file.writeLine("operator Vk" + name + " &() { return *reinterpret_cast<Vk" + name + "*>(this); }");
+
         file.popIndent();
 
         file.writeLine("};");
@@ -506,47 +522,378 @@ void parseTypes(XMLNode *node) {
     std::cout << "Parsing types done" << ENDL;
 }
 
+ClassMemberData parseClassMember(XMLElement *command) {
+    ClassMemberData m;
+    //iterate contents of <command>
+    for (XMLElement &child : Elements(command) ) {
+        //<proto> section
+        if (std::string_view(child.Value()) == "proto") {
+            //get <name> field in proto
+            XMLElement *nameElement = child.FirstChildElement("name");
+            if (nameElement) {
+                m.name = nameElement->GetText();
+            }
+            //get <type> field in proto
+            XMLElement *typeElement = child.FirstChildElement("type");
+            if (typeElement) {
+                m.type = typeElement->GetText();
+            }
+        }
+        //<param> section
+        else if (std::string_view(child.Value()) == "param") {
+            //parse inside of param
+            XMLVariableParser parser {&child};
+            //add proto data to list
+            m.params.push_back(parser);
+        }
+    }
+
+    return m;
+}
+
 std::vector<ClassMemberData> parseClassMembers(const std::vector<XMLElement*> &elements) {
     std::vector<ClassMemberData> list;
     for (XMLElement *command : elements) {
-
-        ClassMemberData m;
-        //iterate contents of <command>
-        for (XMLElement &child : Elements(command) ) {
-            //<proto> section
-            if (std::string_view(child.Value()) == "proto") {
-                //get <name> field in proto
-                XMLElement *nameElement = child.FirstChildElement("name");
-                if (nameElement) {
-                    m.name = nameElement->GetText();
-                }
-                //get <type> field in proto
-                XMLElement *typeElement = child.FirstChildElement("type");
-                if (typeElement) {
-                    m.type = typeElement->GetText();
-                }
-            }
-            //<param> section
-            else if (std::string_view(child.Value()) == "param") {
-                //parse inside of param
-                XMLVariableParser parser {&child};
-                //add proto data to list
-                m.params.push_back(parser);
-            }            
-        }
-
-        list.push_back(m);
+        list.push_back(parseClassMember(command));
     }
     return list;
 }
 
+static const std::string debugName = ""; // debug
+//allocateCommandBuffers
+//getPipelineCacheData
+
+std::string generateClassMemberCStyle(const std::string &className, const std::string &handle, std::string &protoName, ClassMemberData& m) {
+
+    std::string protoArgs = m.createProtoArguments(className);
+    std::string innerArgs = m.createPFNArguments(className, handle);
+    file.writeLine("inline " + m.type + " " + protoName + "(" + protoArgs + ") { // C");
+
+    file.pushIndent();
+    std::string cmdCall;
+    if (m.type != "void") {
+        cmdCall += "return ";
+    }
+    cmdCall += ("m_" + m.name + "(" + innerArgs + ");");
+    file.writeLine(cmdCall);
+    file.popIndent();
+
+    file.writeLine("}");
+    return protoArgs;
+}
+
+enum class MEMBER_RETURN_CATEGORY {
+    VOID,
+    RESULT,
+    STRUCT,        
+    ARRAY_IN,
+    ARRAY_OUT,
+    ARRAY_OUT_ALLOC
+};
+
+std::string toString(MEMBER_RETURN_CATEGORY category) {
+    switch (category) {
+        case MEMBER_RETURN_CATEGORY::VOID:            return "void";
+        case MEMBER_RETURN_CATEGORY::RESULT:          return "result";
+        case MEMBER_RETURN_CATEGORY::STRUCT:          return "struct";
+        case MEMBER_RETURN_CATEGORY::ARRAY_IN:        return "array_input";
+        case MEMBER_RETURN_CATEGORY::ARRAY_OUT:       return "array_output";
+        case MEMBER_RETURN_CATEGORY::ARRAY_OUT_ALLOC: return "array_alloc";
+    }
+    return "";
+}
+
+enum class ARRAY_SIZE_ARGUMENT {
+    INVALID,
+    COUNT,
+    SIZE
+};
+
+ARRAY_SIZE_ARGUMENT evalArraySizeArgument(const VariableData &m) {
+    if (strContains(m.identifier(), "count")  &&
+        strContains(m.type(), "int"))
+    {
+        return ARRAY_SIZE_ARGUMENT::COUNT;
+    }
+    if (strContains(m.identifier(), "size")  &&
+        strContains(m.type(), "size_t"))
+        //strContains(m.suffix(), "*"))
+    {
+        return ARRAY_SIZE_ARGUMENT::SIZE;
+    }
+    return ARRAY_SIZE_ARGUMENT::INVALID;
+}
+void evalMemberReturnCategory(const std::string& name, const VariableData& last, MEMBER_RETURN_CATEGORY& category) {
+    static constexpr char const* keywordAllocate = "allocate";
+
+    if (strContains(name, "create") ||
+        (strContains(name, "get") && strContains(last.suffix(), "*"))) {
+        category = MEMBER_RETURN_CATEGORY::STRUCT;
+    }
+    else if (name.starts_with(keywordAllocate)) {
+        std::string allocName = name.substr(sizeof(keywordAllocate));
+        strRemoveTag(allocName);
+        if (allocName.ends_with("s")) {
+            category = MEMBER_RETURN_CATEGORY::ARRAY_OUT_ALLOC;
+        }
+        else {
+            category = MEMBER_RETURN_CATEGORY::STRUCT;
+        }
+    }
+}
+
+class ArgumentList : public std::vector<std::string> {
+public:
+    void add(const std::string &str) {
+        push_back(str);
+    }
+
+    std::string string() {
+        std::string out;
+        if (empty()) {
+            return "";
+        }
+        std::vector<std::string>::iterator it;
+        for (it = begin(); it != std::prev(end()); ++it) {
+            out += *it;
+            out += ", ";
+        }
+        out += *it;
+        return out;
+    }
+};
+
+void generateClassMemberCpp(const std::string &className, const std::string &handle, std::string &protoName, ClassMemberData& m, const std::string &signatureC) {
+
+    std::string dbgProtoComment;
+
+    if (m.params.empty()) {
+        std::cerr << "Unhandled: no params" << m.name << ENDL;
+        return;
+    }
+    bool hasResult = m.type == "VkResult";
+
+    VariableData last = *m.params.rbegin();
+    std::string returnType = m.type;
+    MEMBER_RETURN_CATEGORY returnCat = MEMBER_RETURN_CATEGORY::VOID;
+
+    if (m.type == "VkResult") {
+        returnCat = MEMBER_RETURN_CATEGORY::RESULT;
+    }
+
+    bool hasTemplate = false;
+
+    std::pair<VariableData, VariableData> paramVector;
+    VariableData allocInfo;
+    ArgumentList vectorCall, call;
+    bool addedLast = false;
+
+    evalMemberReturnCategory(protoName, last, returnCat);
+
+    std::vector<VariableData>::iterator it = m.params.begin();
+
+    const auto specialParseMemeberArguments = [&]() {        
+
+        ARRAY_SIZE_ARGUMENT arrayArg = evalArraySizeArgument(*it);
+        if (arrayArg == ARRAY_SIZE_ARGUMENT::INVALID) {
+            return false;
+        }
+
+        const VariableData nextObj = *std::next(it);
+
+        if (!strContains(nextObj.suffix(), "*") || (arrayArg == ARRAY_SIZE_ARGUMENT::SIZE && nextObj.type() != "void")) {
+            return false;
+        }
+
+        paramVector.first = *it;
+        paramVector.second = nextObj;
+
+        if (strContains(nextObj.prefix(), "const") || nextObj.type() == "void") {
+            returnCat = MEMBER_RETURN_CATEGORY::ARRAY_IN;
+            it = m.params.erase(it); //erase one element at it
+
+            if (arrayArg == ARRAY_SIZE_ARGUMENT::SIZE) {
+                it->setType("", "ArrayProxy<T>", " &");
+                hasTemplate = true;
+            }
+            else {
+                it->setType("", "ArrayProxy<const " + it->type() + ">", " const &");
+            }
+            call.add(it->identifier() + ".size()");
+            call.add(it->identifier() + ".data()");
+            it++;
+        }
+        else {
+            returnCat = MEMBER_RETURN_CATEGORY::ARRAY_OUT;
+
+            vectorCall.add("&" + it->identifier());
+            vectorCall.add("nullptr");
+
+            call.add("&" + it->identifier());
+            call.add("reinterpret_cast<" + last.type() + "*>(" + nextObj.identifier() + ".data())");
+
+            it = m.params.erase(m.params.erase(it)); // erase two elements at it
+        }
+        return true;
+    };
+
+    std::vector<VariableData>::iterator it_last = std::prev(m.params.end());
+    while (it != m.params.end() && it != it_last) {
+
+        if (returnCat == MEMBER_RETURN_CATEGORY::ARRAY_OUT_ALLOC) {
+            if (it->type() == last.type() + "AllocateInfo") {
+                allocInfo = *it;
+            }
+        }
+
+        if (!specialParseMemeberArguments()) {
+            if (it->type() == "Vk" + className) {
+                vectorCall.add(handle);
+                call.add(handle);
+            }
+            else {
+                vectorCall.add(it->identifier());
+                call.add(it->identifier());
+            }
+            it++;
+        }
+        if (it == m.params.end()) {
+            addedLast = true;
+        }
+    }
+
+    if (returnCat == MEMBER_RETURN_CATEGORY::ARRAY_OUT_ALLOC) {
+        std::cout << "Array alloc pop: " << m.params.rbegin()->identifier() << ENDL;
+        m.params.pop_back();
+        addedLast = true;
+    }
+    else if (returnCat == MEMBER_RETURN_CATEGORY::STRUCT) {
+        m.params.pop_back();
+        addedLast = true;
+
+    }
+    if (last.type() == "Vk" + className) {
+        returnCat = MEMBER_RETURN_CATEGORY::VOID;
+        std::cout << m.name << " returns class" << ENDL;
+    }
+
+    strStripVk(returnType);
+
+    if (returnCat == MEMBER_RETURN_CATEGORY::ARRAY_OUT)
+    {
+        returnType = "std::vector<" + last.type() + ">";
+    }    
+    else if (returnCat == MEMBER_RETURN_CATEGORY::STRUCT) {
+        call.add("reinterpret_cast<" + last.type() + "*>(&" + last.identifier() +")");
+        returnType = last.type();
+        addedLast = true;
+    }
+    else if (returnCat == MEMBER_RETURN_CATEGORY::ARRAY_OUT_ALLOC) {
+        call.add("reinterpret_cast<" + last.type() + "*>(" + last.identifier() + ".data())");
+        returnType = "std::vector<" + last.type() + ">";
+    }
+    else if (returnCat == MEMBER_RETURN_CATEGORY::ARRAY_IN) {
+        if (hasResult) {
+            returnType = "VkResult";
+            returnCat = MEMBER_RETURN_CATEGORY::RESULT;
+        }
+        else {
+            returnType = "void";
+            returnCat = MEMBER_RETURN_CATEGORY::VOID;
+        }
+    }
+
+    if (!addedLast) {
+        call.add(last.identifier());
+    }
+
+    std::string protoArgs = m.createProtoArguments(className);
+    std::string proto = "inline " + returnType + " " + protoName + "(" + protoArgs + ") {"
+                        + " // [" + toString(returnCat) + dbgProtoComment + "]";
+
+    if (signatureC == protoArgs) {
+        file.writeLine("// overload of " + proto);
+        return;
+    }
+
+   if (hasTemplate) {
+       file.writeLine("template <typename T>");
+   }
+   file.writeLine(proto);
+   file.pushIndent();
+
+   if (hasResult && returnCat != MEMBER_RETURN_CATEGORY::RESULT) {
+       file.writeLine("VkResult r;");
+   }
+   bool flagNestIf = false;
+
+   if (returnCat == MEMBER_RETURN_CATEGORY::STRUCT) {
+       file.writeLine(returnType + " " + last.identifier() + "; // to &");
+   }
+   else if (returnCat == MEMBER_RETURN_CATEGORY::ARRAY_OUT) {
+       file.writeLine(returnType + " " + last.identifier() + ";");
+       file.writeLine(paramVector.first.type() + " " + paramVector.first.identifier() + ";");
+       if (hasResult) {
+           file.writeLine("r = m_" + m.name + "(" + vectorCall.string() + ");");
+           file.writeLine("if (r == VK_SUCCESS) {");
+           file.pushIndent();
+           flagNestIf = true;
+       }
+       else {
+           file.writeLine("m_" + m.name + "(" + vectorCall.string() + ");");
+       }
+       file.writeLine(last.identifier() + ".resize(" + paramVector.first.identifier() + ");");
+   }
+   else if (returnCat == MEMBER_RETURN_CATEGORY::ARRAY_OUT_ALLOC) {
+       file.writeLine(returnType + " " + last.identifier() + ";");
+       std::string allocStructMember = last.type() + "Count";
+       // refactor
+       strStripVk(allocStructMember);
+       if (allocStructMember.size() > 0) { //convert first letter to lowercase
+           allocStructMember[0] = std::tolower(allocStructMember[0]);
+       }
+
+       file.writeLine(last.identifier() + ".resize(" + allocInfo.identifier() + "->" + allocStructMember + ");");
+   }
+
+   if (returnCat == MEMBER_RETURN_CATEGORY::RESULT) {
+       file.writeLine("return m_" + m.name + "(" + call.string() + ");");
+       returnCat = MEMBER_RETURN_CATEGORY::VOID;
+   }
+   else if (hasResult) {
+       file.writeLine("r = m_" + m.name + "(" + call.string() + ");");
+   }
+   else {
+       file.writeLine("m_" + m.name + "(" + call.string() + ");");
+   }
+
+   if (flagNestIf) {
+       file.popIndent();
+       file.writeLine("}");
+   }
+   if (returnCat == MEMBER_RETURN_CATEGORY::RESULT) {
+       file.writeLine("return r;");
+   }
+   else if (returnCat != MEMBER_RETURN_CATEGORY::VOID) {
+       if (hasResult) {
+           std::string message = "\"" + className + "::" + protoName + "\"";
+           file.writeLine("return vk::createResultValue<" + returnType + ">(static_cast<Result>(r), " + last.identifier() + ", " + message + ");");
+       }
+       else {
+           file.writeLine("return " + last.identifier() + ";");
+       }
+   }
+   file.popIndent();
+   file.writeLine("}");
+}
+
 void generateClassUniversal(const std::string &className,
                             const std::string &handle,
-                            const std::vector<XMLElement*> &commands,
-                            const std::string &sourceFile)
+                            std::vector<ClassMemberData> &members,
+                            const std::string &sourceFile = {},
+                            const std::vector<std::string> memberBlacklist = {})
 {
     //extract member data from XMLElements
-    std::vector<ClassMemberData> members = parseClassMembers(commands);
     std::string memberProcAddr = "vkGet" + className + "ProcAddr";
     std::string memberCreate = "vkCreate" + className;
 
@@ -575,11 +922,20 @@ void generateClassUniversal(const std::string &className,
     file.writeLine("return reinterpret_cast<T>(m_" + memberProcAddr +"(" + handle + ", name.data()));");
     file.popIndent();
     file.writeLine("}");
+    // operators
+    file.writeLine("operator " "Vk" + className + "() const {");
+    file.pushIndent();
+    file.writeLine("return " + handle + ";");
+    file.popIndent();
+    file.writeLine("}");
     //wrapper functions
     for (ClassMemberData &m : members) {
-        if (m.name == memberProcAddr || m.name == memberCreate) {
+        if (m.name == memberProcAddr || m.name == memberCreate || isInContainter(memberBlacklist, m.name)) {
             continue;
         }
+
+        //debug
+        if (!debugName.empty() && !strContains(m.name, debugName)) continue;
 
         writeWithProtect(m.name, [&]{
             std::string protoName{m.name}; //prototype name (without vk)
@@ -588,60 +944,9 @@ void generateClassUniversal(const std::string &className,
                 protoName[0] = std::tolower(protoName[0]);
             }         
 
-            std::string protoArgs = m.createProtoArguments(className);
-            std::string innerArgs = m.createPFNArguments(className, handle);
-            file.writeLine("inline " + m.type + " " + protoName + "(" + protoArgs + ") {");
+            std::string signature = generateClassMemberCStyle(className, handle, protoName, m);
+            generateClassMemberCpp(className, handle, protoName, m, signature);
 
-            file.pushIndent();
-            std::string cmdCall;
-            if (m.type != "void") {
-                cmdCall += "return ";
-            }
-            cmdCall += ("m_" + m.name + "(" + innerArgs + ");");
-            file.writeLine(cmdCall);
-            file.popIndent();
-
-            file.writeLine("}");
-#define EXPERIMENTAL
-#ifdef EXPERIMENTAL
-            if (m.type == "VkResult" && m.params.size() > 0) {
-                VariableData r = m.params.at(m.params.size() - 1);
-                std::string returnType = r.prefix() + r.type() + r.suffix();
-
-                bool hasReturn = true;
-                if (r.type() == "Vk" + className) {
-                    returnType = "void";
-                    hasReturn = false;
-                }
-                else {
-                    m.params.pop_back();
-                }
-
-                std::string protoArgs = m.createProtoArguments(className);
-                if (!protoArgs.empty()) {
-                    file.writeLine("inline " + returnType + " " + protoName + "(" + protoArgs + ") {");
-                    file.pushIndent();
-                    if (hasReturn) {
-                        file.writeLine(returnType + " " + r.identifier() + ";");
-                    }
-
-                    std::string call = m.createPFNArguments(className, handle);
-                    if (hasReturn) {
-                        if (!call.empty()) {
-                            call += ", ";
-                        }
-                        call += r.identifier();
-                    }
-
-                    file.writeLine("VkResult result = m_" + m.name + "(" + call + ");");
-                    if (hasReturn) {
-                        file.writeLine("return " + r.identifier() + ";");
-                    }
-                    file.popIndent();
-                    file.writeLine("}");
-                }
-            }
-#endif
         });
     }
 
@@ -676,39 +981,43 @@ void generateClassUniversal(const std::string &className,
     file.get() << ENDL;
 }
 
-void genInstanceClass(const std::vector<XMLElement*> &commands) {
-    generateClassUniversal("Instance", "_instance", commands, sourceDir + "/source_instance.hpp");
+void genInstanceClass(std::vector<ClassMemberData> &commands) {
+    generateClassUniversal("Instance", "_instance", commands, sourceDir + "/source_instance.hpp", {"vkEnumeratePhysicalDevices"});
 }
 
-void genDeviceClass(const std::vector<XMLElement*> &commands) {
+void genDeviceClass(std::vector<ClassMemberData> &commands) {
     generateClassUniversal("Device", "_device", commands, sourceDir + "/source_device.hpp");
 }
 
 void parseCommands(XMLNode *node) {
     std::cout << "Parsing commands" << ENDL;
 
+    static const std::vector<std::string> deviceObjects = {"VkDevice", "VkQueue", "VkCommandBuffer"};
+
     //command data is stored in XMLElement*
-    std::vector<XMLElement*> elementsDevice;
-    std::vector<XMLElement*> elementsInstance;
-    std::vector<XMLElement*> elementsOther;
+    std::vector<ClassMemberData> elementsDevice;
+    std::vector<ClassMemberData> elementsInstance;
+    std::vector<ClassMemberData> elementsOther;
 
     //iterate contents of <commands>, filter only <command> children
-    for (XMLElement *command : Elements(node) | ValueFilter("command")) {
+    for (XMLElement *commandElement : Elements(node) | ValueFilter("command")) {
 
         //default destination is elementsOther
-        std::vector<XMLElement*> *target = &elementsOther;
+        std::vector<ClassMemberData> *target = &elementsOther;
 
-        //iterate contents of <command>, filter only <param> children
-        for (XMLElement *param : Elements(command) | ValueFilter("param")) {
-            XMLElement *typeElement = param->FirstChildElement("type");
-            if (typeElement) {
-                const char* type = typeElement->GetText();
-                if (std::string_view(type) == "VkDevice") { //command is for device
-                    target = &elementsDevice;
-                }
-                else if (std::string_view(type) == "VkInstance") { //command is for instance
-                    target = &elementsInstance;
-                }
+        ClassMemberData command = parseClassMember(commandElement);
+
+        if (command.params.size() > 0) {
+            std::string first = command.params.at(0).type(); // first argument of a command
+            if (isInContainter(deviceObjects, first) ||
+                command.name == "vkCreateDevice")
+            { //command is for device
+                target = &elementsDevice;
+            }
+            else if (first == "VkInstance" ||
+                     command.name == "vkCreateInstance")
+            { //command is for instance
+                target = &elementsInstance;
             }
         }
 

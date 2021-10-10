@@ -44,10 +44,16 @@ protected:
         DONE
     };
 
+    bool ignoreFlag;
     bool arrayLengthFound;
     std::array<std::string, 5> fields;
 
 public:
+    VariableData() {
+        arrayLengthFound = false;
+        ignoreFlag = false;
+    }
+
     //prefix getter
     const std::string& prefix() const {
         return fields[PREFIX];
@@ -72,15 +78,31 @@ public:
     const std::string& arrayLength() const {
         return fields[ARRAY_LENGTH];
     }
-    //getter for first 4 fields combined
-    std::string proto() const {
+    //getter for all fields combined
+    std::string proto() const {      
         std::string out;
         for (int i = 0; i < 4; ++i) {
             out += fields[i];
         }
+        if (arrayLengthFound) {
+            out += "[" + fields[ARRAY_LENGTH] + "]";
+        }
         return out;
     }
 
+    void setType(const std::string& prefix, const std::string& type, const std::string& suffix) {
+        fields[PREFIX] = prefix;
+        fields[TYPE] = type;
+        fields[SUFFIX] = suffix;
+    }
+
+    void setIgnoreFlag(bool value) {
+        ignoreFlag = value;
+    }
+
+    bool getIgnoreFlag() const {
+        return ignoreFlag;
+    }
 };
 
 //parses XMLElement's contents into variable data
@@ -124,6 +146,15 @@ public:
             if (value == "[") { //text after name is array size if [
                 state = BRACKET_LEFT;
             }
+            else if (value.starts_with("[") && value.ends_with("]")) {
+                fields[ARRAY_LENGTH].append(value.substr(1, value.size() - 2));
+                arrayLengthFound = true;
+//                if (fields[IDENTIFIER] == "blendConstants") {
+//                    std::cout << "blendConstants parse array l: " << fields[ARRAY_LENGTH]<< std::endl;
+//                }
+                state = DONE;
+                return false;
+            }
             else {
                 state = DONE;
                 return false;
@@ -132,13 +163,14 @@ public:
         else if (state == BRACKET_LEFT) { //text after [ is <enum>SIZE</enum>
             state = ARRAY_LENGTH;
         }
-        else if (state == ARRAY_LENGTH) {
+        else if (state == ARRAY_LENGTH) {           
             if (value == "]") { // ] after SIZE confirms arrayLength field
                 arrayLengthFound = true;
             }
             state = DONE;
             return false;
         }
+
 
         if (state < fields.size()) { //append if state index is in range
             fields[state].append(value);
