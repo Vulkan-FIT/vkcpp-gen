@@ -6,11 +6,10 @@
     }
     
     void init(const vk20::Instance &instance, const VkPhysicalDevice &physicalDevice, const vk::DeviceCreateInfo& createInfo) {
-        m_vkGetDeviceProcAddr = instance.getProcAddr<PFN_vkGetDeviceProcAddr>("vkGetDeviceProcAddr");       
-        m_vkCreateDevice = instance.getProcAddr<PFN_vkCreateDevice>("vkCreateDevice");        
+        m_vkCreateDevice = instance.getProcAddr<PFN_vkCreateDevice>("vkCreateDevice");
         createDevice(physicalDevice, createInfo);
-        m_vkGetDeviceProcAddr = getProcAddr<PFN_vkGetDeviceProcAddr>("vkGetDeviceProcAddr");                
-        loadTable();        
+        m_vkGetDeviceProcAddr = instance.getProcAddr<PFN_vkGetDeviceProcAddr>("vkGetDeviceProcAddr");
+        loadTable();
     }
     
 private:
