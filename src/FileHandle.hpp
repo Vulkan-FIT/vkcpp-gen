@@ -31,17 +31,17 @@ SOFTWARE.
 static constexpr char const* INDENT {"    "};
 static constexpr char const* ENDL   {"\n"};
 
-//file class wrapper, handles identation in stateful manner
+// file class wrapper, handles identation in stateful manner
 class FileHandle {
     std::ofstream file;
-    int indent; //current ident level
-    std::queue<int> queue; //history of indent changes
+    int indent; // current ident level
+    std::queue<int> queue; // history of indent changes
 
 public:
     FileHandle() {
         indent = 0;
     }
-    //tries to open file, throws if fails
+    // tries to open file, throws if fails
     void open(const std::string &path) {
         close();
         file.open(path, std::ios::out | std::ios::trunc);
@@ -59,12 +59,12 @@ public:
     std::ofstream& get() {
         return file;
     }
-    //adds indent
+    // adds indent
     void pushIndent(int n = 1) {
         queue.push(n);
         indent += n;
     }
-    //removes indent
+    // removes indent
     void popIndent() {
         if (!queue.empty()) {
             int n = queue.front();

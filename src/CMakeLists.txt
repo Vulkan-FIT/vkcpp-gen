@@ -11,6 +11,7 @@ SET(HEADERS
     XMLVariableParser.hpp
     XMLUtils.hpp
     FileHandle.hpp
+    StringUtils.hpp
     )
 
 SET(SOURCES

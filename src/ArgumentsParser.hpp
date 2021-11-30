@@ -27,16 +27,16 @@ SOFTWARE.
 #include <vector>
 #include <stdexcept>
 
-//holds arguments data
+// holds arguments data
 struct ArgOption {
-    std::string shortName = {}; //-
-    std::string longName = {};  //--
-    bool usesValue = false; //if true parser loads value with next argument
-    bool set = false; //set to true if argument exists
+    std::string shortName = {}; // -
+    std::string longName = {};  // --
+    bool usesValue = false; // if true parser loads value with next argument
+    bool set = false; // set to true if argument exists
     std::string value = {};
 };
 
-//simple class made for parsing command line arguments
+// simple class made for parsing command line arguments
 class ArgParser {
     using Option = ArgOption;
     const std::vector<Option*> options;
@@ -46,10 +46,10 @@ public:
         : options(list)
     {}
 
-    //parses arguments. throws if there are less arguments than expected
+    // parses arguments. throws if there are less arguments than expected
     void parse(int argc, char **argv) {
 
-        const auto getArg = [&](int index) { //tries to access argument at index, throws on fail
+        const auto getArg = [&](int index) { // tries to access argument at index, throws on fail
             if (argc <= index) {
                 throw std::runtime_error("Arguments out of range. See usage.");
             }
@@ -58,12 +58,12 @@ public:
 
         for (int i = 0; i < argc; ++i) {
             for (Option *o : options) {
-                std::string_view arg = getArg(i); //fetch current argument
-                if ((!o->shortName.empty() && arg == o->shortName) || //compares short name
-                    (!o->longName.empty()  && arg == o->longName))    //comapres long name
+                std::string_view arg = getArg(i); // fetch current argument
+                if ((!o->shortName.empty() && arg == o->shortName) || // compares short name
+                    (!o->longName.empty()  && arg == o->longName))    // comapres long name
                 {
                     if (o->usesValue) {
-                        o->value = getArg(++i); //try to fetch next argument
+                        o->value = getArg(++i); // try to fetch next argument
                     }
                     o->set = true;
                 }

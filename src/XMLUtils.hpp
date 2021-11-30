@@ -29,7 +29,7 @@ SOFTWARE.
 #include <type_traits>
 #include "tinyxml2.h"
 
-//Class for XMLNode and XMLElement iteration
+// Class for XMLNode and XMLElement iteration
 template<class Base>
 class NodeContainer {
 protected:
@@ -87,7 +87,7 @@ class Nodes : public NodeContainer<tinyxml2::XMLNode> {
 public:
     Nodes(tinyxml2::XMLNode *parent) {
         first = parent->FirstChild();
-        last  = nullptr;//parent->LastChild()->NextSibling();
+        last  = nullptr;// parent->LastChild()->NextSibling();
     }
 
 };
@@ -97,7 +97,7 @@ class Elements : public NodeContainer<tinyxml2::XMLElement> {
 public:
     Elements(tinyxml2::XMLNode *parent) {
         first = parent->FirstChildElement();        
-        last = nullptr; //parent->LastChildElement()->NextSiblingElement();
+        last = nullptr; // parent->LastChildElement()->NextSiblingElement();
     }
 
 };
