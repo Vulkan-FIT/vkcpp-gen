@@ -92,6 +92,11 @@ struct VariableFields : public std::array<std::string, 4> {
         set(SUFFIX, suffix);
     }
 
+    bool isPointer() const {
+        std::string s = get(SUFFIX);
+        return s.find("*") != std::string::npos;
+    }
+
 //    std::string getProto() const {
 //        std::string out;
 //        for (size_t i = 0; i < size(); ++i) {
@@ -124,6 +129,7 @@ public:
     VariableData() {
         arrayLengthFound = false;
         ignoreFlag = false;
+        ignorePFN = false;
         _hasLenAttrib = false;
         specialType = TYPE_DEFAULT;
     }
@@ -140,7 +146,7 @@ public:
         altPFN = str;
     }
 
-    void setType(Type type) {
+    void setSpecialType(Type type) {
         specialType = type;
     }
 
@@ -198,8 +204,20 @@ public:
         return ignoreFlag;
     }
 
+    void setIgnorePFN(bool value) {
+        ignorePFN = value;
+    }
+
+    bool getIgnorePFN() const {
+        return ignorePFN;
+    }
+
     bool isInvalid() const {
         return specialType == TYPE_INVALID;
+    }
+
+     bool isReturn() const {
+        return specialType == TYPE_RETURN;
     }
 
     void convertToCpp() {
@@ -224,7 +242,7 @@ public:
 
 
     void bindLengthAttrib(std::shared_ptr<VariableData> var) {
-        std::cout << "Obj[" << this << "] " << "Bind to lenght attrib var: " << var->identifier() << std::endl;
+      //  std::cout << "Obj[" << this << "] " << "Bind to lenght attrib var: " << var->identifier() << std::endl;
         _lenAttribVar = var;
     }
 
@@ -233,7 +251,7 @@ public:
     }
 
     std::shared_ptr<VariableData> lengthAttribVar() {
-        std::cout << "Obj[" << this << "] " << "len attrib var get:" << _lenAttribVar.get() << std::endl;
+        //std::cout << "Obj[" << this << "] " << "len attrib var get:" << _lenAttribVar.get() << std::endl;
         if (!_lenAttribVar.get()) {
             throw std::runtime_error("access to null lengthAttrib");
         }
@@ -321,6 +339,18 @@ public:
         return out;
     }
 
+    std::string toStringWithAssignment() const {
+        std::string out = toString();
+        out += " = ";
+        if (!_assignment.empty()) {
+            out += _assignment;
+        }
+        else {
+            out += "{}";
+        }
+        return out;
+    }
+
     // getter for all fields combined for C version
     std::string originalToString() const {
         std::string out = originalFullType();
@@ -332,6 +362,13 @@ public:
         return out;
     }
 
+    void setAssignment(const std::string &str) {
+        _assignment = str;
+    }
+
+    std::string assignment() const {
+        return _assignment;
+    }
 
 protected:
 
@@ -342,6 +379,8 @@ protected:
     bool _hasLenAttrib;
     std::string _lenAttrib;
     std::shared_ptr<VariableData> _lenAttribVar;
+    std::string _assignment;
+    bool ignorePFN;
 
 private:
 

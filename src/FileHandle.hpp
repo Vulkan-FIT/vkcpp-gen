@@ -27,6 +27,7 @@ SOFTWARE.
 #include <fstream>
 #include <queue>
 #include <stdexcept>
+#include <sstream>
 
 static constexpr char const* INDENT {"    "};
 static constexpr char const* ENDL   {"\n"};
@@ -78,6 +79,15 @@ public:
             file << INDENT;
         }
         file << s << ENDL;
+    }
+
+    void write(const std::string &s) {
+        std::stringstream ss(s);
+        std::string line;
+
+        while(std::getline(ss, line,'\n')){
+            writeLine(line);
+        }
     }
 
 };
