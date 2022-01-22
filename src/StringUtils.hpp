@@ -8,10 +8,10 @@ static bool caseInsensitivePredicate(char a, char b) {
 }
 
 // case insensitve search for substring
-static bool strContains(const std::string &string, const std::string &substring) {
-    auto it = std::search(string.begin(), string.end(),
-                          substring.begin(), substring.end(),
-                          caseInsensitivePredicate);
+static bool strContains(const std::string &string,
+                        const std::string &substring) {
+    auto it = std::search(string.begin(), string.end(), substring.begin(),
+                          substring.end(), caseInsensitivePredicate);
     return it != string.end();
 }
 
@@ -81,7 +81,7 @@ static std::string convertSnakeToCamel(const std::string &str) {
             flag = true;
             continue;
         }
-        out += flag? std::toupper(c) : std::tolower(c);
+        out += flag ? std::toupper(c) : std::tolower(c);
         flag = false;
     }
     return out;

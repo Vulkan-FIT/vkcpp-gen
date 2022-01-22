@@ -24,13 +24,13 @@ SOFTWARE.
 #ifndef XMLVARIABLEPARSER_H
 #define XMLVARIABLEPARSER_H
 
-#include <string>
-#include <array>
 #include "tinyxml2.h"
+#include <array>
+#include <string>
 
-#include <stdexcept>
 #include <iostream>
 #include <memory>
+#include <stdexcept>
 
 #include "StringUtils.hpp"
 
@@ -53,40 +53,31 @@ struct VariableFields : public std::array<std::string, 4> {
         std::array<std::string, 4>::operator[](index) = str;
     }
 
-    const std::string& get(size_t index) const {
+    const std::string &get(size_t index) const {
         if (index >= size()) {
             throw std::exception();
-            //return "";
+            // return "";
         }
         return std::array<std::string, 4>::operator[](index);
     }
 
     // prefix getter
-    const std::string& prefix() const {
-        return get(PREFIX);
-    }
+    const std::string &prefix() const { return get(PREFIX); }
     // suffix getter
-    const std::string& suffix() const {
-        return get(SUFFIX);
-    }
+    const std::string &suffix() const { return get(SUFFIX); }
     // type getter
-    const std::string& type() const {
-        return get(TYPE);
-    }
+    const std::string &type() const { return get(TYPE); }
     // name getter
-    const std::string& identifier() const {
-        return get(IDENTIFIER);
-    }
+    const std::string &identifier() const { return get(IDENTIFIER); }
 
-    void setType(const std::string& type) {
-        set(TYPE, type);
-    }
+    void setType(const std::string &type) { set(TYPE, type); }
 
-    void setIdentifier(const std::string& identifier) {
+    void setIdentifier(const std::string &identifier) {
         set(IDENTIFIER, identifier);
     }
 
-    void setFullType(const std::string& prefix, const std::string& type, const std::string& suffix) {
+    void setFullType(const std::string &prefix, const std::string &type,
+                     const std::string &suffix) {
         set(PREFIX, prefix);
         set(TYPE, type);
         set(SUFFIX, suffix);
@@ -97,14 +88,13 @@ struct VariableFields : public std::array<std::string, 4> {
         return s.find("*") != std::string::npos;
     }
 
-//    std::string getProto() const {
-//        std::string out;
-//        for (size_t i = 0; i < size(); ++i) {
-//            out += get(i);
-//        }
-//        return out;
-//    }
-
+    //    std::string getProto() const {
+    //        std::string out;
+    //        for (size_t i = 0; i < size(); ++i) {
+    //            out += get(i);
+    //        }
+    //        return out;
+    //    }
 };
 
 // holds variable information broken into 4 sections
@@ -112,15 +102,15 @@ struct VariableData : public VariableFields {
 
     std::string altPFN;
 
-public:
+  public:
     enum Type {
         TYPE_INVALID,
         TYPE_DEFAULT,
         TYPE_RETURN,
         TYPE_ARRAY_PROXY,
         TYPE_SIZE_AND_ARRAY_PROXY,
-        //TYPE_TEMPLATE,
-        //TYPE_TEMPLATE_WITH_SIZE,
+        // TYPE_TEMPLATE,
+        // TYPE_TEMPLATE_WITH_SIZE,
         TYPE_VECTOR
     };
 
@@ -142,21 +132,13 @@ public:
         }
     }
 
-    void setAltPFN(const std::string &str) {
-        altPFN = str;
-    }
+    void setAltPFN(const std::string &str) { altPFN = str; }
 
-    void setSpecialType(Type type) {
-        specialType = type;
-    }
+    void setSpecialType(Type type) { specialType = type; }
 
-    bool hasLenAttrib() const {
-        return _hasLenAttrib;
-    }
+    bool hasLenAttrib() const { return _hasLenAttrib; }
 
-    std::string lenAttrib() {
-        return _lenAttrib;
-    }
+    std::string lenAttrib() { return _lenAttrib; }
 
     std::string lenAttribVarName() {
         size_t pos = _lenAttrib.find_first_of("->");
@@ -167,58 +149,40 @@ public:
     }
 
     // arrayLength flag getter
-    bool hasArrayLength() const {
-        return arrayLengthFound;
-    }
+    bool hasArrayLength() const { return arrayLengthFound; }
     // arrayLength getter
-    const std::string& arrayLength() const {
-        return arrayLengthStr;
-    }
-//    // getter for all fields combined
-//    std::string proto() const {
-//        std::string out = getProto();
-//        if (arrayLengthFound) {
-//            out += "[" + arrayLengthStr + "]";
-//        }
-//        return out;
-//    }
+    const std::string &arrayLength() const { return arrayLengthStr; }
+    //    // getter for all fields combined
+    //    std::string proto() const {
+    //        std::string out = getProto();
+    //        if (arrayLengthFound) {
+    //            out += "[" + arrayLengthStr + "]";
+    //        }
+    //        return out;
+    //    }
 
-//    // getter for all fields combined for C version
-//    std::string originalProto() const {
-//        std::string out = original.getProto();
-//        if (arrayLengthFound) {
-//            out += "[" + arrayLengthStr + "]";
-//        }
-//        return out;
-//    }
+    //    // getter for all fields combined for C version
+    //    std::string originalProto() const {
+    //        std::string out = original.getProto();
+    //        if (arrayLengthFound) {
+    //            out += "[" + arrayLengthStr + "]";
+    //        }
+    //        return out;
+    //    }
 
-    bool isDefault() const {
-        return specialType == TYPE_DEFAULT;
-    }
+    bool isDefault() const { return specialType == TYPE_DEFAULT; }
 
-    void setIgnoreFlag(bool value) {
-        ignoreFlag = value;
-    }
+    void setIgnoreFlag(bool value) { ignoreFlag = value; }
 
-    bool getIgnoreFlag() const {
-        return ignoreFlag;
-    }
+    bool getIgnoreFlag() const { return ignoreFlag; }
 
-    void setIgnorePFN(bool value) {
-        ignorePFN = value;
-    }
+    void setIgnorePFN(bool value) { ignorePFN = value; }
 
-    bool getIgnorePFN() const {
-        return ignorePFN;
-    }
+    bool getIgnorePFN() const { return ignorePFN; }
 
-    bool isInvalid() const {
-        return specialType == TYPE_INVALID;
-    }
+    bool isInvalid() const { return specialType == TYPE_INVALID; }
 
-     bool isReturn() const {
-        return specialType == TYPE_RETURN;
-    }
+    bool isReturn() const { return specialType == TYPE_RETURN; }
 
     void convertToCpp() {
         for (size_t i = 0; i < size(); ++i) {
@@ -226,32 +190,33 @@ public:
         }
 
         set(TYPE, strStripVk(get(TYPE)));
-        //std::string temp = get(IDENTIFIER);
+        // std::string temp = get(IDENTIFIER);
         set(IDENTIFIER, strStripVk(get(IDENTIFIER)));
-        //std::cout << "Original id: " << temp << " converted: " << get(IDENTIFIER) << std::endl;
+        // std::cout << "Original id: " << temp << " converted: " <<
+        // get(IDENTIFIER) << std::endl;
     }
 
     void convertToArrayProxy(bool bindSizeArgument = true) {
-        specialType = bindSizeArgument ? TYPE_SIZE_AND_ARRAY_PROXY
-                                       : TYPE_ARRAY_PROXY;
+        specialType =
+            bindSizeArgument ? TYPE_SIZE_AND_ARRAY_PROXY : TYPE_ARRAY_PROXY;
 
-        //it->setFullType("", "ArrayProxy<const " + it->type() + ">", " const &");
+        // it->setFullType("", "ArrayProxy<const " + it->type() + ">", " const
+        // &");
         removeLastAsterisk();
-        //std::cout << get(IDENTIFIER) << " --> to array proxy"  << std::endl;
+        // std::cout << get(IDENTIFIER) << " --> to array proxy"  << std::endl;
     }
 
-
     void bindLengthAttrib(std::shared_ptr<VariableData> var) {
-      //  std::cout << "Obj[" << this << "] " << "Bind to lenght attrib var: " << var->identifier() << std::endl;
+        //  std::cout << "Obj[" << this << "] " << "Bind to lenght attrib var: "
+        //  << var->identifier() << std::endl;
         _lenAttribVar = var;
     }
 
-    bool hasLengthAttribVar() {
-        return _lenAttribVar.get() != nullptr;
-    }
+    bool hasLengthAttribVar() { return _lenAttribVar.get() != nullptr; }
 
     std::shared_ptr<VariableData> lengthAttribVar() {
-        //std::cout << "Obj[" << this << "] " << "len attrib var get:" << _lenAttribVar.get() << std::endl;
+        // std::cout << "Obj[" << this << "] " << "len attrib var get:" <<
+        // _lenAttribVar.get() << std::endl;
         if (!_lenAttribVar.get()) {
             throw std::runtime_error("access to null lengthAttrib");
         }
@@ -259,11 +224,11 @@ public:
     }
 
     void convertToTemplate() {
-        //specialType = bindSizeArgument ? TYPE_TEMPLATE_WITH_SIZE
-          //                             : TYPE_TEMPLATE;
+        // specialType = bindSizeArgument ? TYPE_TEMPLATE_WITH_SIZE
+        //                              : TYPE_TEMPLATE;
 
         setFullType("", "T", "");
-        //std::cout << get(IDENTIFIER) << " --> to array proxy"  << std::endl;
+        // std::cout << get(IDENTIFIER) << " --> to array proxy"  << std::endl;
     }
 
     void convertToReturn() {
@@ -291,19 +256,20 @@ public:
         if (!altPFN.empty()) {
             return altPFN;
         }
-        //std::cout << "to argument: " << get(TYPE) << " vs " << original.get(TYPE) << std::endl;
+        // std::cout << "to argument: " << get(TYPE) << " vs " <<
+        // original.get(TYPE) << std::endl;
         switch (specialType) {
-            case TYPE_VECTOR:
-            case TYPE_ARRAY_PROXY:
-                return toArgumentArrayProxy();
-            case TYPE_SIZE_AND_ARRAY_PROXY:
-                return toArgumentSizeAndArrayProxy();
-            case TYPE_RETURN:
-                return toArgumentReturn();
-            //case TYPE_TEMPLATE_WITH_SIZE:
-              //  return toArgumentTemplateWithSize();
-            default:
-                return toArgumentDefault();
+        case TYPE_VECTOR:
+        case TYPE_ARRAY_PROXY:
+            return toArgumentArrayProxy();
+        case TYPE_SIZE_AND_ARRAY_PROXY:
+            return toArgumentSizeAndArrayProxy();
+        case TYPE_RETURN:
+            return toArgumentReturn();
+        // case TYPE_TEMPLATE_WITH_SIZE:
+        //   return toArgumentTemplateWithSize();
+        default:
+            return toArgumentDefault();
         }
     }
 
@@ -311,21 +277,19 @@ public:
     std::string fullType() const {
         std::string type = get(PREFIX) + get(TYPE) + get(SUFFIX);
         switch (specialType) {
-            case TYPE_ARRAY_PROXY:
-            case TYPE_SIZE_AND_ARRAY_PROXY:
-                return "ArrayProxy<" + type + "> const &";
-            case TYPE_VECTOR:
-                return "std::vector<" + type + ">";
-            default:
-                return type;
+        case TYPE_ARRAY_PROXY:
+        case TYPE_SIZE_AND_ARRAY_PROXY:
+            return "ArrayProxy<" + type + "> const &";
+        case TYPE_VECTOR:
+            return "std::vector<" + type + ">";
+        default:
+            return type;
         }
     }
 
     // full type getter
     std::string originalFullType() const {
-        return original.get(PREFIX) +
-               original.get(TYPE)   +
-               original.get(SUFFIX);
+        return original.get(PREFIX) + original.get(TYPE) + original.get(SUFFIX);
     }
 
     // getter for all fields combined
@@ -344,8 +308,7 @@ public:
         out += " = ";
         if (!_assignment.empty()) {
             out += _assignment;
-        }
-        else {
+        } else {
             out += "{}";
         }
         return out;
@@ -362,16 +325,11 @@ public:
         return out;
     }
 
-    void setAssignment(const std::string &str) {
-        _assignment = str;
-    }
+    void setAssignment(const std::string &str) { _assignment = str; }
 
-    std::string assignment() const {
-        return _assignment;
-    }
+    std::string assignment() const { return _assignment; }
 
-protected:
-
+  protected:
     Type specialType;
     bool ignoreFlag;
     bool arrayLengthFound;
@@ -382,8 +340,7 @@ protected:
     std::string _assignment;
     bool ignorePFN;
 
-private:
-
+  private:
     std::string optionalArraySuffix() const {
         if (arrayLengthFound) {
             return "[" + arrayLengthStr + "]";
@@ -391,12 +348,14 @@ private:
         return "";
     }
 
-    std::string toArgumentSizeAndArrayProxy() const { // in reality it's two arguments
+    std::string
+    toArgumentSizeAndArrayProxy() const { // in reality it's two arguments
         return get(IDENTIFIER) + ".size()" + ", " + toArgumentArrayProxy();
     }
 
     std::string toArgumentArrayProxy() const {
-        return "reinterpret_cast<" + originalFullType() + ">(" + get(IDENTIFIER) + ".data())";
+        return "reinterpret_cast<" + originalFullType() + ">(" +
+               get(IDENTIFIER) + ".data())";
     }
 
     std::string createCast(std::string from) const {
@@ -404,8 +363,8 @@ private:
         if (strContains(original.get(SUFFIX), "*") || arrayLengthFound) {
             cast = "reinterpret_cast";
         }
-        return cast + "<" + originalFullType() + (arrayLengthFound? "*" : "") + ">(" + from + ")";
-
+        return cast + "<" + originalFullType() + (arrayLengthFound ? "*" : "") +
+               ">(" + from + ")";
     }
 
     std::string toArgumentReturn() const {
@@ -415,17 +374,16 @@ private:
         return createCast("&" + get(IDENTIFIER));
     }
 
-//    std::string toArgumentTemplateWithSize() const {
-//        return "sizeof(" + get(TYPE) + "), " + toArgumentDefault();
-//    }
+    //    std::string toArgumentTemplateWithSize() const {
+    //        return "sizeof(" + get(TYPE) + "), " + toArgumentDefault();
+    //    }
 
     std::string toArgumentDefault() const {
         if (get(TYPE) == original.get(TYPE)) {
             return get(IDENTIFIER);
-        }                
+        }
         return createCast(get(IDENTIFIER));
     }
-
 };
 
 // parses XMLElement's contents into variable data
@@ -436,23 +394,22 @@ class XMLVariableParser : public VariableData, protected tinyxml2::XMLVisitor {
 
     State state{PREFIX}; // FSM state
 
-public:
+  public:
     XMLVariableParser() = default;
 
     XMLVariableParser(tinyxml2::XMLElement *element) {
         const char *len = element->Attribute("len");
         if (len) {
-            //std::cout << "Parsing has len: " << len << std::endl;
+            // std::cout << "Parsing has len: " << len << std::endl;
             _lenAttrib = len;
             _hasLenAttrib = true;
         }
 
         parse(element);
-
     }
 
     // Entry point, reset state to initial, parse XMLElement and trim
-    void parse(tinyxml2::XMLElement *element) {        
+    void parse(tinyxml2::XMLElement *element) {
         state = PREFIX;
         arrayLengthFound = false;
         element->Accept(this);
@@ -467,40 +424,32 @@ public:
 
         if (tag == "type") { // text is type field
             state = TYPE;
-        }
-        else if (tag == "name") { // text is name field
+        } else if (tag == "name") { // text is name field
             state = IDENTIFIER;
-        }
-        else if (state == TYPE) { // text after type is suffix (optional)
+        } else if (state == TYPE) { // text after type is suffix (optional)
             state = SUFFIX;
-        }
-        else if (state == IDENTIFIER) {
+        } else if (state == IDENTIFIER) {
             if (value == "[") { // text after name is array size if [
                 state = BRACKET_LEFT;
-            }
-            else if (value.starts_with("[") && value.ends_with("]")) {
+            } else if (value.starts_with("[") && value.ends_with("]")) {
                 arrayLengthStr = value.substr(1, value.size() - 2);
                 arrayLengthFound = true;
                 state = DONE;
                 return false;
-            }
-            else {
+            } else {
                 state = DONE;
                 return false;
             }
-        }
-        else if (state == BRACKET_LEFT) { // text after [ is <enum>SIZE</enum>
+        } else if (state == BRACKET_LEFT) { // text after [ is <enum>SIZE</enum>
             state = ARRAY_LENGTH;
             arrayLengthStr = value;
-        }
-        else if (state == ARRAY_LENGTH) {           
+        } else if (state == ARRAY_LENGTH) {
             if (value == "]") { //  ] after SIZE confirms arrayLength field
-                arrayLengthFound = true;                
+                arrayLengthFound = true;
             }
             state = DONE;
             return false;
         }
-
 
         if (state < size()) { // append if state index is in range
             VariableFields::operator[](state).append(value);
@@ -515,9 +464,8 @@ public:
         if (it != std::string::npos) {
             suffix.erase(it + 1); // removes trailing space
         }
-        //suffix += " ";
+        // suffix += " ";
     }
-
 };
 
 #endif // XMLVARIABLEPARSER_H

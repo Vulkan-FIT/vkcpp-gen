@@ -24,33 +24,31 @@ SOFTWARE.
 #ifndef XMLUTILS_HPP
 #define XMLUTILS_HPP
 
-#include <string>
-#include <vector>
-#include <type_traits>
 #include "tinyxml2.h"
+#include <string>
+#include <type_traits>
+#include <vector>
 
 // Class for XMLNode and XMLElement iteration
-template<class Base>
-class NodeContainer {
-protected:
+template <class Base> class NodeContainer {
+  protected:
     Base *first;
     Base *last;
 
-public:
+  public:
     using value_type = Base;
 
     class iterator {
         Base *node;
 
-    public:
+      public:
         iterator() = default;
         iterator(Base *node) : node(node) {}
 
         iterator operator++() {
             if constexpr (std::is_same<Base, tinyxml2::XMLNode>::value) {
                 node = node->NextSibling();
-            }
-            else {
+            } else {
                 node = node->NextSiblingElement();
             }
             return *this;
@@ -64,63 +62,55 @@ public:
             return node == other.node;
         }
 
-        Base& operator*() const { return *node; }
-        Base* operator&() const { return node; }
-        Base* operator->() { return node; }
-
+        Base &operator*() const { return *node; }
+        Base *operator&() const { return node; }
+        Base *operator->() { return node; }
     };
 
-    iterator begin() const {
-        return iterator{first};
-    }
+    iterator begin() const { return iterator{first}; }
 
-    iterator end() const {
-        return iterator{last};
-    }
+    iterator end() const { return iterator{last}; }
 
     static_assert(std::is_same<Base, tinyxml2::XMLNode>::value ||
-                  std::is_same<Base, tinyxml2::XMLElement>::value,
+                      std::is_same<Base, tinyxml2::XMLElement>::value,
                   "NodeContainter does not support this type.");
 };
 
 class Nodes : public NodeContainer<tinyxml2::XMLNode> {
-public:
+  public:
     Nodes(tinyxml2::XMLNode *parent) {
         first = parent->FirstChild();
-        last  = nullptr;// parent->LastChild()->NextSibling();
+        last = nullptr; // parent->LastChild()->NextSibling();
     }
-
 };
 
 class Elements : public NodeContainer<tinyxml2::XMLElement> {
 
-public:
+  public:
     Elements(tinyxml2::XMLNode *parent) {
-        first = parent->FirstChildElement();        
+        first = parent->FirstChildElement();
         last = nullptr; // parent->LastChildElement()->NextSiblingElement();
     }
-
 };
 
-class ValueFilter  {
+class ValueFilter {
     std::string text;
 
-public:
+  public:
     ValueFilter(std::string text) : text(text) {}
 
     bool operator()(const char *value) const {
         return std::string_view(value) == text;
     }
-
 };
 
-template<typename T>
-auto operator | (const T& container, const ValueFilter &filter) {
+template <typename T>
+auto operator|(const T &container, const ValueFilter &filter) {
     typedef typename T::value_type value_type;
-    std::vector<value_type*> output;
+    std::vector<value_type *> output;
     for (const auto &element : container) {
         if (filter(element.Value())) {
-            output.push_back(const_cast<value_type*>(&element));
+            output.push_back(const_cast<value_type *>(&element));
         }
     }
     return output;
