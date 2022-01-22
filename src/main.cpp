@@ -362,7 +362,7 @@ public:
 
     template<typename T>
     inline T getProcAddr(const char *name) const {
-        return reinterpret_cast<T>(m_vkGetInstanceProcAddr(nullptr, name));
+        return std::bit_cast<T>(m_vkGetInstanceProcAddr(nullptr, name));
     }
 
     const PFN_vkGetInstanceProcAddr &vkGetInstanceProcAddr {m_vkGetInstanceProcAddr};
@@ -1276,9 +1276,9 @@ static void generateStructCode(std::string name, const std::string &structType,
 
     file.get() << ENDL;
     file.writeLine("operator " + name +
-                   " const&() const { return *reinterpret_cast<const " + name +
+                   " const&() const { return *std::bit_cast<const " + name +
                    "*>(this); }");
-    file.writeLine("operator " + name + " &() { return *reinterpret_cast<" +
+    file.writeLine("operator " + name + " &() { return *std::bit_cast<" +
                    name + "*>(this); }");
     file.popIndent();
     file.writeLine("};");
@@ -1287,14 +1287,14 @@ static void generateStructCode(std::string name, const std::string &structType,
                    "*() { return this; }");
 #ifdef VK_DEPENDENCY
     file.writeLine("operator vk::" + name +
-                   "&() { return *reinterpret_cast<vk::" + name +
+                   "&() { return *std::bit_cast<vk::" + name +
                    "*>(this); }");
 #endif
 
     file.writeLine("operator Vk" + name +
-                   " const&() const { return *reinterpret_cast<const Vk" +
+                   " const&() const { return *std::bit_cast<const Vk" +
                    name + "*>(this); }");
-    file.writeLine("operator Vk" + name + " &() { return *reinterpret_cast<Vk" +
+    file.writeLine("operator Vk" + name + " &() { return *std::bit_cast<Vk" +
                    name + "*>(this); }");
 
     file.popIndent();
@@ -1318,14 +1318,14 @@ static void generateUnionCode(std::string name,
                    "*() { return this; }");
 #ifdef VK_DEPENDENCY
     file.writeLine("operator vk::" + name +
-                   "&() { return *reinterpret_cast<vk::" + name +
+                   "&() { return *std::bit_cast<vk::" + name +
                    "*>(this); }");
 #endif
 
     file.writeLine("operator Vk" + name +
-                   " const&() const { return *reinterpret_cast<const Vk" +
+                   " const&() const { return *std::bit_cast<const Vk" +
                    name + "*>(this); }");
-    file.writeLine("operator Vk" + name + " &() { return *reinterpret_cast<Vk" +
+    file.writeLine("operator Vk" + name + " &() { return *std::bit_cast<Vk" +
                    name + "*>(this); }");
 
     file.popIndent();
@@ -2929,7 +2929,7 @@ static void generateClassMembers(const std::string &className,
             "inline T getProcAddr(const std::string_view &name) const");
         file.writeLine("{");
         file.pushIndent();
-        file.writeLine("return reinterpret_cast<T>(m_" +
+        file.writeLine("return std::bit_cast<T>(m_" +
                        data.getAddrMember.name + "(" + handle +
                        ", name.data()));");
         file.popIndent();

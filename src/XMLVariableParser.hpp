@@ -354,14 +354,14 @@ struct VariableData : public VariableFields {
     }
 
     std::string toArgumentArrayProxy() const {
-        return "reinterpret_cast<" + originalFullType() + ">(" +
+        return "std::bit_cast<" + originalFullType() + ">(" +
                get(IDENTIFIER) + ".data())";
     }
 
     std::string createCast(std::string from) const {
         std::string cast = "static_cast";
         if (strContains(original.get(SUFFIX), "*") || arrayLengthFound) {
-            cast = "reinterpret_cast";
+            cast = "std::bit_cast";
         }
         return cast + "<" + originalFullType() + (arrayLengthFound ? "*" : "") +
                ">(" + from + ")";
