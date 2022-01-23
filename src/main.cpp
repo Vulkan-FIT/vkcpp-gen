@@ -1051,6 +1051,15 @@ static std::string enumConvertCamel(const std::string &enumName,
         }
     }
 
+    for (size_t i = 0; i < out.size() - 1; ++i) {
+        if (std::isdigit(out[i + 1])) {
+            out[i] = std::toupper(out[i]);
+        }
+        else if (std::isdigit(out[i]) && out[i + 1] == 'd') {
+            out[i + 1] = 'D';
+        }
+    }
+
     return "e" + out;
 }
 
