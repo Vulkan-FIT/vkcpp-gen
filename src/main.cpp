@@ -436,6 +436,338 @@ VULKAN_HPP_INLINE std::error_condition make_error_condition( Result e ) VULKAN_H
   return std::error_condition( static_cast<int>( e ), errorCategory() );
 })"};
 
+static constexpr char const *RES_RESULT_VALUE_STRUCT_HPP{R"(
+ template <typename T>
+  struct ResultValueType
+  {
+#ifdef VULKAN_HPP_NO_EXCEPTIONS
+    typedef ResultValue<T> type;
+#else
+    typedef T    type;
+#endif
+  };
+
+  template <>
+  struct ResultValueType<void>
+  {
+#ifdef VULKAN_HPP_NO_EXCEPTIONS
+    typedef Result type;
+#else
+    typedef void type;
+#endif
+  };)"};
+
+static constexpr char const *RES_RESULT_VALUE_HPP{R"(
+ [[noreturn]] void throwResultException( Result result, char const * message )
+    {
+      switch ( result )
+      {
+        case Result::eErrorOutOfHostMemory: throw OutOfHostMemoryError( message );
+        case Result::eErrorOutOfDeviceMemory: throw OutOfDeviceMemoryError( message );
+        case Result::eErrorInitializationFailed: throw InitializationFailedError( message );
+        case Result::eErrorDeviceLost: throw DeviceLostError( message );
+        case Result::eErrorMemoryMapFailed: throw MemoryMapFailedError( message );
+        case Result::eErrorLayerNotPresent: throw LayerNotPresentError( message );
+        case Result::eErrorExtensionNotPresent: throw ExtensionNotPresentError( message );
+        case Result::eErrorFeatureNotPresent: throw FeatureNotPresentError( message );
+        case Result::eErrorIncompatibleDriver: throw IncompatibleDriverError( message );
+        case Result::eErrorTooManyObjects: throw TooManyObjectsError( message );
+        case Result::eErrorFormatNotSupported: throw FormatNotSupportedError( message );
+        case Result::eErrorFragmentedPool: throw FragmentedPoolError( message );
+        case Result::eErrorUnknown: throw UnknownError( message );
+        case Result::eErrorOutOfPoolMemory: throw OutOfPoolMemoryError( message );
+        case Result::eErrorInvalidExternalHandle: throw InvalidExternalHandleError( message );
+        case Result::eErrorFragmentation: throw FragmentationError( message );
+        case Result::eErrorInvalidOpaqueCaptureAddress: throw InvalidOpaqueCaptureAddressError( message );
+        case Result::eErrorSurfaceLostKHR: throw SurfaceLostKHRError( message );
+        case Result::eErrorNativeWindowInUseKHR: throw NativeWindowInUseKHRError( message );
+        case Result::eErrorOutOfDateKHR: throw OutOfDateKHRError( message );
+        case Result::eErrorIncompatibleDisplayKHR: throw IncompatibleDisplayKHRError( message );
+        case Result::eErrorValidationFailedEXT: throw ValidationFailedEXTError( message );
+        case Result::eErrorInvalidShaderNV: throw InvalidShaderNVError( message );
+        case Result::eErrorInvalidDrmFormatModifierPlaneLayoutEXT:
+          throw InvalidDrmFormatModifierPlaneLayoutEXTError( message );
+        case Result::eErrorNotPermittedEXT: throw NotPermittedEXTError( message );
+#  if defined( VK_USE_PLATFORM_WIN32_KHR )
+        case Result::eErrorFullScreenExclusiveModeLostEXT: throw FullScreenExclusiveModeLostEXTError( message );
+#  endif /*VK_USE_PLATFORM_WIN32_KHR*/
+        default: throw SystemError( make_error_code( result ) );
+      }
+    }
+
+  template <typename T>
+  void ignore( T const & ) VULKAN_HPP_NOEXCEPT
+  {}
+
+  template <typename T>
+  struct ResultValue
+  {
+#ifdef VULKAN_HPP_HAS_NOEXCEPT
+    ResultValue( Result r, T & v ) VULKAN_HPP_NOEXCEPT( VULKAN_HPP_NOEXCEPT( T( v ) ) )
+#else
+    ResultValue( Result r, T & v )
+#endif
+      : result( r ), value( v )
+    {}
+
+#ifdef VULKAN_HPP_HAS_NOEXCEPT
+    ResultValue( Result r, T && v ) VULKAN_HPP_NOEXCEPT( VULKAN_HPP_NOEXCEPT( T( std::move( v ) ) ) )
+#else
+    ResultValue( Result r, T && v )
+#endif
+      : result( r ), value( std::move( v ) )
+    {}
+
+    Result result;
+    T      value;
+
+    operator std::tuple<Result &, T &>() VULKAN_HPP_NOEXCEPT
+    {
+      return std::tuple<Result &, T &>( result, value );
+    }
+
+#if !defined( VULKAN_HPP_DISABLE_IMPLICIT_RESULT_VALUE_CAST )
+    VULKAN_HPP_DEPRECATED(
+      "Implicit-cast operators on vk::ResultValue are deprecated. Explicitly access the value as member of ResultValue." )
+    operator T const &() const & VULKAN_HPP_NOEXCEPT
+    {
+      return value;
+    }
+
+    VULKAN_HPP_DEPRECATED(
+      "Implicit-cast operators on vk::ResultValue are deprecated. Explicitly access the value as member of ResultValue." )
+    operator T &() & VULKAN_HPP_NOEXCEPT
+    {
+      return value;
+    }
+
+    VULKAN_HPP_DEPRECATED(
+      "Implicit-cast operators on vk::ResultValue are deprecated. Explicitly access the value as member of ResultValue." )
+    operator T const &&() const && VULKAN_HPP_NOEXCEPT
+    {
+      return std::move( value );
+    }
+
+    VULKAN_HPP_DEPRECATED(
+      "Implicit-cast operators on vk::ResultValue are deprecated. Explicitly access the value as member of ResultValue." )
+    operator T &&() && VULKAN_HPP_NOEXCEPT
+    {
+      return std::move( value );
+    }
+#endif
+  };
+
+//#if !defined( VULKAN_HPP_NO_SMART_HANDLE )
+//  template <typename Type, typename Dispatch>
+//  struct ResultValue<UniqueHandle<Type, Dispatch>>
+//  {
+//#  ifdef VULKAN_HPP_HAS_NOEXCEPT
+//    ResultValue( Result r, UniqueHandle<Type, Dispatch> && v ) VULKAN_HPP_NOEXCEPT
+//#  else
+//    ResultValue( Result r, UniqueHandle<Type, Dispatch> && v )
+//#  endif
+//      : result( r )
+//      , value( std::move( v ) )
+//    {}
+
+//    std::tuple<Result, UniqueHandle<Type, Dispatch>> asTuple()
+//    {
+//      return std::make_tuple( result, std::move( value ) );
+//    }
+
+//#  if !defined( VULKAN_HPP_DISABLE_IMPLICIT_RESULT_VALUE_CAST )
+//    VULKAN_HPP_DEPRECATED(
+//      "Implicit-cast operators on vk::ResultValue are deprecated. Explicitly access the value as member of ResultValue." )
+//    operator UniqueHandle<Type, Dispatch> &() & VULKAN_HPP_NOEXCEPT
+//    {
+//      return value;
+//    }
+
+//    VULKAN_HPP_DEPRECATED(
+//      "Implicit-cast operators on vk::ResultValue are deprecated. Explicitly access the value as member of ResultValue." )
+//    operator UniqueHandle<Type, Dispatch>() VULKAN_HPP_NOEXCEPT
+//    {
+//      return std::move( value );
+//    }
+//#  endif
+
+//    Result                       result;
+//    UniqueHandle<Type, Dispatch> value;
+//  };
+
+//  template <typename Type, typename Dispatch>
+//  struct ResultValue<std::vector<UniqueHandle<Type, Dispatch>>>
+//  {
+//#  ifdef VULKAN_HPP_HAS_NOEXCEPT
+//    ResultValue( Result r, std::vector<UniqueHandle<Type, Dispatch>> && v ) VULKAN_HPP_NOEXCEPT
+//#  else
+//    ResultValue( Result r, std::vector<UniqueHandle<Type, Dispatch>> && v )
+//#  endif
+//      : result( r )
+//      , value( std::move( v ) )
+//    {}
+
+//    std::tuple<Result, std::vector<UniqueHandle<Type, Dispatch>>> asTuple()
+//    {
+//      return std::make_tuple( result, std::move( value ) );
+//    }
+
+//    Result                                    result;
+//    std::vector<UniqueHandle<Type, Dispatch>> value;
+
+//#  if !defined( VULKAN_HPP_DISABLE_IMPLICIT_RESULT_VALUE_CAST )
+//    VULKAN_HPP_DEPRECATED(
+//      "Implicit-cast operators on vk::ResultValue are deprecated. Explicitly access the value as member of ResultValue." )
+//    operator std::tuple<Result &, std::vector<UniqueHandle<Type, Dispatch>> &>() VULKAN_HPP_NOEXCEPT
+//    {
+//      return std::tuple<Result &, std::vector<UniqueHandle<Type, Dispatch>> &>( result, value );
+//    }
+//#  endif
+//  };
+//#endif
+
+  VULKAN_HPP_INLINE ResultValueType<void>::type createResultValue( Result result, char const * message )
+  {
+#ifdef VULKAN_HPP_NO_EXCEPTIONS
+    ignore( message );
+    VULKAN_HPP_ASSERT_ON_RESULT( result == Result::eSuccess );
+    return result;
+#else
+    if ( result != Result::eSuccess )
+    {
+      throwResultException( result, message );
+    }
+#endif
+  }
+
+  template <typename T>
+  VULKAN_HPP_INLINE typename ResultValueType<T>::type createResultValue( Result result, T & data, char const * message )
+  {
+#ifdef VULKAN_HPP_NO_EXCEPTIONS
+    ignore( message );
+    VULKAN_HPP_ASSERT_ON_RESULT( result == Result::eSuccess );
+    return ResultValue<T>( result, std::move( data ) );
+#else
+    if ( result != Result::eSuccess )
+    {
+      throwResultException( result, message );
+    }
+    return std::move( data );
+#endif
+  }
+
+  VULKAN_HPP_INLINE Result createResultValue( Result                        result,
+                                              char const *                  message,
+                                              std::initializer_list<Result> successCodes )
+  {
+#ifdef VULKAN_HPP_NO_EXCEPTIONS
+    ignore( message );
+    ignore( successCodes );  // just in case VULKAN_HPP_ASSERT_ON_RESULT is empty
+    VULKAN_HPP_ASSERT_ON_RESULT( std::find( successCodes.begin(), successCodes.end(), result ) != successCodes.end() );
+#else
+    if ( std::find( successCodes.begin(), successCodes.end(), result ) == successCodes.end() )
+    {
+      throwResultException( result, message );
+    }
+#endif
+    return result;
+  }
+
+  template <typename T>
+  VULKAN_HPP_INLINE ResultValue<T>
+    createResultValue( Result result, T & data, char const * message, std::initializer_list<Result> successCodes )
+  {
+#ifdef VULKAN_HPP_NO_EXCEPTIONS
+    ignore( message );
+    ignore( successCodes );  // just in case VULKAN_HPP_ASSERT_ON_RESULT is empty
+    VULKAN_HPP_ASSERT_ON_RESULT( std::find( successCodes.begin(), successCodes.end(), result ) != successCodes.end() );
+#else
+    if ( std::find( successCodes.begin(), successCodes.end(), result ) == successCodes.end() )
+    {
+      throwResultException( result, message );
+    }
+#endif
+    return ResultValue<T>( result, std::move( data ) );
+  }
+
+//#ifndef VULKAN_HPP_NO_SMART_HANDLE
+//  template <typename T, typename D>
+//  VULKAN_HPP_INLINE typename ResultValueType<UniqueHandle<T, D>>::type createResultValue(
+//    Result result, T & data, char const * message, typename UniqueHandleTraits<T, D>::deleter const & deleter )
+//  {
+//#  ifdef VULKAN_HPP_NO_EXCEPTIONS
+//    ignore( message );
+//    VULKAN_HPP_ASSERT_ON_RESULT( result == Result::eSuccess );
+//    return ResultValue<UniqueHandle<T, D>>( result, UniqueHandle<T, D>( data, deleter ) );
+//#  else
+//    if ( result != Result::eSuccess )
+//    {
+//      throwResultException( result, message );
+//    }
+//    return UniqueHandle<T, D>( data, deleter );
+//#  endif
+//  }
+
+//  template <typename T, typename D>
+//  VULKAN_HPP_INLINE ResultValue<UniqueHandle<T, D>>
+//                    createResultValue( Result                                             result,
+//                                       T &                                                data,
+//                                       char const *                                       message,
+//                                       std::initializer_list<Result>                      successCodes,
+//                                       typename UniqueHandleTraits<T, D>::deleter const & deleter )
+//  {
+//#  ifdef VULKAN_HPP_NO_EXCEPTIONS
+//    ignore( message );
+//    ignore( successCodes );  // just in case VULKAN_HPP_ASSERT_ON_RESULT is empty
+//    VULKAN_HPP_ASSERT_ON_RESULT( std::find( successCodes.begin(), successCodes.end(), result ) != successCodes.end() );
+//#  else
+//    if ( std::find( successCodes.begin(), successCodes.end(), result ) == successCodes.end() )
+//    {
+//      throwResultException( result, message );
+//    }
+//#  endif
+//    return ResultValue<UniqueHandle<T, D>>( result, UniqueHandle<T, D>( data, deleter ) );
+//  }
+
+//  template <typename T, typename D>
+//  VULKAN_HPP_INLINE typename ResultValueType<std::vector<UniqueHandle<T, D>>>::type
+//    createResultValue( Result result, std::vector<UniqueHandle<T, D>> && data, char const * message )
+//  {
+//#  ifdef VULKAN_HPP_NO_EXCEPTIONS
+//    ignore( message );
+//    VULKAN_HPP_ASSERT_ON_RESULT( result == Result::eSuccess );
+//    return ResultValue<std::vector<UniqueHandle<T, D>>>( result, std::move( data ) );
+//#  else
+//    if ( result != Result::eSuccess )
+//    {
+//      throwResultException( result, message );
+//    }
+//    return std::move( data );
+//#  endif
+//  }
+
+//  template <typename T, typename D>
+//  VULKAN_HPP_INLINE ResultValue<std::vector<UniqueHandle<T, D>>>
+//                    createResultValue( Result                             result,
+//                                       std::vector<UniqueHandle<T, D>> && data,
+//                                       char const *                       message,
+//                                       std::initializer_list<Result>      successCodes )
+//  {
+//#  ifdef VULKAN_HPP_NO_EXCEPTIONS
+//    ignore( message );
+//    ignore( successCodes );  // just in case VULKAN_HPP_ASSERT_ON_RESULT is empty
+//    VULKAN_HPP_ASSERT_ON_RESULT( std::find( successCodes.begin(), successCodes.end(), result ) != successCodes.end() );
+//#  else
+//    if ( std::find( successCodes.begin(), successCodes.end(), result ) == successCodes.end() )
+//    {
+//      throwResultException( result, message );
+//    }
+//#  endif
+//    return ResultValue<std::vector<UniqueHandle<T, D>>>( result, std::move( data ) );
+//  }
+//#endif
+)"};
+
 static constexpr char const *RES_ARRAY_PROXY_HPP{R"(
 template <typename T>
 class ArrayProxy
@@ -857,6 +1189,7 @@ struct ClassMemberData {
     std::string name;     // identifier
     std::string type;     // return type
     VariableArray params; // list of arguments
+    std::vector<std::string> successCodes;
 
     // creates function arguments signature
     std::string createProtoArguments(const std::string &className,
@@ -906,6 +1239,7 @@ struct ClassData {
     std::vector<ClassMemberData> members;
     ClassMemberData createMember;
     ClassMemberData getAddrMember;
+    std::string lsrc;
 };
 
 static std::unordered_map<std::string, ClassData> classMetaData;
@@ -1054,8 +1388,7 @@ static std::string enumConvertCamel(const std::string &enumName,
     for (size_t i = 0; i < out.size() - 1; ++i) {
         if (std::isdigit(out[i + 1])) {
             out[i] = std::toupper(out[i]);
-        }
-        else if (std::isdigit(out[i]) && out[i + 1] == 'd') {
+        } else if (std::isdigit(out[i]) && out[i + 1] == 'd') {
             out[i + 1] = 'D';
         }
     }
@@ -1133,12 +1466,295 @@ static void generateFile(XMLElement *root, std::string f2path) {
     file.write(RES_BASE_TYPES);
     file.write(RES_OTHER_HPP);
     file.write(RES_FLAGS_HPP);
+    file.write(RES_RESULT_VALUE_STRUCT_HPP);
     file.write(RES_LIB_LOADER);
 
     parseXML(root);
 
     file.write(RES_ARRAY_PROXY_HPP);
     file.write(RES_ERROR_HPP);
+
+    file.write(R"(
+  class OutOfHostMemoryError : public SystemError
+  {
+  public:
+    OutOfHostMemoryError( std::string const & message )
+      : SystemError( make_error_code( Result::eErrorOutOfHostMemory ), message )
+    {}
+    OutOfHostMemoryError( char const * message )
+      : SystemError( make_error_code( Result::eErrorOutOfHostMemory ), message )
+    {}
+  };
+
+  class OutOfDeviceMemoryError : public SystemError
+  {
+  public:
+    OutOfDeviceMemoryError( std::string const & message )
+      : SystemError( make_error_code( Result::eErrorOutOfDeviceMemory ), message )
+    {}
+    OutOfDeviceMemoryError( char const * message )
+      : SystemError( make_error_code( Result::eErrorOutOfDeviceMemory ), message )
+    {}
+  };
+
+  class InitializationFailedError : public SystemError
+  {
+  public:
+    InitializationFailedError( std::string const & message )
+      : SystemError( make_error_code( Result::eErrorInitializationFailed ), message )
+    {}
+    InitializationFailedError( char const * message )
+      : SystemError( make_error_code( Result::eErrorInitializationFailed ), message )
+    {}
+  };
+
+  class DeviceLostError : public SystemError
+  {
+  public:
+    DeviceLostError( std::string const & message ) : SystemError( make_error_code( Result::eErrorDeviceLost ), message )
+    {}
+    DeviceLostError( char const * message ) : SystemError( make_error_code( Result::eErrorDeviceLost ), message ) {}
+  };
+
+  class MemoryMapFailedError : public SystemError
+  {
+  public:
+    MemoryMapFailedError( std::string const & message )
+      : SystemError( make_error_code( Result::eErrorMemoryMapFailed ), message )
+    {}
+    MemoryMapFailedError( char const * message )
+      : SystemError( make_error_code( Result::eErrorMemoryMapFailed ), message )
+    {}
+  };
+
+  class LayerNotPresentError : public SystemError
+  {
+  public:
+    LayerNotPresentError( std::string const & message )
+      : SystemError( make_error_code( Result::eErrorLayerNotPresent ), message )
+    {}
+    LayerNotPresentError( char const * message )
+      : SystemError( make_error_code( Result::eErrorLayerNotPresent ), message )
+    {}
+  };
+
+  class ExtensionNotPresentError : public SystemError
+  {
+  public:
+    ExtensionNotPresentError( std::string const & message )
+      : SystemError( make_error_code( Result::eErrorExtensionNotPresent ), message )
+    {}
+    ExtensionNotPresentError( char const * message )
+      : SystemError( make_error_code( Result::eErrorExtensionNotPresent ), message )
+    {}
+  };
+
+  class FeatureNotPresentError : public SystemError
+  {
+  public:
+    FeatureNotPresentError( std::string const & message )
+      : SystemError( make_error_code( Result::eErrorFeatureNotPresent ), message )
+    {}
+    FeatureNotPresentError( char const * message )
+      : SystemError( make_error_code( Result::eErrorFeatureNotPresent ), message )
+    {}
+  };
+
+  class IncompatibleDriverError : public SystemError
+  {
+  public:
+    IncompatibleDriverError( std::string const & message )
+      : SystemError( make_error_code( Result::eErrorIncompatibleDriver ), message )
+    {}
+    IncompatibleDriverError( char const * message )
+      : SystemError( make_error_code( Result::eErrorIncompatibleDriver ), message )
+    {}
+  };
+
+  class TooManyObjectsError : public SystemError
+  {
+  public:
+    TooManyObjectsError( std::string const & message )
+      : SystemError( make_error_code( Result::eErrorTooManyObjects ), message )
+    {}
+    TooManyObjectsError( char const * message )
+      : SystemError( make_error_code( Result::eErrorTooManyObjects ), message )
+    {}
+  };
+
+  class FormatNotSupportedError : public SystemError
+  {
+  public:
+    FormatNotSupportedError( std::string const & message )
+      : SystemError( make_error_code( Result::eErrorFormatNotSupported ), message )
+    {}
+    FormatNotSupportedError( char const * message )
+      : SystemError( make_error_code( Result::eErrorFormatNotSupported ), message )
+    {}
+  };
+
+  class FragmentedPoolError : public SystemError
+  {
+  public:
+    FragmentedPoolError( std::string const & message )
+      : SystemError( make_error_code( Result::eErrorFragmentedPool ), message )
+    {}
+    FragmentedPoolError( char const * message )
+      : SystemError( make_error_code( Result::eErrorFragmentedPool ), message )
+    {}
+  };
+
+  class UnknownError : public SystemError
+  {
+  public:
+    UnknownError( std::string const & message ) : SystemError( make_error_code( Result::eErrorUnknown ), message ) {}
+    UnknownError( char const * message ) : SystemError( make_error_code( Result::eErrorUnknown ), message ) {}
+  };
+
+  class OutOfPoolMemoryError : public SystemError
+  {
+  public:
+    OutOfPoolMemoryError( std::string const & message )
+      : SystemError( make_error_code( Result::eErrorOutOfPoolMemory ), message )
+    {}
+    OutOfPoolMemoryError( char const * message )
+      : SystemError( make_error_code( Result::eErrorOutOfPoolMemory ), message )
+    {}
+  };
+
+  class InvalidExternalHandleError : public SystemError
+  {
+  public:
+    InvalidExternalHandleError( std::string const & message )
+      : SystemError( make_error_code( Result::eErrorInvalidExternalHandle ), message )
+    {}
+    InvalidExternalHandleError( char const * message )
+      : SystemError( make_error_code( Result::eErrorInvalidExternalHandle ), message )
+    {}
+  };
+
+  class FragmentationError : public SystemError
+  {
+  public:
+    FragmentationError( std::string const & message )
+      : SystemError( make_error_code( Result::eErrorFragmentation ), message )
+    {}
+    FragmentationError( char const * message ) : SystemError( make_error_code( Result::eErrorFragmentation ), message )
+    {}
+  };
+
+  class InvalidOpaqueCaptureAddressError : public SystemError
+  {
+  public:
+    InvalidOpaqueCaptureAddressError( std::string const & message )
+      : SystemError( make_error_code( Result::eErrorInvalidOpaqueCaptureAddress ), message )
+    {}
+    InvalidOpaqueCaptureAddressError( char const * message )
+      : SystemError( make_error_code( Result::eErrorInvalidOpaqueCaptureAddress ), message )
+    {}
+  };
+
+  class SurfaceLostKHRError : public SystemError
+  {
+  public:
+    SurfaceLostKHRError( std::string const & message )
+      : SystemError( make_error_code( Result::eErrorSurfaceLostKHR ), message )
+    {}
+    SurfaceLostKHRError( char const * message )
+      : SystemError( make_error_code( Result::eErrorSurfaceLostKHR ), message )
+    {}
+  };
+
+  class NativeWindowInUseKHRError : public SystemError
+  {
+  public:
+    NativeWindowInUseKHRError( std::string const & message )
+      : SystemError( make_error_code( Result::eErrorNativeWindowInUseKHR ), message )
+    {}
+    NativeWindowInUseKHRError( char const * message )
+      : SystemError( make_error_code( Result::eErrorNativeWindowInUseKHR ), message )
+    {}
+  };
+
+  class OutOfDateKHRError : public SystemError
+  {
+  public:
+    OutOfDateKHRError( std::string const & message )
+      : SystemError( make_error_code( Result::eErrorOutOfDateKHR ), message )
+    {}
+    OutOfDateKHRError( char const * message ) : SystemError( make_error_code( Result::eErrorOutOfDateKHR ), message ) {}
+  };
+
+  class IncompatibleDisplayKHRError : public SystemError
+  {
+  public:
+    IncompatibleDisplayKHRError( std::string const & message )
+      : SystemError( make_error_code( Result::eErrorIncompatibleDisplayKHR ), message )
+    {}
+    IncompatibleDisplayKHRError( char const * message )
+      : SystemError( make_error_code( Result::eErrorIncompatibleDisplayKHR ), message )
+    {}
+  };
+
+  class ValidationFailedEXTError : public SystemError
+  {
+  public:
+    ValidationFailedEXTError( std::string const & message )
+      : SystemError( make_error_code( Result::eErrorValidationFailedEXT ), message )
+    {}
+    ValidationFailedEXTError( char const * message )
+      : SystemError( make_error_code( Result::eErrorValidationFailedEXT ), message )
+    {}
+  };
+
+  class InvalidShaderNVError : public SystemError
+  {
+  public:
+    InvalidShaderNVError( std::string const & message )
+      : SystemError( make_error_code( Result::eErrorInvalidShaderNV ), message )
+    {}
+    InvalidShaderNVError( char const * message )
+      : SystemError( make_error_code( Result::eErrorInvalidShaderNV ), message )
+    {}
+  };
+
+  class InvalidDrmFormatModifierPlaneLayoutEXTError : public SystemError
+  {
+  public:
+    InvalidDrmFormatModifierPlaneLayoutEXTError( std::string const & message )
+      : SystemError( make_error_code( Result::eErrorInvalidDrmFormatModifierPlaneLayoutEXT ), message )
+    {}
+    InvalidDrmFormatModifierPlaneLayoutEXTError( char const * message )
+      : SystemError( make_error_code( Result::eErrorInvalidDrmFormatModifierPlaneLayoutEXT ), message )
+    {}
+  };
+
+  class NotPermittedEXTError : public SystemError
+  {
+  public:
+    NotPermittedEXTError( std::string const & message )
+      : SystemError( make_error_code( Result::eErrorNotPermittedEXT ), message )
+    {}
+    NotPermittedEXTError( char const * message )
+      : SystemError( make_error_code( Result::eErrorNotPermittedEXT ), message )
+    {}
+  };
+
+#  if defined( VK_USE_PLATFORM_WIN32_KHR )
+  class FullScreenExclusiveModeLostEXTError : public SystemError
+  {
+  public:
+    FullScreenExclusiveModeLostEXTError( std::string const & message )
+      : SystemError( make_error_code( Result::eErrorFullScreenExclusiveModeLostEXT ), message )
+    {}
+    FullScreenExclusiveModeLostEXTError( char const * message )
+      : SystemError( make_error_code( Result::eErrorFullScreenExclusiveModeLostEXT ), message )
+    {}
+  };
+#  endif /*VK_USE_PLATFORM_WIN32_KHR*/
+    )");
+
+    file.write(RES_RESULT_VALUE_HPP);
 
     file.popIndent();
 
@@ -1287,8 +1903,8 @@ static void generateStructCode(std::string name, const std::string &structType,
     file.writeLine("operator " + name +
                    " const&() const { return *std::bit_cast<const " + name +
                    "*>(this); }");
-    file.writeLine("operator " + name + " &() { return *std::bit_cast<" +
-                   name + "*>(this); }");
+    file.writeLine("operator " + name + " &() { return *std::bit_cast<" + name +
+                   "*>(this); }");
     file.popIndent();
     file.writeLine("};");
 
@@ -1296,13 +1912,12 @@ static void generateStructCode(std::string name, const std::string &structType,
                    "*() { return this; }");
 #ifdef VK_DEPENDENCY
     file.writeLine("operator vk::" + name +
-                   "&() { return *std::bit_cast<vk::" + name +
-                   "*>(this); }");
+                   "&() { return *std::bit_cast<vk::" + name + "*>(this); }");
 #endif
 
     file.writeLine("operator Vk" + name +
-                   " const&() const { return *std::bit_cast<const Vk" +
-                   name + "*>(this); }");
+                   " const&() const { return *std::bit_cast<const Vk" + name +
+                   "*>(this); }");
     file.writeLine("operator Vk" + name + " &() { return *std::bit_cast<Vk" +
                    name + "*>(this); }");
 
@@ -1327,13 +1942,12 @@ static void generateUnionCode(std::string name,
                    "*() { return this; }");
 #ifdef VK_DEPENDENCY
     file.writeLine("operator vk::" + name +
-                   "&() { return *std::bit_cast<vk::" + name +
-                   "*>(this); }");
+                   "&() { return *std::bit_cast<vk::" + name + "*>(this); }");
 #endif
 
     file.writeLine("operator Vk" + name +
-                   " const&() const { return *std::bit_cast<const Vk" +
-                   name + "*>(this); }");
+                   " const&() const { return *std::bit_cast<const Vk" + name +
+                   "*>(this); }");
     file.writeLine("operator Vk" + name + " &() { return *std::bit_cast<Vk" +
                    name + "*>(this); }");
 
@@ -1768,6 +2382,31 @@ void generateEnumFlags() {
                     file.writeLine("};");
                     file.popIndent();
                     file.writeLine("};");
+
+                    file.writeLine("VULKAN_HPP_INLINE VULKAN_HPP_CONSTEXPR " +
+                                   l + " operator|(" + r + " bit0,");
+                    file.writeLine("    " + r + " bit1) VULKAN_HPP_NOEXCEPT {");
+                    file.writeLine("    return " + l + "(bit0) | bit1;");
+                    file.writeLine("}");
+
+                    file.writeLine("VULKAN_HPP_INLINE VULKAN_HPP_CONSTEXPR " +
+                                   l + " operator&( " + r + " bit0,");
+                    file.writeLine("   " + r + " bit1) VULKAN_HPP_NOEXCEPT {");
+                    file.writeLine("return " + l + "(bit0) & bit1;");
+                    file.writeLine("}");
+
+                    file.writeLine("VULKAN_HPP_INLINE VULKAN_HPP_CONSTEXPR " +
+                                   l + " operator^( " + r + " bit0,");
+                    file.writeLine("    " + r + " bit1) VULKAN_HPP_NOEXCEPT {");
+                    file.writeLine("return " + l + "(bit0) ^ bit1;");
+                    file.writeLine("}");
+
+                    file.writeLine("VULKAN_HPP_INLINE VULKAN_HPP_CONSTEXPR " +
+                                   l + " operator~(" + r +
+                                   " bits) "
+                                   "VULKAN_HPP_NOEXCEPT {");
+                    file.writeLine("return ~(" + l + "(bits) );");
+                    file.writeLine("}");
                 }
             }
         });
@@ -1986,6 +2625,23 @@ void parseTypes(XMLNode *node) {
 
 ClassMemberData parseClassMember(XMLElement *command) {
     ClassMemberData m;
+
+    const char *successcodes = command->Attribute("successcodes");
+    if (successcodes) {
+        std::string delim = ",";
+        std::string scodes = std::string(successcodes);
+
+        size_t start = 0U;
+        size_t end = scodes.find(delim);
+        while (end != std::string::npos) {
+            std::string code = scodes.substr(start, end - start);
+            m.successCodes.push_back(code);
+
+            start = end + delim.length();
+            end = scodes.find(delim, start);
+        }
+    }
+
     // iterate contents of <command>
     std::string dbg;
     for (XMLElement &child : Elements(command)) {
@@ -2260,6 +2916,38 @@ class MemberResolver {
         }
     }
 
+    std::string generateReturn(const std::string &identifier) {
+        if (!returnVar.isInvalid()) {
+            std::string out =
+                "return createResultValue<" + returnType + ">(\n" +
+                "               " + returnVar.identifier() + ",\n" +
+                "               " + identifier + ",\n" + "               " +
+                "\"" + NAMESPACE + "::" + ctx.className + "::" + ctx.protoName +
+                "\"";
+            if (ctx.mdata.successCodes.size() > 1) {
+                out += ",\n               {\n";
+                for (const auto &s : ctx.mdata.successCodes) {
+                    out += "                 Result::" +
+                           enumConvertCamel("Result", s);
+                    out += ",\n";
+                }
+                strStripSuffix(out, ",\n");
+                out += " }";
+            }
+            out += "\n               );";
+            return out;
+        }
+        return "return " + identifier + ";";
+    }
+
+    std::string generateReturnType() {
+        if (ctx.pfnReturn == PFNReturnCategory::VK_RESULT &&
+            returnType != "Result") {
+            return "ResultValueType<" + returnType + ">::type";
+        }
+        return returnType;
+    }
+
   public:
     std::string dbgtag;
 
@@ -2287,8 +2975,8 @@ class MemberResolver {
         }
 
         std::string protoArgs = ctx.mdata.createProtoArguments(ctx.className);
-        std::string proto = returnType + " " + ctx.protoName + "(" + protoArgs +
-                            ");" + " // test [" + dbgtag + "]";
+        std::string proto = generateReturnType() + " " + ctx.protoName + "(" +
+                            protoArgs + ");" + " // [" + dbgtag + "]";
 
         file.writeLine(proto);
     }
@@ -2309,9 +2997,9 @@ class MemberResolver {
 
             std::string protoArgs =
                 ctx.mdata.createProtoArguments(ctx.className);
-            std::string proto = "inline " + returnType + " " + ctx.className +
-                                "::" + ctx.protoName + "(" + protoArgs + ") {" +
-                                " // [" + dbgtag + "]";
+            std::string proto = "inline " + generateReturnType() + " " +
+                                ctx.className + "::" + ctx.protoName + "(" +
+                                protoArgs + ") {" + " // [" + dbgtag + "]";
 
             file2.writeLine(proto);
             file2.pushIndent();
@@ -2352,7 +3040,7 @@ class MemberResolverStruct : public MemberResolver {
 
         file2.writeLine(generatePFNcall());
 
-        file2.writeLine("return " + lastVar->identifier() + ";");
+        file2.writeLine(generateReturn(lastVar->identifier()));
     }
 };
 
@@ -2423,7 +3111,7 @@ class MemberResolverGet : public MemberResolver {
             file2.popIndent();
             file2.writeLine("}");
 
-            file2.writeLine("return " + last->identifier() + ";");
+            file2.writeLine(generateReturn(last->identifier()));
         } else {
             std::string call = generatePFNcall();
 
@@ -2434,7 +3122,7 @@ class MemberResolverGet : public MemberResolver {
             file2.writeLine("//VULKAN_HPP_ASSERT( " + lenVar->identifier() +
                             " <= " + last->identifier() + ".size() );");
 
-            file2.writeLine("return " + last->identifier() + ";");
+            file2.writeLine(generateReturn(last->identifier()));
         }
     }
 
@@ -2482,7 +3170,7 @@ class MemberResolverGet : public MemberResolver {
 
             file2.writeLine(generatePFNcall());
 
-            file2.writeLine("return " + last->identifier() + ";");
+            file2.writeLine(generateReturn(last->identifier()));
         }
     }
 };
@@ -2521,7 +3209,7 @@ class MemberResolverCreateArray : public MemberResolver {
 
         file2.writeLine(generatePFNcall());
 
-        file2.writeLine("return " + lastVar->identifier() + ";");
+        file2.writeLine(generateReturn(lastVar->identifier()));
     }
 };
 
@@ -2546,7 +3234,7 @@ class MemberResolverAllocateArray : public MemberResolver {
 
         file2.writeLine(generatePFNcall());
 
-        file2.writeLine("return " + lastVar->identifier() + ";");
+        file2.writeLine(generateReturn(lastVar->identifier()));
     }
 };
 
@@ -2577,7 +3265,7 @@ class MemberResolverReturnProxy : public MemberResolver {
 
         file2.writeLine(generatePFNcall()); // TODO missing &
 
-        file2.writeLine("return " + last->identifier() + ";");
+        file2.writeLine(generateReturn(last->identifier()));
     }
 };
 
@@ -2613,7 +3301,8 @@ class MemberResolverReturnVectorOfProxy : public MemberResolver {
                         " / sizeof(T)"
                         " );");
         file2.writeLine(generatePFNcall());
-        file2.writeLine("return " + last->identifier() + ";");
+
+        file2.writeLine(generateReturn(last->identifier()));
     }
 };
 
@@ -2676,7 +3365,7 @@ class MemberResolverReturnVectorData : public MemberResolver {
             file2.popIndent();
             file2.writeLine("}");
 
-            file2.writeLine("return " + last->identifier() + ";");
+            file2.writeLine(generateReturn(last->identifier()));
         }
     }
 };
@@ -2751,9 +3440,9 @@ class MemberResolverEnumerate : public MemberResolver {
             if (returnsObject) {
                 file2.writeLine(objvector + " out{" + last->identifier() +
                                 ".begin(), " + last->identifier() + ".end()};");
-                file2.writeLine("return out;");
+                file2.writeLine(generateReturn("out"));
             } else {
-                file2.writeLine("return " + last->identifier() + ";");
+                file2.writeLine(generateReturn(last->identifier()));
             }
         }
     }
@@ -2938,14 +3627,13 @@ static void generateClassMembers(const std::string &className,
             "inline T getProcAddr(const std::string_view &name) const");
         file.writeLine("{");
         file.pushIndent();
-        file.writeLine("return std::bit_cast<T>(m_" +
-                       data.getAddrMember.name + "(" + handle +
-                       ", name.data()));");
+        file.writeLine("return std::bit_cast<T>(m_" + data.getAddrMember.name +
+                       "(" + handle + ", name.data()));");
         file.popIndent();
         file.writeLine("}");
     }
 
-    std::string initParams = "const LibraryLoader &lib";
+    std::string initParams = "const " + data.lsrc + " &load";
     std::string parentVar;
     if (!data.parent.empty()) {
         parentVar = data.parent;
@@ -2959,19 +3647,19 @@ static void generateClassMembers(const std::string &className,
     file2.pushIndent();
     if (!data.getAddrMember.name.empty()) {
         if (data.getAddrSource == "Instance") {
-            file2.writeLine("m_" + data.getAddrMember.name + " = lib." +
+            file2.writeLine("m_" + data.getAddrMember.name + " = load." +
                             memberProcAddr + ";");
         } else {
             file2.writeLine("m_" + data.getAddrMember.name +
-                            " = lib.getProcAddr<PFN_" +
+                            " = load.getProcAddr<PFN_" +
                             data.getAddrMember.name + ">(\"" +
                             data.getAddrMember.name + "\");");
         }
     }
     if (!data.createMember.name.empty()) {
         std::string s = data.createMember.name;
-        file2.writeLine("PFN_" + s + " m_" + s + " = lib.getProcAddr<PFN_" + s +
-                        ">(\"" + s + "\");");
+        file2.writeLine("PFN_" + s + " m_" + s + " = load.getProcAddr<PFN_" +
+                        s + ">(\"" + s + "\");");
 
         MemberContext ctx{
             .className = className,
@@ -3109,8 +3797,6 @@ static void generateClass(const std::string &name) {
 void parseCommands(XMLNode *node) {
     std::cout << "Parsing commands" << ENDL;
 
-    // static constexpr std::array<std::string_view, 3> deviceObjects =
-    // {"VkDevice", "VkQueue", "VkCommandBuffer"};
     static const std::vector<std::string> deviceObjects = {
         "VkDevice", "VkQueue", "VkCommandBuffer"};
 
@@ -3120,12 +3806,13 @@ void parseCommands(XMLNode *node) {
     std::vector<ClassMemberData> elementsPhysicalDevice;
     std::vector<ClassMemberData> elementsOther;
 
-    classMetaData["Instance"] =
-        ClassData{.getAddrSource = "Instance", .parent = ""};
-    classMetaData["PhysicalDevice"] =
-        ClassData{.getAddrSource = "Instance", .parent = "Instance"};
-    classMetaData["Device"] =
-        ClassData{.getAddrSource = "Device", .parent = "PhysicalDevice"};
+    classMetaData["Instance"] = ClassData{
+        .getAddrSource = "Instance", .parent = "", .lsrc = "LibraryLoader"};
+    classMetaData["PhysicalDevice"] = ClassData{
+        .getAddrSource = "Instance", .parent = "Instance", .lsrc = "Instance"};
+    classMetaData["Device"] = ClassData{.getAddrSource = "Device",
+                                        .parent = "PhysicalDevice",
+                                        .lsrc = "Instance"};
 
     int c = 0;
     // iterate contents of <commands>, filter only <command> children
