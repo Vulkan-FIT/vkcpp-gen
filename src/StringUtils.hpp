@@ -8,11 +8,10 @@ static bool caseInsensitivePredicate(char a, char b) {
 }
 
 // case insensitve search for substring
-static bool strContains(const std::string &string,
-                        const std::string &substring) {
-    auto it = std::search(string.begin(), string.end(), substring.begin(),
-                          substring.end(), caseInsensitivePredicate);
-    return it != string.end();
+static bool strContains(const std::string &str, const std::string &substr) {
+    auto it = std::search(str.begin(), str.end(), substr.begin(), substr.end(),
+                          caseInsensitivePredicate);
+    return it != str.end();
 }
 
 static void strStripPrefix(std::string &str, const std::string_view &prefix) {

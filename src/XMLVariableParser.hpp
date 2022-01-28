@@ -394,7 +394,7 @@ class XMLVariableParser : public VariableData, protected tinyxml2::XMLVisitor {
 
     State state{PREFIX}; // FSM state
 
-  public:
+public:
     XMLVariableParser() = default;
 
     XMLVariableParser(tinyxml2::XMLElement *element) {

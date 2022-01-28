@@ -37,6 +37,7 @@ SOFTWARE.
 #include "XMLUtils.hpp"
 #include "XMLVariableParser.hpp"
 #include "tinyxml2.h"
+
 using namespace tinyxml2;
 
 static constexpr char const *HELP_TEXT{
@@ -1109,7 +1110,7 @@ template <typename T>
 class ArrayProxy;
 )"};
 
-struct EnumExtendsValue {
+struct EnumValue {
     std::string_view name;
     const char *bitpos;
     const char *protect;
@@ -1117,9 +1118,9 @@ struct EnumExtendsValue {
     bool supported;
 };
 
-struct EnumDeclaration {
-    std::string attribRequires;
-    std::vector<EnumExtendsValue> extendValues;
+struct EnumDeclaration {    
+    std::vector<EnumValue> extendValues;
+    std::vector<std::string> aliases;
 };
 
 static const std::string NAMESPACE{"vk20"};
@@ -1134,26 +1135,27 @@ static std::unordered_set<std::string> tags; // list of tags from <tags>
 
 static std::map<std::string, std::string_view>
     platforms; // maps platform name to protect (#if defined PROTECT)
-static std::map<std::string, std::pair<std::string_view, bool>>
+
+using ExtensionData = std::pair<std::string_view, bool>;
+static std::map<std::string, ExtensionData>
     extensions; // maps extension to protect as reference
 
-struct VkStructData {
+struct StructData {
     enum VkStructType { VK_STRUCT, VK_UNION } type;
     XMLNode *node;
     std::vector<std::string> aliases;
 };
 
-static std::unordered_map<std::string, VkStructData> vkStructs;
+static std::unordered_map<std::string, StructData> structs;
 
-struct VkFlagData {
+struct FlagData {
     std::string name;
     bool hasRequire;
     bool alias;
 };
 
-static std::unordered_map<std::string, VkFlagData> vkFlags;
+static std::unordered_map<std::string, FlagData> flags;
 static std::unordered_map<std::string, EnumDeclaration> enums;
-static std::unordered_map<std::string, std::vector<std::string>> enumsAlias;
 static std::unordered_map<std::string,
                           std::vector<std::pair<std::string, const char *>>>
     enumMembers;
@@ -1164,19 +1166,26 @@ static void parseTypeDeclarations(XMLNode *);
 static void parseFeature(XMLNode *);
 static void parseExtensions(XMLNode *);
 static void parseTags(XMLNode *);
-static void parseEnums(XMLNode *);
-static void parseTypes(XMLNode *);
+static void genEnums(XMLNode *);
 static void parseCommands(XMLNode *);
 
-static void generateEnumFlags();
+static void genFlags();
+static void genTypes();
+
+using GenFunction = std::function<void(XMLNode *)>;
+using OrderPair = std::pair<std::string, GenFunction>;
 
 // specifies order of parsing vk.xml registry,
-static const std::vector<std::pair<std::string, std::function<void(XMLNode *)>>>
-    rootParseOrder{
-        {"platforms", parsePlatforms}, {"types", parseTypeDeclarations},
-        {"feature", parseFeature},     {"extensions", parseExtensions},
-        {"tags", parseTags},           {"enums", parseEnums},
-        {"commands", parseCommands},   {"types", parseTypes}};
+static const std::vector<OrderPair>
+    rootOrder{
+        {"platforms", parsePlatforms},
+        {"tags", parseTags},
+        {"types", parseTypeDeclarations},
+        {"feature", parseFeature},
+        {"extensions", parseExtensions},
+        {"commands", parseCommands},
+        {"enums", genEnums}
+    };
 
 static VariableData invalidVar(VariableData::TYPE_INVALID);
 
@@ -1185,7 +1194,7 @@ static std::string stripVkPrefix(const std::string &str);
 using VariableArray = std::vector<std::shared_ptr<VariableData>>;
 
 // holds information about class member (function)
-struct ClassMemberData {
+struct ClassCommandData {
     std::string name;     // identifier
     std::string type;     // return type
     VariableArray params; // list of arguments
@@ -1236,13 +1245,13 @@ struct ClassMemberData {
 struct ClassData {
     std::string getAddrSource;
     std::string parent;
-    std::vector<ClassMemberData> members;
-    ClassMemberData createMember;
-    ClassMemberData getAddrMember;
-    std::string lsrc;
+    std::vector<ClassCommandData> members;
+    ClassCommandData createMember;
+    ClassCommandData getAddrMember;
+    std::string getAddrObject;
 };
 
-static std::unordered_map<std::string, ClassData> classMetaData;
+static std::unordered_map<std::string, ClassData> classData;
 
 template <template <class...> class TContainer, class T, class A>
 static bool isInContainter(const TContainer<T, A> &array, T entry) {
@@ -1251,7 +1260,7 @@ static bool isInContainter(const TContainer<T, A> &array, T entry) {
 }
 
 static bool isStructOrUnion(const std::string &name) {
-    return vkStructs.find(name) != vkStructs.end();
+    return structs.find(name) != structs.end();
 }
 
 // tries to match str in extensions, if found returns pointer to protect,
@@ -1265,13 +1274,14 @@ findExtensionProtect(const std::string &str) {
     return nullptr;
 }
 
+static bool expDisableExtensions = true;
+
 // #if defined encapsulation
-static void withExtensionProtect(const std::string &name,
+static void genOptionalExtension(const std::string &name,
                                  std::function<void()> function) {
-    const std::pair<std::string_view, bool> *protect =
+    const ExtensionData *protect =
         findExtensionProtect(name);
-    if (protect && !protect->second) {
-        // vk does not support
+    if (protect && (!protect->second || expDisableExtensions)) {
         return;
     }
     if (protect) {
@@ -1289,8 +1299,7 @@ static void withExtensionProtect2(const std::string &name,
                                   std::function<void()> function) {
     const std::pair<std::string_view, bool> *protect =
         findExtensionProtect(name);
-    if (protect && !protect->second) {
-        // vk does not support
+    if (protect && (!protect->second || expDisableExtensions)) {
         return;
     }
     if (protect) {
@@ -1305,6 +1314,9 @@ static void withExtensionProtect2(const std::string &name,
 }
 
 static void withProtect(const char *protect, std::function<void()> function) {
+    if (expDisableExtensions) {
+        return;
+    }
     if (protect) {
         file.get() << "#if defined(" << protect << ")" << ENDL;
     }
@@ -1414,33 +1426,21 @@ static void parseXML(XMLElement *root) {
         rootTable.push_back(std::make_pair(node.Value(), &node));
     }
 
+    std::string prev;
     // call each function in rootParseOrder with corresponding XMLNode
-    for (auto &key : rootParseOrder) {
+    for (auto &key : rootOrder) {
         for (auto &n : rootTable) {
             // find tag id
 
             if (n.first == key.first) {
-                if (key.first == "commands") {
-                    generateEnumFlags();
-                }
                 key.second(n.second); // call function(node*)
+                prev = key.first;
             }
         }
     }
-}
 
-static void generateReadFromFile(const std::string &path) {
-    std::ifstream inputFile;
-    inputFile.open(path);
-    if (!inputFile.is_open()) {
-        throw std::runtime_error("Can't open file: " + path);
-    }
-
-    for (std::string line; getline(inputFile, line);) {
-        file.writeLine(line);
-    }
-
-    inputFile.close();
+    genFlags();
+    genTypes();
 }
 
 static void generateFile(XMLElement *root, std::string f2path) {
@@ -1958,14 +1958,33 @@ static void generateUnionCode(std::string name,
 static void generateStruct(std::string name, const std::string &structType,
                            const std::string &structTypeValue,
                            const std::vector<VariableData> &members,
+                           const std::vector<std::string> &typeList,
                            bool structOrUnion) {
-    withExtensionProtect(name, [&] {
+    auto it = structs.find(name);
+
+//    for (const auto &t : typeList) {
+//        if (isStructOrUnion("Vk" + t)) {
+//            const auto &it = generatedStructs.find(t);
+//            if (it == generatedStructs.end()) {
+
+//            }
+//        }
+//    }
+
+    genOptionalExtension(name, [&] {
         strStripVk(name);
 
         if (structOrUnion) {
             generateStructCode(name, structType, structTypeValue, members);
         } else {
             generateUnionCode(name, members);
+        }
+
+        if (it != structs.end()) {
+            for (const auto &a : it->second.aliases) {
+                file.writeLine("using " + strStripVk(a) + " = " + name + ";");
+                generatedStructs.emplace(strStripVk(a));
+            }
         }
 
         generatedStructs.emplace(name);
@@ -1984,7 +2003,8 @@ void parseStruct(XMLElement *node, std::string name, bool structOrUnion) {
     std::vector<std::string> typeList;
     for (const auto &m : members) {
         std::string t = m.type();
-        if (!m.isPointer() && isStructOrUnion("Vk" + t)) {
+        if (isStructOrUnion("Vk" + t)) {
+            //!m.isPointer()
             typeList.push_back(t);
         }
     }
@@ -2009,19 +2029,20 @@ void parseStruct(XMLElement *node, std::string name, bool structOrUnion) {
         for (const auto &t : typeList) {
             d.typeList.push_back(t);
         }
+        std::cout << d.name << std::endl;
         genStructStack.push_back(d);
         hasAllDeps(typeList);
         return;
     }
 
-    generateStruct(name, structType, structTypeValue, members, structOrUnion);
+    generateStruct(name, structType, structTypeValue, members, typeList, structOrUnion);
 
     for (auto it = genStructStack.begin(); it != genStructStack.end(); ++it) {
         if (hasAllDeps(it->typeList)) {
             std::string structType{}, structTypeValue{};
             std::vector<VariableData> members =
                 parseStructMembers(it->node, structType, structTypeValue);
-            generateStruct(it->name, structType, structTypeValue, members,
+            generateStruct(it->name, structType, structTypeValue, members, it->typeList,
                            it->structOrUnion);
             it = genStructStack.erase(it);
             --it;
@@ -2052,7 +2073,7 @@ static void parseEnumExtend(XMLElement &node, const char *protect,
     if (extends && name) {
         auto it = enums.find(extends);
         if (it != enums.end()) {
-            EnumExtendsValue data;
+            EnumValue data;
             data.name = name;
             data.bitpos = bitpos;
             data.protect = protect;
@@ -2167,14 +2188,14 @@ void generateEnum(std::string name, XMLNode *node, const std::string &bitmask) {
         return;
     }
 
-    auto alias = enumsAlias.find(name);
+    auto alias = it->second.aliases;
 
     std::string ext = name;
     if (!bitmask.empty()) {
         ext = std::regex_replace(ext, std::regex("FlagBits"), "Flags");
     }
 
-    withExtensionProtect(ext, [&] {
+    genOptionalExtension(ext, [&] {
         name = toCppStyle(name, true);
         std::string enumStr =
             bitmask.empty()
@@ -2274,25 +2295,20 @@ void generateEnum(std::string name, XMLNode *node, const std::string &bitmask) {
         file.popIndent();
         file.writeLine("}");
 
-        if (alias != enumsAlias.end()) {
-            for (auto &a : alias->second) {
-                std::string n = toCppStyle(a, true);
-                file.writeLine("using " + n + " = " + name + ";");
-            }
+        for (auto &a : alias) {
+            std::string n = toCppStyle(a, true);
+            file.writeLine("using " + n + " = " + name + ";");
         }
 
         enumMembers[name] = enumMembersList;
     });
 }
 
-void parseEnums(XMLNode *node) {
+void genEnums(XMLNode *node) {
     const char *name = node->ToElement()->Attribute("name");
     if (!name) {
         std::cerr << "Can't get name of enum" << std::endl;
         return;
-    }
-    if (std::string_view{name} != "VkDebugReportFlagBitsEXT") {
-        // return;
     }
 
     const char *type = node->ToElement()->Attribute("type");
@@ -2305,19 +2321,15 @@ void parseEnums(XMLNode *node) {
     if (isBitmask) {
         isEnum = true;
 
-        auto it = vkFlags.find(name);
-        if (it != vkFlags.end()) {
+        auto it = flags.find(name);
+        if (it != flags.end()) {
             bitmask = it->second.name;
 
         } else {
             bitmask = name;
             bitmask =
                 std::regex_replace(bitmask, std::regex("FlagBits"), "Flags");
-            if (std::string(name) == "VkShaderModuleCreateFlagBits") {
-                std::cerr << "Warn: missing bitmask information: " << name
-                          << std::endl;
-                std::cerr << "bitmask: " << bitmask << std::endl;
-            }
+
         }
     }
 
@@ -2326,16 +2338,16 @@ void parseEnums(XMLNode *node) {
     }
 }
 
-void generateEnumFlags() {
+void genFlags() {
     std::cout << "Generating enum flags" << std::endl;
 
-    for (auto &e : vkFlags) {
+    for (auto &e : flags) {
         std::string l = toCppStyle(e.second.name, true);
         std::string r = toCppStyle(e.first, true);
 
         r = std::regex_replace(r, std::regex("Flags"), "FlagBits");
 
-        withExtensionProtect(e.second.name, [&] {
+        genOptionalExtension(e.second.name, [&] {
             if (e.second.alias) {
                 file.writeLine("using " + l + " = " + r + ";");
             } else {
@@ -2362,8 +2374,8 @@ void generateEnumFlags() {
                     file.writeLine("enum : VkFlags {");
                     file.pushIndent();
 
-                    file.writeLine("allFlags = " +
-                                   std::string(hasInfo ? "" : "0"));
+                    std::string flags = "";
+
                     file.pushIndent();
                     const auto &members = it->second;
                     for (size_t i = 0; i < members.size(); ++i) {
@@ -2374,9 +2386,14 @@ void generateEnumFlags() {
                             member = "| " + member;
                         }
                         withProtect(pair.second,
-                                    [&] { file.writeLine(member); });
+                                    [&] { flags += "    " + member; });
                     }
                     file.popIndent();
+
+                    if (flags.empty()) {
+                        flags = "0";
+                    }
+                    file.writeLine("allFlags = " + flags);
 
                     file.popIndent();
                     file.writeLine("};");
@@ -2415,7 +2432,7 @@ void generateEnumFlags() {
     std::cout << "Generating enum flags done" << std::endl;
 }
 
-static std::unordered_set<std::string> vkHandles;
+static std::unordered_set<std::string> handles;
 
 void parseTypeDeclarations(XMLNode *node) {
     std::cout << "Parsing declarations" << std::endl;
@@ -2433,15 +2450,15 @@ void parseTypeDeclarations(XMLNode *node) {
             if (name) {
                 const char *alias = type->Attribute("alias");
                 if (alias) {
-                    auto it = enumsAlias.find(alias);
-                    if (it == enumsAlias.end()) {
-                        enumsAlias.emplace(alias,
-                                           std::vector<std::string>{{name}});
+                    auto it = enums.find(alias);
+                    if (it == enums.end()) {
+                        enums.emplace(alias,
+                                           EnumDeclaration{.aliases = std::vector<std::string>{{name}}});
                     } else {
-                        it->second.push_back(name);
+                        it->second.aliases.push_back(name);
                     }
                 } else {
-                    enums.emplace(name, EnumDeclaration{.attribRequires = ""});
+                    enums.emplace(name, EnumDeclaration{});
                 }
             }
         } else if (strcmp(cat, "bitmask") == 0) {
@@ -2486,7 +2503,7 @@ void parseTypeDeclarations(XMLNode *node) {
                 hasAlias = true;
             }
 
-            vkFlags.emplace(req, VkFlagData{.name = name,
+            flags.emplace(req, FlagData{.name = name,
                                             .hasRequire = hasReq,
                                             .alias = hasAlias});
 
@@ -2495,30 +2512,30 @@ void parseTypeDeclarations(XMLNode *node) {
             if (nameElem) {
                 const char *name = nameElem->GetText();
                 if (name) {
-                    vkHandles.emplace(name);
+                    handles.emplace(name);
                 }
             }
         } else if (strcmp(cat, "struct") == 0 || strcmp(cat, "union") == 0) {
             if (name) {
                 const char *alias = type->Attribute("alias");
-                VkStructData d;
-                d.type = (strcmp(cat, "struct") == 0) ? VkStructData::VK_STRUCT
-                                                      : VkStructData::VK_UNION;
+                StructData d;
+                d.type = (strcmp(cat, "struct") == 0) ? StructData::VK_STRUCT
+                                                      : StructData::VK_UNION;
 
                 if (alias) {
-                    const auto &it = vkStructs.find(alias);
-                    if (it == vkStructs.end()) {
+                    const auto &it = structs.find(alias);
+                    if (it == structs.end()) {
                         d.node = nullptr;
                         d.aliases.push_back(name);
-                        vkStructs.emplace(alias, d);
+                        structs.emplace(alias, d);
                     } else {
                         it->second.aliases.push_back(name);
                     }
                 } else {
-                    const auto &it = vkStructs.find(name);
-                    if (it == vkStructs.end()) {
+                    const auto &it = structs.find(name);
+                    if (it == structs.end()) {
                         d.node = type;
-                        vkStructs.emplace(name, d);
+                        structs.emplace(name, d);
                     } else {
                         it->second.node = type;
                     }
@@ -2532,11 +2549,11 @@ void parseTypeDeclarations(XMLNode *node) {
 
 static void generateClass(const std::string &name);
 
-static void generateStructDecl(const std::string &name, const VkStructData &d) {
-    withExtensionProtect(name, [&] {
+static void generateStructDecl(const std::string &name, const StructData &d) {
+    genOptionalExtension(name, [&] {
         std::string cppname = strStripVk(name);
 
-        if (d.type == VkStructData::VK_STRUCT) {
+        if (d.type == StructData::VK_STRUCT) {
             file.writeLine("struct " + cppname + ";");
         } else {
             file.writeLine("union " + cppname + ";");
@@ -2549,7 +2566,7 @@ static void generateStructDecl(const std::string &name, const VkStructData &d) {
 }
 
 static void generateClassDecl(const std::string &name) {
-    withExtensionProtect(name, [&] {
+    genOptionalExtension(name, [&] {
         std::string className = toCppStyle(name, true);
         std::string handle = "m_" + toCppStyle(name);
         file.writeLine("class " + className + "Base {");
@@ -2576,7 +2593,7 @@ static void generateClassDecl(const std::string &name) {
     });
 }
 
-void parseTypes(XMLNode *node) {
+void genTypes() {
     static const auto parseType = [&](XMLElement *type) {
         const char *cat = type->Attribute("category");
         if (!cat) {
@@ -2596,35 +2613,36 @@ void parseTypes(XMLNode *node) {
 
     std::cout << "Parsing types" << std::endl;
 
-    for (auto &e : vkStructs) {
+    for (auto &e : handles) {
+        generateClassDecl(e);
+    }
+    for (auto &e : structs) {
         generateStructDecl(e.first, e.second);
     }
 
-    for (auto &e : vkHandles) {
-        generateClassDecl(e);
-    }
-    for (auto &e : vkHandles) {
+    for (auto &e : handles) {
         generateClass(e);
     }
 
-    // iterate contents of <types>, filter only <type> children
-    for (XMLElement *type : Elements(node) | ValueFilter("type")) {
-        parseType(type);
+    for (auto &e : structs) {
+        parseStruct(e.second.node->ToElement(),
+            e.first,
+            e.second.type == StructData::VK_STRUCT);
     }
 
     for (auto it = genStructStack.begin(); it != genStructStack.end(); ++it) {
         std::string structType{}, structTypeValue{}; // placeholders
         std::vector<VariableData> members =
             parseStructMembers(it->node, structType, structTypeValue);
-        generateStruct(it->name, structType, structTypeValue, members,
+        generateStruct(it->name, structType, structTypeValue, members, it->typeList,
                        it->structOrUnion);
     }
 
     std::cout << "Parsing types done" << ENDL;
 }
 
-ClassMemberData parseClassMember(XMLElement *command) {
-    ClassMemberData m;
+ClassCommandData parseClassMember(XMLElement *command) {
+    ClassCommandData m;
 
     const char *successcodes = command->Attribute("successcodes");
     if (successcodes) {
@@ -2672,19 +2690,10 @@ ClassMemberData parseClassMember(XMLElement *command) {
     return m;
 }
 
-std::vector<ClassMemberData>
-parseClassMembers(const std::vector<XMLElement *> &elements) {
-    std::vector<ClassMemberData> list;
-    for (XMLElement *command : elements) {
-        list.push_back(parseClassMember(command));
-    }
-    return list;
-}
-
 std::string generateClassMemberCStyle(const std::string &className,
                                       const std::string &handle,
                                       const std::string &protoName,
-                                      const ClassMemberData &m) {
+                                      const ClassCommandData &m) {
     std::string protoArgs = m.createProtoArguments(className, true);
     std::string innerArgs = m.createPFNArguments(className, handle, true);
     file.writeLine("inline " + m.type + " " + protoName + "(" + protoArgs +
@@ -2737,7 +2746,7 @@ struct MemberContext {
     const std::string &handle;
     const std::string &protoName;
     const PFNReturnCategory &pfnReturn;
-    ClassMemberData mdata;
+    ClassCommandData mdata;
 };
 
 bool containsCountVariable(const VariableArray &params) {
@@ -3391,7 +3400,7 @@ class MemberResolverEnumerate : public MemberResolver {
 
     void generateMemberBody() override {
         bool returnsObject =
-            vkHandles.find(last->original.type()) != vkHandles.end();
+            handles.find(last->original.type()) != handles.end();
 
         std::string objvector = last->fullType();
         if (returnsObject) {
@@ -3603,8 +3612,8 @@ static void generateClassMembers(const std::string &className,
     std::string memberCreate = "vkCreate" + className;
 
     // PFN function pointers
-    for (const ClassMemberData &m : data.members) {
-        withExtensionProtect(m.name, [&] {
+    for (const ClassCommandData &m : data.members) {
+        genOptionalExtension(m.name, [&] {
             file.writeLine("PFN_" + m.name + " m_" + m.name + " = {};");
         });
     }
@@ -3633,7 +3642,7 @@ static void generateClassMembers(const std::string &className,
         file.writeLine("}");
     }
 
-    std::string initParams = "const " + data.lsrc + " &load";
+    std::string initParams = "const " + data.getAddrObject + " &load";
     std::string parentVar;
     if (!data.parent.empty()) {
         parentVar = data.parent;
@@ -3698,7 +3707,7 @@ static void generateClassMembers(const std::string &className,
     file2.writeLine("}");
 
     // wrapper functions
-    for (const ClassMemberData &m : data.members) {
+    for (const ClassCommandData &m : data.members) {
         // debug
         static const std::vector<std::string> debugNames;
 
@@ -3716,7 +3725,7 @@ static void generateClassMembers(const std::string &className,
         }
 
         mname2 = m.name;
-        withExtensionProtect(m.name, [&] {
+        genOptionalExtension(m.name, [&] {
             MemberContext ctx{.className = className,
                               .handle = handle,
                               .protoName = std::regex_replace(
@@ -3746,7 +3755,7 @@ static void generateClassMembers(const std::string &className,
     file2.pushIndent();
 
     // function pointers initialization
-    for (const ClassMemberData &m : data.members) {
+    for (const ClassCommandData &m : data.members) {
         withExtensionProtect2(m.name, [&] {
             file2.writeLine("m_" + m.name + " = " + loadSrc + "getProcAddr<" +
                             "PFN_" + m.name + ">(\"" + m.name + "\");");
@@ -3757,7 +3766,7 @@ static void generateClassMembers(const std::string &className,
 }
 
 static void generateClass(const std::string &name) {
-    withExtensionProtect(name, [&] {
+    genOptionalExtension(name, [&] {
         std::string className = toCppStyle(name, true);
         std::string classNameLower = className;
         classNameLower[0] = std::tolower(classNameLower[0]);
@@ -3767,8 +3776,8 @@ static void generateClass(const std::string &name) {
                        "Base {");
         file.pushIndent();
 
-        const auto &it = classMetaData.find(className);
-        if (it != classMetaData.end()) {
+        const auto &it = classData.find(className);
+        if (it != classData.end()) {
             if (!it->second.members.empty()) {
                 generateClassMembers(className, handle, it->second);
             }
@@ -3801,18 +3810,18 @@ void parseCommands(XMLNode *node) {
         "VkDevice", "VkQueue", "VkCommandBuffer"};
 
     // command data is stored in XMLElement*
-    std::vector<ClassMemberData> elementsDevice;
-    std::vector<ClassMemberData> elementsInstance;
-    std::vector<ClassMemberData> elementsPhysicalDevice;
-    std::vector<ClassMemberData> elementsOther;
+    std::vector<ClassCommandData> elementsDevice;
+    std::vector<ClassCommandData> elementsInstance;
+    std::vector<ClassCommandData> elementsPhysicalDevice;
+    std::vector<ClassCommandData> elementsOther;
 
-    classMetaData["Instance"] = ClassData{
-        .getAddrSource = "Instance", .parent = "", .lsrc = "LibraryLoader"};
-    classMetaData["PhysicalDevice"] = ClassData{
-        .getAddrSource = "Instance", .parent = "Instance", .lsrc = "Instance"};
-    classMetaData["Device"] = ClassData{.getAddrSource = "Device",
+    classData["Instance"] = ClassData{
+        .getAddrSource = "Instance", .parent = "", .getAddrObject = "LibraryLoader"};
+    classData["PhysicalDevice"] = ClassData{
+        .getAddrSource = "Instance", .parent = "Instance", .getAddrObject = "Instance"};
+    classData["Device"] = ClassData{.getAddrSource = "Device",
                                         .parent = "PhysicalDevice",
-                                        .lsrc = "Instance"};
+                                        .getAddrObject = "Instance"};
 
     int c = 0;
     // iterate contents of <commands>, filter only <command> children
@@ -3820,31 +3829,31 @@ void parseCommands(XMLNode *node) {
     while (commandElement) {
         c++;
         // default destination is elementsOther
-        std::vector<ClassMemberData> *target = &elementsOther;
+        std::vector<ClassCommandData> *target = &elementsOther;
 
-        ClassMemberData command = parseClassMember(commandElement);
+        ClassCommandData command = parseClassMember(commandElement);
 
         if (command.params.size() > 0) {
             std::string first =
                 command.params.at(0)
                     ->original.type(); // first argument of a command
             if (command.name == "vkGetDeviceProcAddr") {
-                classMetaData["Device"].getAddrMember = command;
+                classData["Device"].getAddrMember = command;
             } else if (command.name == "vkGetInstanceProcAddr") {
-                classMetaData["Instance"].getAddrMember = command;
+                classData["Instance"].getAddrMember = command;
                 // classMetaData["PhysicalDevice"].getAddrMember = command;
             } else if (command.name == "vkCreateDevice") {
-                classMetaData["Device"].createMember = command;
+                classData["Device"].createMember = command;
             } else if (command.name == "vkCreateInstance") {
-                classMetaData["Instance"].createMember = command;
+                classData["Instance"].createMember = command;
             } else if (first ==
                        "VkPhysicalDevice") { // command is for physical device
-                target = &classMetaData["PhysicalDevice"].members;
+                target = &classData["PhysicalDevice"].members;
             } else if (isInContainter(deviceObjects,
                                       first)) { // command is for device
-                target = &classMetaData["Device"].members;
+                target = &classData["Device"].members;
             } else if (first == "VkInstance") { // command is for instance
-                target = &classMetaData["Instance"].members;
+                target = &classData["Instance"].members;
             }
         }
 
@@ -3852,6 +3861,5 @@ void parseCommands(XMLNode *node) {
 
         commandElement = commandElement->NextSiblingElement();
     }
-
     std::cout << "Parsing commands done" << ENDL;
 }
