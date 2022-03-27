@@ -1,0 +1,9 @@
+[submodule "tinyxml2"]
+	path = tinyxml2
+	url = https://github.com/leethomason/tinyxml2
+[submodule "imgui"]
+	path = imgui
+	url = https://github.com/ocornut/imgui
+[submodule "glfw"]
+	path = glfw
+	url = https://github.com/glfw/glfw
