@@ -101,7 +101,7 @@ struct VariableFields : public std::array<std::string, 4> {
 struct VariableData : public VariableFields {
 
     std::string altPFN;
-
+    std::string optionalAmp;
   public:
     enum Type {
         TYPE_INVALID,
@@ -298,6 +298,7 @@ struct VariableData : public VariableFields {
         if (!out.ends_with(" ")) {
             out += " ";
         }
+        out += optionalAmp;
         out += get(IDENTIFIER);
         out += optionalArraySuffix();
         return out;
@@ -327,6 +328,10 @@ struct VariableData : public VariableFields {
 
     void setAssignment(const std::string &str) { _assignment = str; }
 
+    void setReferenceFlag(bool enabled) {
+        optionalAmp = enabled? "&" : "";
+    }
+
     std::string assignment() const { return _assignment; }
 
   protected:
@@ -354,8 +359,8 @@ struct VariableData : public VariableFields {
     }
 
     std::string toArgumentArrayProxy() const {
-        return "std::bit_cast<" + originalFullType() + ">(" +
-               get(IDENTIFIER) + ".data())";
+        return "std::bit_cast<" + originalFullType() + ">(" + get(IDENTIFIER) +
+               ".data())";
     }
 
     std::string createCast(std::string from) const {
@@ -394,7 +399,7 @@ class XMLVariableParser : public VariableData, protected tinyxml2::XMLVisitor {
 
     State state{PREFIX}; // FSM state
 
-public:
+  public:
     XMLVariableParser() = default;
 
     XMLVariableParser(tinyxml2::XMLElement *element) {

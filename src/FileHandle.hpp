@@ -30,7 +30,6 @@ SOFTWARE.
 #include <sstream>
 
 static constexpr char const* INDENT {"    "};
-static constexpr char const* ENDL   {"\n"};
 
 // file class wrapper, handles identation in stateful manner
 class FileHandle {
@@ -78,7 +77,7 @@ public:
         for (int i = 0; i < indent; ++i) {
             file << INDENT;
         }
-        file << s << ENDL;
+        file << s << std::endl;
     }
 
     void write(const std::string &s) {
