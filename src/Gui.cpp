@@ -1,5 +1,13 @@
 #include "Gui.hpp"
 
+// shader code in SPIR-V binary
+static const uint32_t vsSpirv[] = {
+#include "../../shaders/vs.vert.spv"
+};
+static const uint32_t fsSpirv[] = {
+#include "../../shaders/ps.frag.spv"
+};
+
 namespace ImGui {
 bool CheckBoxTristate(const char *label, int *v_tristate) {
     bool ret;
@@ -143,11 +151,11 @@ void GUI::checkLayerSupport(const std::vector<const char *> &layers) {
     }
 }
 
-VkShaderModule GUI::createShaderModule(const std::vector<char> &code) {
+VkShaderModule GUI::createShaderModule(const uint32_t *code, uint32_t codeSize) {
     VkShaderModuleCreateInfo createInfo = {};
     createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-    createInfo.codeSize = code.size();
-    createInfo.pCode = reinterpret_cast<const uint32_t *>(code.data());
+    createInfo.codeSize = codeSize;
+    createInfo.pCode = code;
 
     VkShaderModule shaderModule;
     if (vkCreateShaderModule(device, &createInfo, nullptr, &shaderModule) !=
@@ -433,11 +441,8 @@ void GUI::createPipelineCache() {
 }
 
 void GUI::createShaderModules() {
-    auto vertShaderCode = readFile("../shaders/vert.spv");
-    auto fragShaderCode = readFile("../shaders/frag.spv");
-
-    vertShaderModule = createShaderModule(vertShaderCode);
-    fragShaderModule = createShaderModule(fragShaderCode);
+    vertShaderModule = createShaderModule(vsSpirv, sizeof(vsSpirv));
+    fragShaderModule = createShaderModule(fsSpirv, sizeof(fsSpirv));
 }
 
 void GUI::createGraphicsPipeline() {

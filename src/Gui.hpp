@@ -145,7 +145,7 @@ class GUI {
         return buffer;
     }
 
-    VkShaderModule createShaderModule(const std::vector<char> &code);
+    VkShaderModule createShaderModule(const uint32_t *code, uint32_t codeSize);
 
     void createWindow();
 

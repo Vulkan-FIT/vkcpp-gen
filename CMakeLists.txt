@@ -8,6 +8,23 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# add_shaders macro to convert GLSL shaders to spir-v
+# and creates depsList containing name of files that should be included among the source files
+macro(add_shaders nameList depsList)
+        foreach(name ${nameList})
+                get_filename_component(directory ${name} DIRECTORY)
+                if(directory)
+                        file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/${directory}")
+                endif()
+                add_custom_command(COMMENT "Converting ${name} to spir-v..."
+                                   MAIN_DEPENDENCY ${name}
+                                   OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/${name}.spv
+                                   COMMAND ${Vulkan_GLSLANG_VALIDATOR_EXECUTABLE} -V -x ${CMAKE_CURRENT_SOURCE_DIR}/${name} -o ${CMAKE_CURRENT_SOURCE_DIR}/${name}.spv)
+                source_group("Shaders" FILES ${name} ${CMAKE_CURRENT_SOURCE_DIR}/${name}.spv)
+                list(APPEND ${depsList} ${name} ${CMAKE_CURRENT_SOURCE_DIR}/${name}.spv)
+        endforeach()
+endmacro()
+
 if(GENERATOR_GUI)
     find_package(Vulkan REQUIRED)
 
@@ -45,7 +62,16 @@ SET(SOURCES
     src/Generator.cpp
     )
 
-add_executable(${CMAKE_PROJECT_NAME} ${SOURCES} ${HEADERS} ${IMGUI_SOURCES})
+set(APP_SHADERS
+    shaders/vs.vert
+    shaders/ps.frag
+   )
+
+add_shaders("${APP_SHADERS}" APP_SHADER_DEPS)
+
+message("deps: ${APP_SHADER_DEPS}")
+
+add_executable(${CMAKE_PROJECT_NAME} ${SOURCES} ${HEADERS} ${IMGUI_SOURCES} ${APP_SHADER_DEPS})
 
 target_link_libraries(${CMAKE_PROJECT_NAME} tinyxml2)
 
