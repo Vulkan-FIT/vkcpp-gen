@@ -26,18 +26,23 @@ if(GENERATOR_GUI)
     add_compile_definitions(GENERATOR_GUI)
 endif(GENERATOR_GUI)
 
+set(FF_DIR ${CMAKE_CURRENT_SOURCE_DIR}/fastformat)
+set(STL_DIR ${CMAKE_CURRENT_SOURCE_DIR}/stlsoft)
+
 SET(HEADERS
     src/ArgumentsParser.hpp
     src/XMLVariableParser.hpp
     src/XMLUtils.hpp
-    src/FileHandle.hpp
     src/StringUtils.hpp
     src/Gui.hpp
-    src/Generator.hpp      
+    src/Generator.hpp
     )
 
 SET(SOURCES
     src/main.cpp
+    src/XMLVariableParser.cpp
+    src/Gui.cpp
+    src/Generator.cpp
     )
 
 add_executable(${CMAKE_PROJECT_NAME} ${SOURCES} ${HEADERS} ${IMGUI_SOURCES})
@@ -45,6 +50,8 @@ add_executable(${CMAKE_PROJECT_NAME} ${SOURCES} ${HEADERS} ${IMGUI_SOURCES})
 target_link_libraries(${CMAKE_PROJECT_NAME} tinyxml2)
 
 add_subdirectory(tinyxml2)
+
+target_include_directories(${CMAKE_PROJECT_NAME} PUBLIC ${FF_DIR}/include ${STL_DIR}/include)
 
 if(GENERATOR_GUI)
 

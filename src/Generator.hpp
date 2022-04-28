@@ -1,12 +1,11 @@
 #ifndef GENERATOR_HPP
 #define GENERATOR_HPP
 
-#include "FileHandle.hpp"
 #include "XMLUtils.hpp"
 #include "XMLVariableParser.hpp"
 #include "tinyxml2.h"
-#include <functional>
 #include <filesystem>
+#include <functional>
 #include <iostream>
 #include <list>
 #include <map>
@@ -246,99 +245,108 @@ extern "C" __declspec( dllimport ) FARPROC __stdcall GetProcAddress( HINSTANCE h
 #  define VULKAN_HPP_NODISCARD_WHEN_NO_EXCEPTIONS
 #endif
 
-#if !defined( VULKAN_HPP_NAMESPACE )
-#  define VULKAN_HPP_NAMESPACE vk
-#endif
-
 #define VULKAN_HPP_STRINGIFY2( text ) #text
 #define VULKAN_HPP_STRINGIFY( text )  VULKAN_HPP_STRINGIFY2( text )
-#define VULKAN_HPP_NAMESPACE_STRING   VULKAN_HPP_STRINGIFY( VULKAN_HPP_NAMESPACE ))"};
+)"};
 
-static constexpr char const *RES_LIB_LOADER{
-    R"(#ifdef _WIN32
+static constexpr char const *RES_LIB_LOADER{R"(
+#ifdef _WIN32
 #  define LIBHANDLE HINSTANCE
 #else
 #  define LIBHANDLE void*
 #endif
 
-class LibraryLoader {
-protected:
+  class LibraryLoader {
+  protected:
 
     LIBHANDLE lib;
     uint32_t m_version;
     PFN_vkGetInstanceProcAddr m_vkGetInstanceProcAddr;
+    PFN_vkCreateInstance m_vkCreateInstance;
 
-public:
+    template<typename T>
+    inline T getProcAddr(const char *name) const {
+      return std::bit_cast<T>(m_vkGetInstanceProcAddr(nullptr, name));
+    }
+
+  public:
 #ifdef _WIN32
     static constexpr char const* defaultName = "vulkan-1.dll";
 #else
     static constexpr char const* defaultName = "libvulkan.so.1";
 #endif
 
-    LibraryLoader() {}
+    LibraryLoader() {
+      m_vkGetInstanceProcAddr = nullptr;
+    }
 
     LibraryLoader(const std::string &name) {
-        load(name);
+      load(name);
     }
 
     void load(const std::string &name = defaultName) {
-        unload();
-#ifdef _WIN32
-        lib = LoadLibraryA(name.c_str());
-#else
-        lib = dlopen(name.c_str(), RTLD_NOW);
-#endif
-        if (!lib) {
-            throw std::runtime_error("Cant load library");
-        }
 
 #ifdef _WIN32
-        m_vkGetInstanceProcAddr = std::bit_cast<PFN_vkGetInstanceProcAddr>(GetProcAddress(lib, "vkGetInstanceProcAddr"));
+      lib = LoadLibraryA(name.c_str());
 #else
-        m_vkGetInstanceProcAddr = std::bit_cast<PFN_vkGetInstanceProcAddr>(dlsym(lib, "vkGetInstanceProcAddr"));
+      lib = dlopen(name.c_str(), RTLD_NOW);
 #endif
-        if (!m_vkGetInstanceProcAddr) {
-            throw std::runtime_error("Cant load vkGetInstanceProcAddr");
-        }
+      if (!lib) {
+          throw std::runtime_error("Cant load library");
+      }
 
-        PFN_vkEnumerateInstanceVersion m_vkEnumerateInstanceVersion = getProcAddr<PFN_vkEnumerateInstanceVersion>("vkEnumerateInstanceVersion");
+#ifdef _WIN32
+      m_vkGetInstanceProcAddr = std::bit_cast<PFN_vkGetInstanceProcAddr>(GetProcAddress(lib, "vkGetInstanceProcAddr"));
+#else
+      m_vkGetInstanceProcAddr = std::bit_cast<PFN_vkGetInstanceProcAddr>(dlsym(lib, "vkGetInstanceProcAddr"));
+#endif
+      if (!m_vkGetInstanceProcAddr) {
+          throw std::runtime_error("Cant load vkGetInstanceProcAddr");
+      }
 
-        if (m_vkEnumerateInstanceVersion) {
-            m_vkEnumerateInstanceVersion(&m_version);
-        }
-        else {
-            m_version = VK_API_VERSION_1_0;
-        }
+      PFN_vkEnumerateInstanceVersion m_vkEnumerateInstanceVersion = getProcAddr<PFN_vkEnumerateInstanceVersion>("vkEnumerateInstanceVersion");
+
+      if (m_vkEnumerateInstanceVersion) {
+          m_vkEnumerateInstanceVersion(&m_version);
+      }
+      else {
+          m_version = VK_API_VERSION_1_0;
+      }
+
+      m_vkCreateInstance = getProcAddr<PFN_vkCreateInstance>("vkCreateInstance");
     }
 
     void unload() {
-        if (lib) {
+      if (lib) {
 #ifdef _WIN32
-            FreeLibrary(lib);
+        FreeLibrary(lib);
 #else
-            dlclose(lib);
+        dlclose(lib);
 #endif
-            lib = nullptr;
-            m_vkGetInstanceProcAddr = nullptr;
-        }
+        lib = nullptr;
+        m_vkGetInstanceProcAddr = nullptr;
+        m_vkCreateInstance = nullptr;
+      }
     }
 
     uint32_t version() const {
-        return m_version;
+      return m_version;
     }
 
     ~LibraryLoader() {
-        unload();
+      unload();
     }
 
-    template<typename T>
-    inline T getProcAddr(const char *name) const {
-        return std::bit_cast<T>(m_vkGetInstanceProcAddr(nullptr, name));
+    PFN_vkGetInstanceProcAddr getInstanceProcAddr() {
+      if (!m_vkGetInstanceProcAddr) {
+        load();
+      }
+      return m_vkGetInstanceProcAddr;
     }
 
-    const PFN_vkGetInstanceProcAddr &vkGetInstanceProcAddr {m_vkGetInstanceProcAddr};
-
-};)"};
+    {0}
+  };
+)"};
 
 static constexpr char const *RES_ERROR_HPP{R"(
 class ErrorCategoryImpl : public std::error_category
@@ -741,195 +749,134 @@ static constexpr char const *RES_RESULT_VALUE_HPP{R"(
 
 static constexpr char const *RES_ARRAY_PROXY_HPP{R"(
 template <typename T>
-class ArrayProxy
-{
-public:
-VULKAN_HPP_CONSTEXPR ArrayProxy() VULKAN_HPP_NOEXCEPT
-  : m_count( 0 )
-  , m_ptr( nullptr )
-{}
+  class ArrayProxy
+  {
+  public:
+    VULKAN_HPP_CONSTEXPR ArrayProxy() VULKAN_HPP_NOEXCEPT
+      : m_count( 0 )
+      , m_ptr( nullptr )
+    {}
 
-VULKAN_HPP_CONSTEXPR ArrayProxy( std::nullptr_t ) VULKAN_HPP_NOEXCEPT
-  : m_count( 0 )
-  , m_ptr( nullptr )
-{}
+    VULKAN_HPP_CONSTEXPR ArrayProxy( std::nullptr_t ) VULKAN_HPP_NOEXCEPT
+      : m_count( 0 )
+      , m_ptr( nullptr )
+    {}
 
-ArrayProxy( T & value ) VULKAN_HPP_NOEXCEPT
-  : m_count( 1 )
-  , m_ptr( &value )
-{}
+    ArrayProxy( T & value ) VULKAN_HPP_NOEXCEPT
+      : m_count( 1 )
+      , m_ptr( &value )
+    {}
 
-template <typename B = T, typename std::enable_if<std::is_const<B>::value, int>::type = 0>
-ArrayProxy( typename std::remove_const<T>::type & value ) VULKAN_HPP_NOEXCEPT
-  : m_count( 1 )
-  , m_ptr( &value )
-{}
+    template <typename B = T, typename std::enable_if<std::is_const<B>::value, int>::type = 0>
+    ArrayProxy( typename std::remove_const<T>::type & value ) VULKAN_HPP_NOEXCEPT
+      : m_count( 1 )
+      , m_ptr( &value )
+    {}
 
-ArrayProxy( uint32_t count, T * ptr ) VULKAN_HPP_NOEXCEPT
-  : m_count( count )
-  , m_ptr( ptr )
-{}
+    ArrayProxy( uint32_t count, T * ptr ) VULKAN_HPP_NOEXCEPT
+      : m_count( count )
+      , m_ptr( ptr )
+    {}
 
-template <typename B = T, typename std::enable_if<std::is_const<B>::value, int>::type = 0>
-ArrayProxy( uint32_t count, typename std::remove_const<T>::type * ptr ) VULKAN_HPP_NOEXCEPT
-  : m_count( count )
-  , m_ptr( ptr )
-{}
+    template <typename B = T, typename std::enable_if<std::is_const<B>::value, int>::type = 0>
+    ArrayProxy( uint32_t count, typename std::remove_const<T>::type * ptr ) VULKAN_HPP_NOEXCEPT
+      : m_count( count )
+      , m_ptr( ptr )
+    {}
 
 #  if __GNUC__ >= 9
 #    pragma GCC diagnostic push
 #    pragma GCC diagnostic ignored "-Winit-list-lifetime"
 #  endif
 
-ArrayProxy( std::initializer_list<T> const & list ) VULKAN_HPP_NOEXCEPT
-  : m_count( static_cast<uint32_t>( list.size() ) )
-  , m_ptr( list.begin() )
-{}
+    ArrayProxy( std::initializer_list<T> const & list ) VULKAN_HPP_NOEXCEPT
+      : m_count( static_cast<uint32_t>( list.size() ) )
+      , m_ptr( list.begin() )
+    {}
 
-template <typename B = T, typename std::enable_if<std::is_const<B>::value, int>::type = 0>
-ArrayProxy( std::initializer_list<typename std::remove_const<T>::type> const & list ) VULKAN_HPP_NOEXCEPT
-  : m_count( static_cast<uint32_t>( list.size() ) )
-  , m_ptr( list.begin() )
-{}
+    template <typename B = T, typename std::enable_if<std::is_const<B>::value, int>::type = 0>
+    ArrayProxy( std::initializer_list<typename std::remove_const<T>::type> const & list ) VULKAN_HPP_NOEXCEPT
+      : m_count( static_cast<uint32_t>( list.size() ) )
+      , m_ptr( list.begin() )
+    {}
 
-ArrayProxy( std::initializer_list<T> & list ) VULKAN_HPP_NOEXCEPT
-  : m_count( static_cast<uint32_t>( list.size() ) )
-  , m_ptr( list.begin() )
-{}
+    ArrayProxy( std::initializer_list<T> & list ) VULKAN_HPP_NOEXCEPT
+      : m_count( static_cast<uint32_t>( list.size() ) )
+      , m_ptr( list.begin() )
+    {}
 
-template <typename B = T, typename std::enable_if<std::is_const<B>::value, int>::type = 0>
-ArrayProxy( std::initializer_list<typename std::remove_const<T>::type> & list ) VULKAN_HPP_NOEXCEPT
-  : m_count( static_cast<uint32_t>( list.size() ) )
-  , m_ptr( list.begin() )
-{}
+    template <typename B = T, typename std::enable_if<std::is_const<B>::value, int>::type = 0>
+    ArrayProxy( std::initializer_list<typename std::remove_const<T>::type> & list ) VULKAN_HPP_NOEXCEPT
+      : m_count( static_cast<uint32_t>( list.size() ) )
+      , m_ptr( list.begin() )
+    {}
 
 #  if __GNUC__ >= 9
 #    pragma GCC diagnostic pop
 #  endif
 
-template <size_t N>
-ArrayProxy( std::array<T, N> const & data ) VULKAN_HPP_NOEXCEPT
-  : m_count( N )
-  , m_ptr( data.data() )
-{}
+    // Any type with a .data() return type implicitly convertible to T*, and a .size() return type implicitly
+    // convertible to size_t. The const version can capture temporaries, with lifetime ending at end of statement.
+    template <typename V,
+              typename std::enable_if<
+                std::is_convertible<decltype( std::declval<V>().data() ), T *>::value &&
+                std::is_convertible<decltype( std::declval<V>().size() ), std::size_t>::value>::type * = nullptr>
+    ArrayProxy( V const & v ) VULKAN_HPP_NOEXCEPT
+      : m_count( static_cast<uint32_t>( v.size() ) )
+      , m_ptr( v.data() )
+    {}
 
-template <size_t N, typename B = T, typename std::enable_if<std::is_const<B>::value, int>::type = 0>
-ArrayProxy( std::array<typename std::remove_const<T>::type, N> const & data ) VULKAN_HPP_NOEXCEPT
-  : m_count( N )
-  , m_ptr( data.data() )
-{}
+    template <typename V,
+              typename std::enable_if<
+                std::is_convertible<decltype( std::declval<V>().data() ), T *>::value &&
+                std::is_convertible<decltype( std::declval<V>().size() ), std::size_t>::value>::type * = nullptr>
+    ArrayProxy( V & v ) VULKAN_HPP_NOEXCEPT
+      : m_count( static_cast<uint32_t>( v.size() ) )
+      , m_ptr( v.data() )
+    {}
 
-template <size_t N>
-ArrayProxy( std::array<T, N> & data ) VULKAN_HPP_NOEXCEPT
-  : m_count( N )
-  , m_ptr( data.data() )
-{}
+    const T * begin() const VULKAN_HPP_NOEXCEPT
+    {
+      return m_ptr;
+    }
 
-template <size_t N, typename B = T, typename std::enable_if<std::is_const<B>::value, int>::type = 0>
-ArrayProxy( std::array<typename std::remove_const<T>::type, N> & data ) VULKAN_HPP_NOEXCEPT
-  : m_count( N )
-  , m_ptr( data.data() )
-{}
+    const T * end() const VULKAN_HPP_NOEXCEPT
+    {
+      return m_ptr + m_count;
+    }
 
-template <class Allocator = std::allocator<typename std::remove_const<T>::type>>
-ArrayProxy( std::vector<T, Allocator> const & data ) VULKAN_HPP_NOEXCEPT
-  : m_count( static_cast<uint32_t>( data.size() ) )
-  , m_ptr( data.data() )
-{}
+    const T & front() const VULKAN_HPP_NOEXCEPT
+    {
+      VULKAN_HPP_ASSERT( m_count && m_ptr );
+      return *m_ptr;
+    }
 
-template <class Allocator = std::allocator<typename std::remove_const<T>::type>,
-          typename B      = T,
-          typename std::enable_if<std::is_const<B>::value, int>::type = 0>
-ArrayProxy( std::vector<typename std::remove_const<T>::type, Allocator> const & data ) VULKAN_HPP_NOEXCEPT
-  : m_count( static_cast<uint32_t>( data.size() ) )
-  , m_ptr( data.data() )
-{}
+    const T & back() const VULKAN_HPP_NOEXCEPT
+    {
+      VULKAN_HPP_ASSERT( m_count && m_ptr );
+      return *( m_ptr + m_count - 1 );
+    }
 
-template <class Allocator = std::allocator<typename std::remove_const<T>::type>>
-ArrayProxy( std::vector<T, Allocator> & data ) VULKAN_HPP_NOEXCEPT
-  : m_count( static_cast<uint32_t>( data.size() ) )
-  , m_ptr( data.data() )
-{}
+    bool empty() const VULKAN_HPP_NOEXCEPT
+    {
+      return ( m_count == 0 );
+    }
 
-template <class Allocator = std::allocator<typename std::remove_const<T>::type>,
-          typename B      = T,
-          typename std::enable_if<std::is_const<B>::value, int>::type = 0>
-ArrayProxy( std::vector<typename std::remove_const<T>::type, Allocator> & data ) VULKAN_HPP_NOEXCEPT
-  : m_count( static_cast<uint32_t>( data.size() ) )
-  , m_ptr( data.data() )
-{}
+    uint32_t size() const VULKAN_HPP_NOEXCEPT
+    {
+      return m_count;
+    }
 
-#  if defined( VULKAN_HPP_SUPPORT_SPAN )
-template <size_t N = std::dynamic_extent>
-ArrayProxy( std::span<T, N> const & data ) VULKAN_HPP_NOEXCEPT
-  : m_count( static_cast<uint32_t>( data.size() ) )
-  , m_ptr( data.data() )
-{}
+    T * data() const VULKAN_HPP_NOEXCEPT
+    {
+      return m_ptr;
+    }
 
-template <size_t N                                                    = std::dynamic_extent,
-          typename B                                                  = T,
-          typename std::enable_if<std::is_const<B>::value, int>::type = 0>
-ArrayProxy( std::span<typename std::remove_const<T>::type, N> const & data ) VULKAN_HPP_NOEXCEPT
-  : m_count( static_cast<uint32_t>( data.size() ) )
-  , m_ptr( data.data() )
-{}
-
-template <size_t N = std::dynamic_extent>
-ArrayProxy( std::span<T, N> & data ) VULKAN_HPP_NOEXCEPT
-  : m_count( static_cast<uint32_t>( data.size() ) )
-  , m_ptr( data.data() )
-{}
-
-template <size_t N                                                    = std::dynamic_extent,
-          typename B                                                  = T,
-          typename std::enable_if<std::is_const<B>::value, int>::type = 0>
-ArrayProxy( std::span<typename std::remove_const<T>::type, N> & data ) VULKAN_HPP_NOEXCEPT
-  : m_count( static_cast<uint32_t>( data.size() ) )
-  , m_ptr( data.data() )
-{}
-#  endif
-
-const T * begin() const VULKAN_HPP_NOEXCEPT
-{
-  return m_ptr;
-}
-
-const T * end() const VULKAN_HPP_NOEXCEPT
-{
-  return m_ptr + m_count;
-}
-
-const T & front() const VULKAN_HPP_NOEXCEPT
-{
-  VULKAN_HPP_ASSERT( m_count && m_ptr );
-  return *m_ptr;
-}
-
-const T & back() const VULKAN_HPP_NOEXCEPT
-{
-  VULKAN_HPP_ASSERT( m_count && m_ptr );
-  return *( m_ptr + m_count - 1 );
-}
-
-bool empty() const VULKAN_HPP_NOEXCEPT
-{
-  return ( m_count == 0 );
-}
-
-uint32_t size() const VULKAN_HPP_NOEXCEPT
-{
-  return m_count;
-}
-
-T * data() const VULKAN_HPP_NOEXCEPT
-{
-  return m_ptr;
-}
-
-private:
+  private:
     uint32_t m_count;
     T *      m_ptr;
-};)"};
+  };
+)"};
 
 static constexpr char const *RES_BASE_TYPES{R"(
 //==================
@@ -1080,10 +1027,10 @@ template <typename T>
 class ArrayProxy;
 )"};
 
-static const std::string NAMESPACE{"vk20"};
+// static const std::string NAMESPACE{"vk20"};
 static const std::string FILEPROTECT{"VULKAN_20_HPP"};
 
-template <template <class...> class TContainer, class T, class A,  class E>
+template <template <class...> class TContainer, class T, class A, class E>
 static bool isInContainter(const TContainer<T, A> &array, E entry) {
     return std::find(std::begin(array), std::end(array), entry) !=
            std::end(array);
@@ -1091,14 +1038,76 @@ static bool isInContainter(const TContainer<T, A> &array, E entry) {
 
 using namespace tinyxml2;
 
+static std::string
+regex_replace(const std::string &input, const std::regex &regex,
+              std::function<std::string(std::smatch const &match)> format) {
+
+    std::ostringstream output;
+    std::sregex_iterator begin(input.begin(), input.end(), regex), end;
+    for (; begin != end; begin++) {
+        output << begin->prefix() << format(*begin);
+    }
+    output << input.substr(input.size() - begin->position());
+    return output.str();
+}
+
+template <class... Args>
+static std::string format(const std::string &format, Args... args) {
+
+    std::vector<std::string> list;
+    (
+        [&](auto &a) {
+            std::stringstream ss;
+            ss << a;
+            list.push_back(ss.str());
+        }(args),
+        ...);
+
+    std::regex rgx("\\{[0-9]+\\}");
+
+    std::string str = regex_replace(format, rgx, [&](auto match) {
+        std::string m = match.str();
+        int index = std::stoi(m.substr(1, m.size() - 1));
+        if (index >= list.size()) {
+            throw std::runtime_error{"format index out of range"};
+        }
+        return list[index];
+    });
+
+    return str;
+}
+
 class Generator {
+
+  public:
+
+    struct Macro {
+        std::string value;
+        std::string define;
+        bool usesDefine;
+
+        std::string get() const {
+            return usesDefine? define : value;
+        }
+    };
+
+    struct Config {
+        Macro vkname;
+        bool genStructNoinit;
+        bool genStructProxy;
+    };
+
+    Config cfg;
     XMLDocument doc;
     XMLElement *root;
-    //std::<std::string, XMLNode *> rootTable;
+    // std::<std::string, XMLNode *> rootTable;
+
+//    std::string genOutput;
+//    std::string genOutputFuncs;
 
     struct PlatformData {
         std::string_view protect;
-        bool whitelisted;
+        int guiState;
     };
     using Platforms = std::map<std::string, PlatformData>;
     Platforms platforms; // maps platform name to protect (#if defined PROTECT)
@@ -1130,9 +1139,7 @@ class Generator {
         VariableArray params; // list of arguments
         std::vector<std::string> successCodes;
 
-        bool valid() const {
-            return !name.empty();
-        }
+        bool valid() const { return !name.empty(); }
         // creates function arguments signature
         std::string createProtoArguments(const std::string &className,
                                          bool useOriginal = false) const {
@@ -1189,8 +1196,8 @@ class Generator {
         std::vector<std::string> aliases;
     };
 
-    static FileHandle file;  // main output file
-    static FileHandle file2; // temporary file
+    std::string output;
+    std::string outputFuncs;
 
     std::string outputFilePath;
 
@@ -1216,672 +1223,56 @@ class Generator {
                        std::vector<std::pair<std::string, const char *>>>
         enumMembers;
 
-    bool defaultWhitelistOption = false;
+    bool defaultWhitelistOption = true;
 
-    void parsePlatforms(XMLNode *node) {
-        std::cout << "Parsing platforms" << std::endl;
-        // iterate contents of <platforms>, filter only <platform> children
-        for (XMLElement *platform : Elements(node) | ValueFilter("platform")) {
-            const char *name = platform->Attribute("name");
-            const char *protect = platform->Attribute("protect");
-            if (name && protect) {
-                platforms.emplace(name, PlatformData{.protect = protect,
-                                                     .whitelisted = defaultWhitelistOption});
-            }
-        }
-        std::cout << "Parsing platforms done" << std::endl;
-    }
+    void parsePlatforms(XMLNode *node);
 
-    void parseFeature(XMLNode *node) {
-        std::cout << "Parsing feature" << std::endl;
-        const char *name = node->ToElement()->Attribute("name");
-        if (name) {
-            for (XMLElement *require :
-                 Elements(node) | ValueFilter("require")) {
-                for (XMLElement &entry : Elements(require)) {
-                    const std::string_view value = entry.Value();
+    void parseFeature(XMLNode *node);
 
-                    if (value == "enum") {
-                        parseEnumExtend(entry, nullptr, true);
-                    }
-                }
-            }
-        }
+    void parseExtensions(XMLNode *node);
 
-        std::cout << "Parsing feature done" << std::endl;
-    }
-
-    void parseExtensions(XMLNode *node) {
-        std::cout << "Parsing extensions" << std::endl;
-        // iterate contents of <extensions>, filter only <extension> children
-        for (XMLElement *extension :
-             Elements(node) | ValueFilter("extension")) {
-            const char *supported = extension->Attribute("supported");
-            bool flagSupported = true;
-            if (supported && std::string_view(supported) == "disabled") {
-                flagSupported = false;
-            }
-
-            const char *name = extension->Attribute("name");
-            const char *platformAttrib = extension->Attribute("platform");
-            const char *protect = nullptr;
-
-            Platforms::pointer platform = nullptr;
-
-            if (platformAttrib) {
-                auto it = platforms.find(platformAttrib);
-                if (it != platforms.end()) {
-                    platform = &(*it);
-                    protect = platform->second.protect.data();
-                } else {
-                    std::cerr << "err: Unknown platform in extensions: "
-                              << platformAttrib << std::endl;
-                }
-            } else {
-                // std::cerr << "err: Cant find platform" << std::endl;
-            }
-
-            std::map<std::string, ExtensionData>::reference ext =
-                *extensions
-                     .emplace(name, ExtensionData{.platform = platform,
-                                                  .enabled = flagSupported,
-                                                  .whitelisted = defaultWhitelistOption})
-                     .first;
-
-            // iterate contents of <extension>, filter only <require> children
-            for (XMLElement *require :
-                 Elements(extension) | ValueFilter("require")) {
-                // iterate contents of <require>
-                for (XMLElement &entry : Elements(require)) {
-                    const std::string_view value = entry.Value();
-                    if (value == "command" && protect) {
-                        const char *name = entry.Attribute("name");
-                        if (name) { // pair extension name with platform protect
-                            namemap.emplace(name, ext);
-                        }
-                    } else if (value == "type" && protect) {
-                        const char *name = entry.Attribute("name");
-                        if (name) { // pair extension name with platform protect
-                            namemap.emplace(name, ext);
-                        }
-                    } else if (value == "enum") {
-                        parseEnumExtend(entry, protect, flagSupported);
-                    }
-                }
-            }
-        }
-
-        std::cout << "Parsing extensions done" << std::endl;
-    }
-
-    void parseTags(XMLNode *node) {
-        std::cout << "Parsing tags" << std::endl;
-        // iterate contents of <tags>, filter only <tag> children
-        for (XMLElement *tag : Elements(node) | ValueFilter("tag")) {
-            const char *name = tag->Attribute("name");
-            if (name) {
-                tags.emplace(name);
-            }
-        }
-        std::cout << "Parsing tags done" << std::endl;
-    }
+    void parseTags(XMLNode *node);
 
     // tries to match str in extensions, if found returns pointer to protect,
     // otherwise nullptr
-    ExtensionData *findExtensionProtect(const std::string &str) {
-        auto it = namemap.find(str);
-        if (it != namemap.end()) {
-            return &it->second.second;
-        }
-        return nullptr;
-    }
+    ExtensionData *findExtensionProtect(const std::string &str);
 
-    bool idLookup(const std::string &name, std::string_view &protect) {
-        auto it = namemap.find(name);
-        if (it != namemap.end()) {
-            const ExtensionData &ext = it->second.second;
-            if (!ext.enabled || !ext.whitelisted) {
-                return false;
-            }
-            if (ext.platform) {
-                if (!ext.platform->second.whitelisted) {
-                    return false;
-                }
-                protect = ext.platform->second.protect;
-            }
-        }
-        return true;
-    }
-
-     // #if defined encapsulation
-    void _genOptional(const std::string &name,
-                              std::function<void()> function, FileHandle &file) {
-
-        std::string_view protect;
-        if (!idLookup(name, protect)) {
-            return;
-        }
-        if (!protect.empty()) {
-            file.get() << "#if defined(" << protect << ")" << std::endl;
-        }
-
-        function();
-
-        if (!protect.empty()) {
-            file.get() << "#endif //" << protect << std::endl;
-        }
-    }
-
+    bool idLookup(const std::string &name, std::string_view &protect);
 
     // #if defined encapsulation
-    void genOptional(const std::string &name,
-                              std::function<void()> function) {
+    void withProtect(std::string &output, const char *protect,
+                     std::function<void(std::string &)> function);
 
-       _genOptional(name, function, this->file);
-    }
+    void genOptional(const std::string &name, std::function<void()> function);
 
-    void genOptional2(const std::string &name,
-                               std::function<void()> function) {
-       _genOptional(name, function, this->file2);
-    }
-
-    void withProtect(const char *protect, std::function<void()> function,
-                     std::string *str = nullptr) {
-        if (protect) {
-            if (str) {
-                *str += "#if defined(" + std::string(protect) + ")\n";
-            } else {
-                file.get() << "#if defined(" << protect << ")" << std::endl;
-            }
-        }
-
-        function();
-
-        if (protect) {
-            if (str) {
-                *str += "#endif //" + std::string(protect) + "\n";
-            } else {
-                file.get() << "#endif //" << protect << std::endl;
-            }
-        }
-    }
+    std::string genOptional(const std::string &name,
+                            std::function<void(std::string &)> function);
 
     bool isStructOrUnion(const std::string &name) {
         return structs.find(name) != structs.end();
     }
 
-    std::string strRemoveTag(std::string &str) {
-        std::string suffix;
-        auto it = str.rfind('_');
-        if (it != std::string::npos) {
-            suffix = str.substr(it + 1);
-            if (tags.find(suffix) != tags.end()) {
-                str.erase(it);
-            } else {
-                suffix.clear();
-            }
-        }
+    std::string strRemoveTag(std::string &str);
 
-        for (auto &t : tags) {
-            if (str.ends_with(t)) {
-                str.erase(str.size() - t.size());
-                return t;
-            }
-        }
-        return suffix;
-    }
+    std::string strWithoutTag(const std::string &str);
 
-    std::string strWithoutTag(const std::string &str) {
-        std::string out = str;
-        for (const std::string &tag : tags) {
-            if (out.ends_with(tag)) {
-                out.erase(out.size() - tag.size());
-                break;
-            }
-        }
-        return out;
-    }
+    std::pair<std::string, std::string> snakeToCamelPair(std::string str);
 
-    std::pair<std::string, std::string> snakeToCamelPair(std::string str) {
-        std::string suffix = strRemoveTag(str);
-        std::string out = convertSnakeToCamel(str);
-
-        out = std::regex_replace(out, std::regex("bit"), "Bit");
-        out = std::regex_replace(out, std::regex("Rgba10x6"), "Rgba10X6");
-
-        return std::make_pair(out, suffix);
-    }
-
-    std::string snakeToCamel(const std::string &str) {
-        const auto &p = snakeToCamelPair(str);
-        return p.first + p.second;
-    }
+    std::string snakeToCamel(const std::string &str);
 
     std::string enumConvertCamel(const std::string &enumName,
-                                 std::string value) {
-        std::string out = snakeToCamel(value);
-        strStripPrefix(out, "vk");
-
-        size_t i, s = enumName.size();
-        for (i = s; i >= 0; --i) {
-            std::string p = enumName.substr(0, i);
-            if ((i == s || std::isupper(enumName[i])) && out.starts_with(p)) {
-                out.erase(0, i);
-                break;
-            }
-        }
-
-        for (int j = i; j < s; ++j) {
-            std::string p = enumName.substr(j, s);
-            if (std::isupper(p[0]) && out.ends_with(p)) {
-                out.erase(out.size() - (s - j));
-                break;
-            }
-        }
-
-        for (size_t i = 0; i < out.size() - 1; ++i) {
-            if (std::isdigit(out[i + 1])) {
-                out[i] = std::toupper(out[i]);
-            } else if (std::isdigit(out[i]) && out[i + 1] == 'd') {
-                out[i + 1] = 'D';
-            }
-        }
-
-        return "e" + out;
-    }
+                                 std::string value);
 
     static std::string toCppStyle(const std::string &str,
-                                  bool firstLetterCapital = false) {
-        std::string out = stripVkPrefix(str);
-        if (!out.empty()) {
-            if (!firstLetterCapital) {
-                out[0] = std::tolower(out[0]);
-            }
-        }
-        return out;
-    }
+                                  bool firstLetterCapital = false);
 
-    void generateFromXML() {
-      // maps nodes from vk.xml registry to functions
-        static const std::vector<OrderPair> genTable {
-            {"enums",
-             std::bind(&Generator::genEnums, this, std::placeholders::_1)}};       
+    void parseXML();
 
-        for (XMLElement &node : Elements(root)) {
-            std::string_view value{node.Value()};
-            if (value == "enums") {
-                genEnums(&node);
-            }
-        }
-
-        genFlags();
-        genTypes();
-    }
-
-    void generateFile(std::string f2path) {
-        //    file2.writeLine("#ifndef " + FILEPROTECT + "_FUNCS");
-        //    file2.writeLine("#define " + FILEPROTECT + "_FUNCS");
-        //    file2.writeLine("namespace " + NAMESPACE);
-        //    file2.writeLine("{");
-        //    file2.pushIndent();
-
-        file.writeLine("#ifndef " + FILEPROTECT);
-        file.writeLine("#define " + FILEPROTECT);
-
-        file.write(RES_HEADER);
-
-        file.writeLine("namespace " + NAMESPACE);
-        file.writeLine("{");
-
-        file.pushIndent();
-
-        file.write(RES_BASE_TYPES);
-        file.write(RES_OTHER_HPP);
-        file.write(RES_FLAGS_HPP);
-        file.write(RES_RESULT_VALUE_STRUCT_HPP);
-        file.write(RES_LIB_LOADER);
-
-        generateFromXML();
-
-        file.write(RES_ARRAY_PROXY_HPP);
-        file.write(RES_ERROR_HPP);
-
-        file.write(R"(
-  class OutOfHostMemoryError : public SystemError
-  {
-  public:
-    OutOfHostMemoryError( std::string const & message )
-      : SystemError( make_error_code( Result::eErrorOutOfHostMemory ), message )
-    {}
-    OutOfHostMemoryError( char const * message )
-      : SystemError( make_error_code( Result::eErrorOutOfHostMemory ), message )
-    {}
-  };
-
-  class OutOfDeviceMemoryError : public SystemError
-  {
-  public:
-    OutOfDeviceMemoryError( std::string const & message )
-      : SystemError( make_error_code( Result::eErrorOutOfDeviceMemory ), message )
-    {}
-    OutOfDeviceMemoryError( char const * message )
-      : SystemError( make_error_code( Result::eErrorOutOfDeviceMemory ), message )
-    {}
-  };
-
-  class InitializationFailedError : public SystemError
-  {
-  public:
-    InitializationFailedError( std::string const & message )
-      : SystemError( make_error_code( Result::eErrorInitializationFailed ), message )
-    {}
-    InitializationFailedError( char const * message )
-      : SystemError( make_error_code( Result::eErrorInitializationFailed ), message )
-    {}
-  };
-
-  class DeviceLostError : public SystemError
-  {
-  public:
-    DeviceLostError( std::string const & message ) : SystemError( make_error_code( Result::eErrorDeviceLost ), message )
-    {}
-    DeviceLostError( char const * message ) : SystemError( make_error_code( Result::eErrorDeviceLost ), message ) {}
-  };
-
-  class MemoryMapFailedError : public SystemError
-  {
-  public:
-    MemoryMapFailedError( std::string const & message )
-      : SystemError( make_error_code( Result::eErrorMemoryMapFailed ), message )
-    {}
-    MemoryMapFailedError( char const * message )
-      : SystemError( make_error_code( Result::eErrorMemoryMapFailed ), message )
-    {}
-  };
-
-  class LayerNotPresentError : public SystemError
-  {
-  public:
-    LayerNotPresentError( std::string const & message )
-      : SystemError( make_error_code( Result::eErrorLayerNotPresent ), message )
-    {}
-    LayerNotPresentError( char const * message )
-      : SystemError( make_error_code( Result::eErrorLayerNotPresent ), message )
-    {}
-  };
-
-  class ExtensionNotPresentError : public SystemError
-  {
-  public:
-    ExtensionNotPresentError( std::string const & message )
-      : SystemError( make_error_code( Result::eErrorExtensionNotPresent ), message )
-    {}
-    ExtensionNotPresentError( char const * message )
-      : SystemError( make_error_code( Result::eErrorExtensionNotPresent ), message )
-    {}
-  };
-
-  class FeatureNotPresentError : public SystemError
-  {
-  public:
-    FeatureNotPresentError( std::string const & message )
-      : SystemError( make_error_code( Result::eErrorFeatureNotPresent ), message )
-    {}
-    FeatureNotPresentError( char const * message )
-      : SystemError( make_error_code( Result::eErrorFeatureNotPresent ), message )
-    {}
-  };
-
-  class IncompatibleDriverError : public SystemError
-  {
-  public:
-    IncompatibleDriverError( std::string const & message )
-      : SystemError( make_error_code( Result::eErrorIncompatibleDriver ), message )
-    {}
-    IncompatibleDriverError( char const * message )
-      : SystemError( make_error_code( Result::eErrorIncompatibleDriver ), message )
-    {}
-  };
-
-  class TooManyObjectsError : public SystemError
-  {
-  public:
-    TooManyObjectsError( std::string const & message )
-      : SystemError( make_error_code( Result::eErrorTooManyObjects ), message )
-    {}
-    TooManyObjectsError( char const * message )
-      : SystemError( make_error_code( Result::eErrorTooManyObjects ), message )
-    {}
-  };
-
-  class FormatNotSupportedError : public SystemError
-  {
-  public:
-    FormatNotSupportedError( std::string const & message )
-      : SystemError( make_error_code( Result::eErrorFormatNotSupported ), message )
-    {}
-    FormatNotSupportedError( char const * message )
-      : SystemError( make_error_code( Result::eErrorFormatNotSupported ), message )
-    {}
-  };
-
-  class FragmentedPoolError : public SystemError
-  {
-  public:
-    FragmentedPoolError( std::string const & message )
-      : SystemError( make_error_code( Result::eErrorFragmentedPool ), message )
-    {}
-    FragmentedPoolError( char const * message )
-      : SystemError( make_error_code( Result::eErrorFragmentedPool ), message )
-    {}
-  };
-
-  class UnknownError : public SystemError
-  {
-  public:
-    UnknownError( std::string const & message ) : SystemError( make_error_code( Result::eErrorUnknown ), message ) {}
-    UnknownError( char const * message ) : SystemError( make_error_code( Result::eErrorUnknown ), message ) {}
-  };
-
-  class OutOfPoolMemoryError : public SystemError
-  {
-  public:
-    OutOfPoolMemoryError( std::string const & message )
-      : SystemError( make_error_code( Result::eErrorOutOfPoolMemory ), message )
-    {}
-    OutOfPoolMemoryError( char const * message )
-      : SystemError( make_error_code( Result::eErrorOutOfPoolMemory ), message )
-    {}
-  };
-
-  class InvalidExternalHandleError : public SystemError
-  {
-  public:
-    InvalidExternalHandleError( std::string const & message )
-      : SystemError( make_error_code( Result::eErrorInvalidExternalHandle ), message )
-    {}
-    InvalidExternalHandleError( char const * message )
-      : SystemError( make_error_code( Result::eErrorInvalidExternalHandle ), message )
-    {}
-  };
-
-  class FragmentationError : public SystemError
-  {
-  public:
-    FragmentationError( std::string const & message )
-      : SystemError( make_error_code( Result::eErrorFragmentation ), message )
-    {}
-    FragmentationError( char const * message ) : SystemError( make_error_code( Result::eErrorFragmentation ), message )
-    {}
-  };
-
-  class InvalidOpaqueCaptureAddressError : public SystemError
-  {
-  public:
-    InvalidOpaqueCaptureAddressError( std::string const & message )
-      : SystemError( make_error_code( Result::eErrorInvalidOpaqueCaptureAddress ), message )
-    {}
-    InvalidOpaqueCaptureAddressError( char const * message )
-      : SystemError( make_error_code( Result::eErrorInvalidOpaqueCaptureAddress ), message )
-    {}
-  };
-
-  class SurfaceLostKHRError : public SystemError
-  {
-  public:
-    SurfaceLostKHRError( std::string const & message )
-      : SystemError( make_error_code( Result::eErrorSurfaceLostKHR ), message )
-    {}
-    SurfaceLostKHRError( char const * message )
-      : SystemError( make_error_code( Result::eErrorSurfaceLostKHR ), message )
-    {}
-  };
-
-  class NativeWindowInUseKHRError : public SystemError
-  {
-  public:
-    NativeWindowInUseKHRError( std::string const & message )
-      : SystemError( make_error_code( Result::eErrorNativeWindowInUseKHR ), message )
-    {}
-    NativeWindowInUseKHRError( char const * message )
-      : SystemError( make_error_code( Result::eErrorNativeWindowInUseKHR ), message )
-    {}
-  };
-
-  class OutOfDateKHRError : public SystemError
-  {
-  public:
-    OutOfDateKHRError( std::string const & message )
-      : SystemError( make_error_code( Result::eErrorOutOfDateKHR ), message )
-    {}
-    OutOfDateKHRError( char const * message ) : SystemError( make_error_code( Result::eErrorOutOfDateKHR ), message ) {}
-  };
-
-  class IncompatibleDisplayKHRError : public SystemError
-  {
-  public:
-    IncompatibleDisplayKHRError( std::string const & message )
-      : SystemError( make_error_code( Result::eErrorIncompatibleDisplayKHR ), message )
-    {}
-    IncompatibleDisplayKHRError( char const * message )
-      : SystemError( make_error_code( Result::eErrorIncompatibleDisplayKHR ), message )
-    {}
-  };
-
-  class ValidationFailedEXTError : public SystemError
-  {
-  public:
-    ValidationFailedEXTError( std::string const & message )
-      : SystemError( make_error_code( Result::eErrorValidationFailedEXT ), message )
-    {}
-    ValidationFailedEXTError( char const * message )
-      : SystemError( make_error_code( Result::eErrorValidationFailedEXT ), message )
-    {}
-  };
-
-  class InvalidShaderNVError : public SystemError
-  {
-  public:
-    InvalidShaderNVError( std::string const & message )
-      : SystemError( make_error_code( Result::eErrorInvalidShaderNV ), message )
-    {}
-    InvalidShaderNVError( char const * message )
-      : SystemError( make_error_code( Result::eErrorInvalidShaderNV ), message )
-    {}
-  };
-
-  class InvalidDrmFormatModifierPlaneLayoutEXTError : public SystemError
-  {
-  public:
-    InvalidDrmFormatModifierPlaneLayoutEXTError( std::string const & message )
-      : SystemError( make_error_code( Result::eErrorInvalidDrmFormatModifierPlaneLayoutEXT ), message )
-    {}
-    InvalidDrmFormatModifierPlaneLayoutEXTError( char const * message )
-      : SystemError( make_error_code( Result::eErrorInvalidDrmFormatModifierPlaneLayoutEXT ), message )
-    {}
-  };
-
-  class NotPermittedEXTError : public SystemError
-  {
-  public:
-    NotPermittedEXTError( std::string const & message )
-      : SystemError( make_error_code( Result::eErrorNotPermittedEXT ), message )
-    {}
-    NotPermittedEXTError( char const * message )
-      : SystemError( make_error_code( Result::eErrorNotPermittedEXT ), message )
-    {}
-  };
-
-#  if defined( VK_USE_PLATFORM_WIN32_KHR )
-  class FullScreenExclusiveModeLostEXTError : public SystemError
-  {
-  public:
-    FullScreenExclusiveModeLostEXTError( std::string const & message )
-      : SystemError( make_error_code( Result::eErrorFullScreenExclusiveModeLostEXT ), message )
-    {}
-    FullScreenExclusiveModeLostEXTError( char const * message )
-      : SystemError( make_error_code( Result::eErrorFullScreenExclusiveModeLostEXT ), message )
-    {}
-  };
-#  endif /*VK_USE_PLATFORM_WIN32_KHR*/
-    )");
-
-        file.write(RES_RESULT_VALUE_HPP);
-
-
-        file.get() << std::endl;
-
-
-        std::ifstream infile(f2path);
-
-        std::string line;
-        while (std::getline(infile, line)) {
-            file.get() << line << std::endl;
-        }
-        file.get() << std::endl;
-
-        file.writeLine("}");
-
-        file.writeLine("#endif //" + FILEPROTECT);
-
-        file.popIndent();
-        //    file2.popIndent();
-        //    file2.writeLine("}");
-        //    file2.writeLine("#endif //" + FILEPROTECT + "_FUNCS");
-    }
+    std::string generateFile();
 
     std::vector<VariableData> parseStructMembers(XMLElement *node,
                                                  std::string &structType,
-                                                 std::string &structTypeValue) {
-        std::vector<VariableData> members;
-        // iterate contents of <type>, filter only <member> children
-        for (XMLElement *member : Elements(node) | ValueFilter("member")) {
-            std::string out;
-
-            XMLVariableParser parser{member}; // parse <member>
-
-            std::string type = parser.type();
-            std::string name = parser.identifier();
-
-            if (const char *values = member->ToElement()->Attribute("values")) {
-                std::string value = enumConvertCamel(type, values);
-                parser.setAssignment(type + "::" + value);
-                if (name == "sType") { // save sType information for structType
-                    structType = type;
-                    structTypeValue = value;
-                }
-            } else {
-                if (name == "sType") {
-                    out += " = StructureType::eApplicationInfo";
-                } else {
-                    out += " = {}";
-                }
-            }
-
-            members.push_back(parser);
-        }
-        return members;
-    }
+                                                 std::string &structTypeValue);
 
     struct GenStructTempData {
         std::string name;
@@ -1894,467 +1285,28 @@ class Generator {
 
     void generateStructCode(std::string name, const std::string &structType,
                             const std::string &structTypeValue,
-                            const std::vector<VariableData> &members) {
-        file.writeLine("struct " + name);
-        file.writeLine("{");
-
-        file.pushIndent();
-        if (!structType.empty() && !structTypeValue.empty()) { // structType
-            file.writeLine("static VULKAN_HPP_CONST_OR_CONSTEXPR " +
-                           structType + " structureType = " + structType +
-                           "::" + structTypeValue + ";");
-            file.get() << std::endl;
-        }
-        // structure members
-        for (const auto &m : members) {
-            file.writeLine(m.toStringWithAssignment() + ";");
-        }
-        file.get() << std::endl;
-
-        std::string alt = "Noinit";
-        file.writeLine("struct " + alt + " {");
-        file.pushIndent();
-        for (const auto &m : members) {
-            file.writeLine(m.toString() + ";");
-        }
-        file.get() << std::endl;
-        file.writeLine(alt + "() = default;");
-
-        file.get() << std::endl;
-        file.writeLine("operator " + name +
-                       " const&() const { return *std::bit_cast<const " + name +
-                       "*>(this); }");
-        file.writeLine("operator " + name + " &() { return *std::bit_cast<" +
-                       name + "*>(this); }");
-        file.popIndent();
-        file.writeLine("};");
-
-        file.writeLine("operator " + NAMESPACE + "::" + name +
-                       "*() { return this; }");
-
-        file.writeLine("operator Vk" + name +
-                       " const&() const { return *std::bit_cast<const Vk" +
-                       name + "*>(this); }");
-        file.writeLine("operator Vk" + name +
-                       " &() { return *std::bit_cast<Vk" + name +
-                       "*>(this); }");
-
-        file.popIndent();
-
-        file.writeLine("};");
-    }
+                            const std::vector<VariableData> &members);
 
     void generateUnionCode(std::string name,
-                           const std::vector<VariableData> &members) {
-        file.writeLine("union " + name);
-        file.writeLine("{");
-
-        file.pushIndent();
-        // union members
-        for (const auto &m : members) {
-            file.writeLine(m.toString() + ";");
-        }
-        file.get() << std::endl;
-
-        file.writeLine("operator " + NAMESPACE + "::" + name +
-                       "*() { return this; }");
-
-        file.writeLine("operator Vk" + name +
-                       " const&() const { return *std::bit_cast<const Vk" +
-                       name + "*>(this); }");
-        file.writeLine("operator Vk" + name +
-                       " &() { return *std::bit_cast<Vk" + name +
-                       "*>(this); }");
-
-        file.popIndent();
-        file.writeLine("};");
-    }
+                           const std::vector<VariableData> &members);
 
     void generateStruct(std::string name, const std::string &structType,
                         const std::string &structTypeValue,
                         const std::vector<VariableData> &members,
                         const std::vector<std::string> &typeList,
-                        bool structOrUnion) {
-        auto it = structs.find(name);
+                        bool structOrUnion);
 
-        genOptional(name, [&] {
-            strStripVk(name);
-
-            if (structOrUnion) {
-                generateStructCode(name, structType, structTypeValue, members);
-            } else {
-                generateUnionCode(name, members);
-            }
-
-            if (it != structs.end()) {
-                for (const auto &a : it->second.aliases) {
-                    file.writeLine("using " + strStripVk(a) + " = " + name +
-                                   ";");
-                    generatedStructs.emplace(strStripVk(a));
-                }
-            }
-
-            generatedStructs.emplace(name);
-        });
-    }
-
-    void parseStruct(XMLElement *node, std::string name, bool structOrUnion) {
-        if (const char *aliasAttrib = node->Attribute("alias")) {
-            return;
-        }
-
-        std::string structType{}, structTypeValue{}; // placeholders
-        std::vector<VariableData> members =
-            parseStructMembers(node, structType, structTypeValue);
-
-        std::vector<std::string> typeList;
-        for (const auto &m : members) {
-            std::string t = m.type();
-            if (isStructOrUnion("Vk" + t)) {
-                typeList.push_back(t);
-            }
-        }
-        const auto hasAllDeps = [&](const std::vector<std::string> &types) {
-            for (const auto &t : types) {
-                if (isStructOrUnion("Vk" + t)) {
-                    const auto &it = generatedStructs.find(t);
-                    if (it == generatedStructs.end()) {
-                        return false;
-                    }
-                }
-            }
-            return true;
-        };
-
-        if (!hasAllDeps(typeList) && name != "VkBaseInStructure" &&
-            name != "VkBaseOutStructure") {
-            GenStructTempData d;
-            d.name = name;
-            d.node = node;
-            d.structOrUnion = structOrUnion;
-            for (const auto &t : typeList) {
-                d.typeList.push_back(t);
-            }
-            //std::cout << d.name << std::endl;
-            genStructStack.push_back(d);
-            hasAllDeps(typeList);
-            return;
-        }
-
-        generateStruct(name, structType, structTypeValue, members, typeList,
-                       structOrUnion);
-
-        for (auto it = genStructStack.begin(); it != genStructStack.end();
-             ++it) {
-            if (hasAllDeps(it->typeList)) {
-                std::string structType{}, structTypeValue{};
-                std::vector<VariableData> members =
-                    parseStructMembers(it->node, structType, structTypeValue);
-                generateStruct(it->name, structType, structTypeValue, members,
-                               it->typeList, it->structOrUnion);
-                it = genStructStack.erase(it);
-                --it;
-            }
-        }
-    }
+    void parseStruct(XMLElement *node, std::string name, bool structOrUnion);
 
     void parseEnumExtend(XMLElement &node, const char *protect,
-                         bool flagSupported) {
-        const char *extends = node.Attribute("extends");
-        const char *bitpos = node.Attribute("bitpos");
-        const char *name = node.Attribute("name");
-        const char *alias = node.Attribute("alias");
-
-        if (extends && name) {
-            auto it = enums.find(extends);
-            if (it != enums.end()) {
-                EnumValue data;
-                data.name = name;
-                data.bitpos = bitpos;
-                data.protect = protect;
-                data.supported = flagSupported;
-                data.alias = alias;
-
-                bool dup = false;
-                for (auto &v : it->second.extendValues) {
-                    if (std::string_view{v.name} == std::string_view{name}) {
-                        dup = true;
-                        break;
-                    }
-                }
-
-                if (!dup) {
-                    it->second.extendValues.push_back(data);
-                }
-
-            } else {
-                std::cerr << "err: Cant find enum: " << extends << std::endl;
-            }
-        }
-    }
+                         bool flagSupported);
 
     void generateEnum(std::string name, XMLNode *node,
-                      const std::string &bitmask) {
-        auto it = enums.find(name);
-        if (it == enums.end()) {
-            std::cerr << "cant find " << name << "in enums" << std::endl;
-            return;
-        }
+                      const std::string &bitmask);
 
-        auto alias = it->second.aliases;
+    void genEnums(XMLNode *node);
 
-        std::string ext = name;
-        if (!bitmask.empty()) {
-            ext = std::regex_replace(ext, std::regex("FlagBits"), "Flags");
-        }
-
-        genOptional(ext, [&] {
-            name = toCppStyle(name, true);
-            std::string enumStr =
-                bitmask.empty()
-                    ? name
-                    : std::regex_replace(name, std::regex("FlagBits"), "Bit");
-
-            std::vector<std::pair<std::string, const char *>> values;
-
-            // iterate contents of <enums>, filter only <enum> children
-            for (XMLElement *e : Elements(node) | ValueFilter("enum")) {
-                const char *name = e->Attribute("name");
-                const char *alias = e->Attribute("alias");
-                if (name) {
-                    values.push_back(std::make_pair(name, alias));
-                }
-            }
-
-            std::string optionalInherit = "";
-            if (!bitmask.empty()) {
-                optionalInherit += " : " + bitmask;
-            }
-            file.writeLine("enum class " + name + optionalInherit +
-                           " {"); // + " // " + cname + " - " + tag);
-            file.pushIndent();
-
-            std::vector<std::pair<std::string, const char *>> enumMembersList;
-            const auto genEnumValue = [&](std::string value, bool last,
-                                          const char *protect, bool add) {
-                std::string cpp = enumConvertCamel(enumStr, value);
-                // strRemoveTag(cpp);
-                std::string comma = "";
-                if (!last) {
-                    comma = ",";
-                }
-                bool dup = false;
-                for (auto &e : enumMembersList) {
-                    if (e.first == cpp) {
-                        dup = true;
-                        break;
-                    }
-                }
-
-                if (!dup) {
-                    file.writeLine(cpp + " = " + value + comma);
-                    if (add) {
-                        enumMembersList.push_back(std::make_pair(cpp, protect));
-                    }
-                }
-            };
-
-            size_t extSize = it->second.extendValues.size();
-            for (size_t i = 0; i < values.size(); ++i) {
-                std::string c = values[i].first;
-                genEnumValue(c, i == values.size() - 1 && extSize == 0, nullptr,
-                             values[i].second == nullptr);
-            }
-
-            for (size_t i = 0; i < extSize; ++i) {
-                const auto &v = it->second.extendValues[i];
-                if (!v.supported) {
-                    continue;
-                }
-
-                if (v.protect) {
-                    withProtect(v.protect, [&] {
-                        genEnumValue(v.name.data(), i == extSize, v.protect,
-                                     v.alias == nullptr);
-                    });
-                } else {
-                    genEnumValue(v.name.data(), i == extSize, nullptr,
-                                 v.alias == nullptr);
-                }
-            }
-
-            file.popIndent();
-            file.writeLine("};\n");
-
-            file.writeLine("VULKAN_HPP_INLINE std::string to_string(" + name +
-                           " value) {");
-            file.pushIndent();
-            file.writeLine("switch (value){");
-            file.pushIndent();
-
-            for (const auto &m : enumMembersList) {
-                std::string str = m.first.c_str();
-                strStripPrefix(str, "e");
-                std::string code = "case " + name + "::" + m.first +
-                                   ": return \"" + str + "\";";
-                withProtect(m.second, [&] { file.writeLine(code); });
-            }
-
-            file.writeLine(
-                "default: return \"invalid ( \" + "
-                "toHexString(static_cast<uint32_t>(value)) + \" )\";");
-
-            file.popIndent();
-            file.writeLine("}");
-            file.popIndent();
-            file.writeLine("}");
-
-            for (auto &a : alias) {
-                std::string n = toCppStyle(a, true);
-                file.writeLine("using " + n + " = " + name + ";");
-            }
-
-            enumMembers[name] = enumMembersList;
-        });
-    }
-
-    void genEnums(XMLNode *node) {
-
-
-        const char *name = node->ToElement()->Attribute("name");
-        if (!name) {
-            std::cerr << "Can't get name of enum" << std::endl;
-            return;
-        }
-
-        const char *type = node->ToElement()->Attribute("type");
-        if (!type) {
-            return;
-        }
-        bool isBitmask = std::string_view(type) == "bitmask";
-        bool isEnum = std::string_view(type) == "enum";
-        std::string bitmask;
-        if (isBitmask) {
-            isEnum = true;
-
-            auto it = flags.find(name);
-            if (it != flags.end()) {
-                bitmask = it->second.name;
-
-            } else {
-                bitmask = name;
-                bitmask = std::regex_replace(bitmask, std::regex("FlagBits"),
-                                             "Flags");
-            }
-        }
-
-        if (isEnum) {
-            generateEnum(name, node, bitmask);
-        }
-    }
-
-    void genFlags() {
-        std::cout << "Generating enum flags" << std::endl;
-
-        for (auto &e : flags) {
-            std::string l = toCppStyle(e.second.name, true);
-            std::string r = toCppStyle(e.first, true);
-
-            r = std::regex_replace(r, std::regex("Flags"), "FlagBits");
-
-            genOptional(e.second.name, [&] {
-                if (e.second.alias) {
-                    file.writeLine("using " + l + " = " + r + ";");
-                } else {
-                    std::string _l =
-                        std::regex_replace(l, std::regex("Flags"), "FlagBits");
-                    if (!e.second.hasRequire &&
-                        enumMembers.find(_l) == enumMembers.end()) {
-                        std::string _r = e.first;
-                        file.writeLine("enum class " + _l + " : " + _r + " {");
-                        file.writeLine("};");
-                    }
-                    file.writeLine("using " + l + " = Flags<" + r + ">;");
-
-                    bool hasInfo = false;
-                    const auto it = enumMembers.find(r);
-                    if (it != enumMembers.end()) {
-                        hasInfo = !it->second.empty();
-                    }
-
-                    if (hasInfo) {
-                        file.writeLine("template <>");
-                        file.writeLine("struct FlagTraits<" + r + "> {");
-                        file.pushIndent();
-                        file.writeLine("enum : VkFlags {");
-                        file.pushIndent();
-
-                        std::string flags = "";
-
-                        file.pushIndent();
-                        const auto &members = it->second;
-                        for (size_t i = 0; i < members.size(); ++i) {
-                            const auto &pair = members[i];
-                            std::string member =
-                                "VkFlags(" + r + "::" + pair.first + ")";
-                            if (i != 0) {
-                                member = "| " + member;
-                            }
-                            withProtect(
-                                pair.second,
-                                [&] { flags += "    " + member + "\n"; },
-                                &flags);
-                        }
-                        file.popIndent();
-
-                        if (flags.empty()) {
-                            flags = "0";
-                        }
-                        file.writeLine("allFlags = " + flags);
-
-                        file.popIndent();
-                        file.writeLine("};");
-                        file.popIndent();
-                        file.writeLine("};");
-
-                        file.writeLine(
-                            "VULKAN_HPP_INLINE VULKAN_HPP_CONSTEXPR " + l +
-                            " operator|(" + r + " bit0,");
-                        file.writeLine("    " + r +
-                                       " bit1) VULKAN_HPP_NOEXCEPT {");
-                        file.writeLine("    return " + l + "(bit0) | bit1;");
-                        file.writeLine("}");
-
-                        file.writeLine(
-                            "VULKAN_HPP_INLINE VULKAN_HPP_CONSTEXPR " + l +
-                            " operator&( " + r + " bit0,");
-                        file.writeLine("   " + r +
-                                       " bit1) VULKAN_HPP_NOEXCEPT {");
-                        file.writeLine("return " + l + "(bit0) & bit1;");
-                        file.writeLine("}");
-
-                        file.writeLine(
-                            "VULKAN_HPP_INLINE VULKAN_HPP_CONSTEXPR " + l +
-                            " operator^( " + r + " bit0,");
-                        file.writeLine("    " + r +
-                                       " bit1) VULKAN_HPP_NOEXCEPT {");
-                        file.writeLine("return " + l + "(bit0) ^ bit1;");
-                        file.writeLine("}");
-
-                        file.writeLine(
-                            "VULKAN_HPP_INLINE VULKAN_HPP_CONSTEXPR " + l +
-                            " operator~(" + r +
-                            " bits) "
-                            "VULKAN_HPP_NOEXCEPT {");
-                        file.writeLine("return ~(" + l + "(bits) );");
-                        file.writeLine("}");
-                    }
-                }
-            });
-        }
-
-        std::cout << "Generating enum flags done" << std::endl;
-    }
+    void genFlags();
 
     struct HandleData {
         std::pair<const std::string_view, HandleData> *parent;
@@ -2365,253 +1317,32 @@ class Generator {
         ClassCommandData getAddrCmd;
         ClassCommandData createCmd;
 
-//        std::string getAddrSource;
-//        ClassCommandData createMember;
-//        ClassCommandData getAddrMember;
-//        std::string getAddrObject;
+        //        std::string getAddrSource;
+        //        ClassCommandData createMember;
+        //        ClassCommandData getAddrMember;
+        //        std::string getAddrObject;
     };
     using Handles = std::unordered_map<std::string_view, HandleData>;
     Handles handles;
+    HandleData loader;
+    std::string outputLoaderMethods;
 
-    void parseTypeDeclarations(XMLNode *node) {
-        std::cout << "Parsing declarations" << std::endl;
-
-        std::vector<std::pair<std::string_view, std::string_view>> handleBuffer;
-
-        // iterate contents of <types>, filter only <type> children
-        for (XMLElement *type : Elements(node) | ValueFilter("type")) {
-            const char *cat = type->Attribute("category");
-            if (!cat) {
-                // warn?
-                continue;
-            }
-            const char *name = type->Attribute("name");
-
-            if (strcmp(cat, "enum") == 0) {
-                if (name) {
-                    const char *alias = type->Attribute("alias");
-                    if (alias) {
-                        auto it = enums.find(alias);
-                        if (it == enums.end()) {
-                            enums.emplace(
-                                alias, EnumDeclaration{
-                                           .aliases = std::vector<std::string>{
-                                               {name}}});
-                        } else {
-                            it->second.aliases.push_back(name);
-                        }
-                    } else {
-                        enums.emplace(name, EnumDeclaration{});
-                    }
-                }
-            } else if (strcmp(cat, "bitmask") == 0) {
-                // typedef VkFlags ...
-
-                const char *name = type->Attribute("name");
-                const char *aliasAttrib = type->Attribute("alias");
-                std::string alias = aliasAttrib ? aliasAttrib : "";
-                const char *reqAttrib = type->Attribute("requires");
-                std::string req; // rename
-                bool hasReq = false;
-                bool hasAlias = false;
-
-                if (!aliasAttrib) {
-                    XMLElement *nameElem = type->FirstChildElement("name");
-                    if (!nameElem) {
-                        std::cerr << "Error: bitmap has no name" << std::endl;
-                        continue;
-                    }
-                    name = nameElem->GetText();
-                    if (!name) {
-                        std::cerr << "Error: bitmas alias has no name" << std::endl;
-                        continue;
-                    }
-
-                    if (reqAttrib) {
-                        req = reqAttrib;
-                        hasReq = true;
-                    } else {
-                        const char *bitAttrib = type->Attribute("bitvalues");
-
-                        if (bitAttrib) {
-                            req = bitAttrib;
-                        } else {
-                            req = name;
-                        }
-                    }
-                } else {
-                    if (!name) {
-                        std::cerr << "Error: bitmap alias has no name"
-                                  << std::endl;
-                        continue;
-                    }
-                    req = alias;
-                    hasAlias = true;
-                }
-
-                flags.emplace(req, FlagData{.name = name,
-                                            .hasRequire = hasReq,
-                                            .alias = hasAlias});
-
-            } else if (strcmp(cat, "handle") == 0) {
-                XMLElement *nameElem = type->FirstChildElement("name");
-                if (nameElem) {
-                    const char *name = nameElem->GetText();
-                    if (!name || std::string{name}.empty()) {
-                        std::cerr << "Missing name in handle node" << std::endl;
-                        continue;
-                    }
-                    const char *parent = type->Attribute("parent");
-                    const char *alias = type->Attribute("alias");
-                    HandleData d{.parent = nullptr};
-                    if (alias) {
-                        d.alias = alias;
-                    }
-                    if (parent) {
-                        handleBuffer.push_back(std::make_pair(name, parent));
-                    }
-                    handles.emplace(name, d);
-                }
-            } else if (strcmp(cat, "struct") == 0 ||
-                       strcmp(cat, "union") == 0) {
-                if (name) {
-                    const char *alias = type->Attribute("alias");
-                    StructData d;
-                    d.type = (strcmp(cat, "struct") == 0)
-                                 ? StructData::VK_STRUCT
-                                 : StructData::VK_UNION;
-
-                    if (alias) {
-                        const auto &it = structs.find(alias);
-                        if (it == structs.end()) {
-                            d.node = nullptr;
-                            d.aliases.push_back(name);
-                            structs.emplace(alias, d);
-                        } else {
-                            it->second.aliases.push_back(name);
-                        }
-                    } else {
-                        const auto &it = structs.find(name);
-                        if (it == structs.end()) {
-                            d.node = type;
-                            structs.emplace(name, d);
-                        } else {
-                            it->second.node = type;
-                        }
-                    }
-                }
-            }
+    Handles::iterator findHandle(const std::string_view &name) {
+        auto handle = handles.find(name);
+        if (handle == handles.end()) {
+            throw std::runtime_error(format("Handle not found: {0}", name));
         }
-
-        for (auto &h : handleBuffer) {
-            const auto &t = handles.find(h.first);
-            const auto &p = handles.find(h.second);
-            if (t != handles.end() && p != handles.end()) {
-                t->second.parent = &(*p);
-            }
-        }
-
-        for (auto &h : handles) {
-            h.second.superclass = getHandleSuperclass(h.second);
-        }
-
-        std::cout << "Parsing declarations done" << std::endl;
+        return handle;
     }
 
+    void parseTypeDeclarations(XMLNode *node);
     // static void generateClass(const std::string &name);
 
-    void generateStructDecl(const std::string &name, const StructData &d) {
-        genOptional(name, [&] {
-            std::string cppname = strStripVk(name);
+    void generateStructDecl(const std::string &name, const StructData &d);
 
-            if (d.type == StructData::VK_STRUCT) {
-                file.writeLine("struct " + cppname + ";");
-            } else {
-                file.writeLine("union " + cppname + ";");
-            }
+    void generateClassDecl(const std::string &name);
 
-            for (auto &a : d.aliases) {
-                file.writeLine("using " + strStripVk(a) + " = " + cppname +
-                               ";");
-            }
-        });
-    }
-
-    void generateClassDecl(const std::string &name) {
-        genOptional(name, [&] {
-            std::string className = toCppStyle(name, true);
-            std::string handle = "m_" + toCppStyle(name);
-            file.writeLine("class " + className + "Base {");
-            file.writeLine("protected:");
-            file.pushIndent();
-            file.writeLine(name + " " + handle + " = {};");
-            file.popIndent();
-            file.writeLine("public:");
-            file.pushIndent();
-            // operators
-            file.writeLine("operator "
-                           "Vk" +
-                           className + "() const {");
-            file.pushIndent();
-            file.writeLine("return " + handle + ";");
-            file.popIndent();
-            file.writeLine("}");
-
-            file.popIndent();
-            file.writeLine("};");
-            file.writeLine("");
-
-            file.writeLine("class " + className + ";");
-        });
-    }
-
-    void genTypes() {
-//        static const auto parseType = [&](XMLElement *type) {
-//            const char *cat = type->Attribute("category");
-//            if (!cat) {
-//                return;
-//            }
-//            const char *name = type->Attribute("name");
-//            if (strcmp(cat, "struct") == 0) {
-//                if (name) {
-//                    parseStruct(type, name, true);
-//                }
-//            } else if (strcmp(cat, "union") == 0) {
-//                if (name) {
-//                    parseStruct(type, name, false);
-//                }
-//            }
-//        };
-
-        std::cout << "Generating types" << std::endl;
-
-        for (auto &e : handles) {
-            generateClassDecl(e.first.data());
-        }
-        for (auto &e : structs) {
-            generateStructDecl(e.first, e.second);
-        }
-
-        for (auto &e : handles) {
-            generateClass(e.first.data(), e.second);
-        }
-
-        for (auto &e : structs) {
-            parseStruct(e.second.node->ToElement(), e.first,
-                        e.second.type == StructData::VK_STRUCT);
-        }
-
-        for (auto it = genStructStack.begin(); it != genStructStack.end();
-             ++it) {
-            std::string structType{}, structTypeValue{}; // placeholders
-            std::vector<VariableData> members =
-                parseStructMembers(it->node, structType, structTypeValue);
-            generateStruct(it->name, structType, structTypeValue, members,
-                           it->typeList, it->structOrUnion);
-        }
-
-        std::cout << "Generating types done" << std::endl;
-    }
+    void genTypes();
 
     ClassCommandData parseClassMember(XMLElement *command) {
         ClassCommandData m;
@@ -2661,28 +1392,10 @@ class Generator {
 
         return m;
     }
-
     std::string generateClassMemberCStyle(const std::string &className,
                                           const std::string &handle,
                                           const std::string &protoName,
-                                          const ClassCommandData &m) {
-        std::string protoArgs = m.createProtoArguments(className, true);
-        std::string innerArgs = m.createPFNArguments(className, handle, true);
-        file.writeLine("inline " + m.type + " " + protoName + "(" + protoArgs +
-                       ") { // C");
-
-        file.pushIndent();
-        std::string cmdCall;
-        if (m.type != "void") {
-            cmdCall += "return ";
-        }
-        cmdCall += ("m_" + m.name + "(" + innerArgs + ");");
-        file.writeLine(cmdCall);
-        file.popIndent();
-
-        file.writeLine("}");
-        return protoArgs;
-    }
+                                          const ClassCommandData &m);
 
     enum class PFNReturnCategory { OTHER, VOID, VK_RESULT, VK_OBJECT };
 
@@ -2726,32 +1439,7 @@ class Generator {
         return false;
     }
 
-    MemberNameCategory evalMemberNameCategory(MemberContext &ctx) {
-        const std::string &name = ctx.protoName;
-
-        bool containsCountVar = containsLengthAttrib(ctx.mdata.params);
-        bool arrayFlag = containsCountVar;
-
-        if (name.starts_with("get")) {
-            return arrayFlag ? MemberNameCategory::GET_ARRAY
-                             : MemberNameCategory::GET;
-        }
-        if (name.starts_with("allocate")) {
-            if (arrayFlag) {
-                return MemberNameCategory::ALLOCATE_ARRAY;
-            } else {
-                return MemberNameCategory::ALLOCATE;
-            }
-        }
-        if (name.starts_with("create")) {
-            return arrayFlag ? MemberNameCategory::CREATE_ARRAY
-                             : MemberNameCategory::CREATE;
-        }
-        if (name.starts_with("enumerate")) {
-            return MemberNameCategory::ENUMERATE;
-        }
-        return MemberNameCategory::UNKNOWN;
-    }
+    MemberNameCategory evalMemberNameCategory(MemberContext &ctx);
 
     static bool isTypePointer(const VariableData &m) {
         return strContains(m.suffix(), "*");
@@ -2768,10 +1456,10 @@ class Generator {
         return ArraySizeArgument::INVALID;
     }
 
-    static std::string mname2;
+    // static std::string mname2;
 
     class MemberResolver {
-        friend Generator;
+        // friend Generator;
 
       private:
         void transformMemberArguments() {
@@ -2803,7 +1491,8 @@ class Generator {
                     if (sizeVar->isInvalid()) {
                         // length param not found
                         std::cerr << "(in: " << ctx.protoName << ")"
-                                  << " Length param not found: " << len << std::endl;
+                                  << " Length param not found: " << len
+                                  << std::endl;
                         return;
                     }
                     if (!strContains(lenAttrib, "->")) {
@@ -2853,11 +1542,13 @@ class Generator {
 
         VariableData returnVar;
 
-        virtual void generateMemberBody() {
-            file2.writeLine(generatePFNcall());
+        virtual std::string generateMemberBody() {
+            std::string output;
+            output += "        " + generatePFNcall() + "\n";
             if (returnType == "Result") {
-                file2.writeLine("return " + returnVar.identifier() + ";");
+                output += "        return " + returnVar.identifier() + ";\n";
             }
+            return output;
         }
 
         std::string generatePFNcall() {
@@ -2895,7 +1586,7 @@ class Generator {
                     "return createResultValue<" + returnType + ">(\n" +
                     "               " + returnVar.identifier() + ",\n" +
                     "               " + identifier + ",\n" + "               " +
-                    "\"" + NAMESPACE + "::" + ctx.className +
+                    "\"" + ctx.gen.getConfig().vkname.get() + "::" + ctx.className +
                     "::" + ctx.protoName + "\"";
                 if (ctx.mdata.successCodes.size() > 1) {
                     out += ",\n               {\n";
@@ -2935,8 +1626,10 @@ class Generator {
 
         virtual ~MemberResolver() {}
 
-        void generateDeclaration() {
-            file.writeLine("");
+        std::string generateDeclaration() {
+            std::string output;
+
+            // file.writeLine("");
             if (!templates.empty()) {
                 std::string temp;
                 for (const std::string &str : templates) {
@@ -2944,58 +1637,68 @@ class Generator {
                     temp += ", ";
                 }
                 strStripSuffix(temp, ", ");
-                file.writeLine("template <" + temp + ">");
+                output += "      template <" + temp + ">\n";
             }
 
             std::string protoArgs =
                 ctx.mdata.createProtoArguments(ctx.className);
             std::string proto = generateReturnType() + " " + ctx.protoName +
-                                "(" + protoArgs + ");" + " // [" + dbgtag + "]";
+                                "(" + protoArgs + ");" + " // [" + dbgtag +
+                                "]\n";
 
-            file.writeLine(proto);
+            output += "      " + proto;
+            return output;
         }
 
-        void generateDefinition() {
-            ctx.gen.genOptional2(mname2, [&] {
-                file2.writeLine("");
+        std::string generateDefinition() {
+            std::string output;
 
-                if (!templates.empty()) {
-                    std::string temp;
-                    for (const std::string &str : templates) {
-                        temp += str;
-                        temp += ", ";
+            output +=
+                ctx.gen.genOptional(ctx.mdata.name, [&](std::string &output) {
+                    if (!templates.empty()) {
+                        std::string temp;
+                        for (const std::string &str : templates) {
+                            temp += str;
+                            temp += ", ";
+                        }
+                        strStripSuffix(temp, ", ");
+                        output += "      template <" + temp + ">\n";
                     }
-                    strStripSuffix(temp, ", ");
-                    file2.writeLine("template <" + temp + ">");
-                }
 
-                std::string protoArgs =
-                    ctx.mdata.createProtoArguments(ctx.className);
-                std::string proto = "inline " + generateReturnType() + " " +
-                                    ctx.className + "::" + ctx.protoName + "(" +
-                                    protoArgs + ") {" + " // [" + dbgtag + "]";
+                    std::string protoArgs =
+                        ctx.mdata.createProtoArguments(ctx.className);
+                    std::string proto = "inline " + generateReturnType() + " " +
+                                        ctx.className + "::" + ctx.protoName +
+                                        "(" + protoArgs + ") {" + " // [" +
+                                        dbgtag + "]\n";
 
-                file2.writeLine(proto);
-                file2.pushIndent();
+                    output += "  " + proto;
 
-                generateMemberBody();
+                    output += generateMemberBody();
 
-                file2.popIndent();
-                file2.writeLine("}");
-            });
+                    output += "  }\n";
+                });
+            return output;
         }
     };
 
     class MemberResolverInit : public MemberResolver {
+        VariableData returnVar;
+
       public:
-        MemberResolverInit(MemberContext &refCtx) : MemberResolver(refCtx) {}
-        void generateMemberBody() override {
-            file2.writeLine(generatePFNcall());
-            if (!returnVar.isInvalid()) {
-                file2.writeLine("createResultValue(" + returnVar.identifier() +
-                                ", \"" + NAMESPACE + "::" + ctx.className +
-                                "::" + ctx.protoName + "\");");
-            }
+        MemberResolverInit(MemberContext &refCtx) : MemberResolver(refCtx) {
+           dbgtag = "create";
+           returnVar = *ctx.mdata.params.rbegin()->get();
+           returnType = returnVar.type();
+        }
+
+
+        std::string generateMemberBody() override {
+            std::string output;
+            output += "        " + returnType + " " + returnVar.identifier() + ";\n";
+            output += "        " + generatePFNcall() + "\n";
+            output += "        " + generateReturn(returnVar.identifier()) + "\n";
+            return output;
         }
     };
 
@@ -3016,12 +1719,15 @@ class Generator {
             dbgtag = "single return";
         }
 
-        void generateMemberBody() override {
-            file2.writeLine(returnType + " " + lastVar->identifier() + ";");
+        std::string generateMemberBody() override {
+            std::string output;
+            output +=
+                "        " + returnType + " " + lastVar->identifier() + ";\n";
 
-            file2.writeLine(generatePFNcall());
+            output += "        " + generatePFNcall() + "\n";
 
-            file2.writeLine(generateReturn(lastVar->identifier()));
+            output += "        " + generateReturn(lastVar->identifier()) + "\n";
+            return output;
         }
     };
 
@@ -3052,60 +1758,65 @@ class Generator {
 
         bool returnsArray;
 
-        void generateArray() {
-            file2.writeLine(last->toString() + initSize + ";");
+        std::string generateArray() {
+            std::string output;
+            output += "        " + last->toString() + initSize + ";\n";
             std::string size = last->lenAttrib();
             if (lenVar->getIgnoreFlag()) {
-                file2.writeLine(lenVar->type() + " " + lenVar->identifier() +
-                                ";");
+                output += "        " + lenVar->type() + " " +
+                          lenVar->identifier() + ";\n";
             }
 
             if (ctx.pfnReturn == PFNReturnCategory::VK_RESULT) {
-                file2.writeLine(assignToResult(""));
+                output += "        " + assignToResult("") + "\n";
                 std::string call = generatePFNcall();
-                file2.writeLine("do {");
-                file2.pushIndent();
+                output += "        do {\n";
+                // file2.pushIndent();
 
-                file2.writeLine(call);
-                file2.writeLine("if (( result == Result::eSuccess ) && " +
-                                lenVar->identifier() + ") {");
-                file2.pushIndent();
+                output += "          " + call + "\n";
+                output += "          if (( result == Result::eSuccess ) && " +
+                          lenVar->identifier() + ") {\n";
 
-                file2.writeLine(last->identifier() + ".resize(" + size + ");");
-                file2.writeLine(call);
+                output += "            " + last->identifier() + ".resize(" +
+                          size + ");\n";
+                output += "            " + call + "\n";
 
-                file2.writeLine("//VULKAN_HPP_ASSERT( " + lenVar->identifier() +
-                                " <= " + last->identifier() + ".size() );");
+                output += "            //VULKAN_HPP_ASSERT( " +
+                          lenVar->identifier() + " <= " + last->identifier() +
+                          ".size() );\n";
 
-                file2.popIndent();
-                file2.writeLine("}");
+                // file2.popIndent();
+                output += "        }\n";
 
-                file2.popIndent();
-                file2.writeLine("} while ( result == Result::eIncomplete );");
+                // file2.popIndent();
+                output += "      } while ( result == Result::eIncomplete );\n";
 
-                file2.writeLine("if ( ( result == Result::eSuccess ) && ( " +
-                                lenVar->identifier() + "< " +
-                                last->identifier() + ".size() ) ) {");
-                file2.pushIndent();
+                output += "      if ( ( result == Result::eSuccess ) && ( " +
+                          lenVar->identifier() + "< " + last->identifier() +
+                          ".size() ) ) {\n";
+                output += "        " + last->identifier() + ".resize(" + size +
+                          ");\n";
 
-                file2.writeLine(last->identifier() + ".resize(" + size + ");");
+                output += "      }\n";
 
-                file2.popIndent();
-                file2.writeLine("}");
-
-                file2.writeLine(generateReturn(last->identifier()));
+                output += "      " + generateReturn(last->identifier()) + "\n";
             } else {
                 std::string call = generatePFNcall();
 
-                file2.writeLine(call);
-                file2.writeLine(last->identifier() + ".resize(" + size + ");");
+                output += "        " + call + "\n";
 
-                file2.writeLine(call);
-                file2.writeLine("//VULKAN_HPP_ASSERT( " + lenVar->identifier() +
-                                " <= " + last->identifier() + ".size() );");
+                output += "        " + last->identifier() + ".resize(" + size +
+                          ");\n";
 
-                file2.writeLine(generateReturn(last->identifier()));
+                output += "        " + call + "\n";
+                output += "        //VULKAN_HPP_ASSERT( " +
+                          lenVar->identifier() + " <= " + last->identifier() +
+                          ".size() );\n";
+
+                output +=
+                    "        " + generateReturn(last->identifier()) + "\n";
             }
+            return output;
         }
 
       public:
@@ -3145,16 +1856,18 @@ class Generator {
             returnType = last->fullType();
         }
 
-        void generateMemberBody() override {
+        std::string generateMemberBody() override {
+            std::string output;
             if (returnsArray) {
-                generateArray();
+                output += generateArray();
             } else {
-                file2.writeLine(returnType + " " + last->identifier() + ";");
-
-                file2.writeLine(generatePFNcall());
-
-                file2.writeLine(generateReturn(last->identifier()));
+                output +=
+                    "        " + returnType + " " + last->identifier() + ";\n";
+                output += "        " + generatePFNcall() + "\n";
+                output +=
+                    "        " + generateReturn(last->identifier()) + "\n";
             }
+            return output;
         }
     };
 
@@ -3188,13 +1901,16 @@ class Generator {
             dbgtag = "create array";
         }
 
-        void generateMemberBody() override {
+        std::string generateMemberBody() override {
+            std::string output;
             std::string vectorSize = infoVar->identifier() + ".size()";
-            file2.writeLine(lastVar->toString() + "(" + vectorSize + ");");
+            output +=
+                "        " + lastVar->toString() + "(" + vectorSize + ");\n";
 
-            file2.writeLine(generatePFNcall());
+            output += "        " + generatePFNcall() + "\n";
 
-            file2.writeLine(generateReturn(lastVar->identifier()));
+            output += "        " + generateReturn(lastVar->identifier()) + "\n";
+            return output;
         }
     };
 
@@ -3212,14 +1928,17 @@ class Generator {
             returnType = lastVar->fullType();
         }
 
-        void generateMemberBody() override {
+        std::string generateMemberBody() override {
+            std::string output;
             std::string vectorSize = lastVar->lenAttrib();
 
-            file2.writeLine(lastVar->toString() + "(" + vectorSize + ");");
+            output +=
+                "        " + lastVar->toString() + "(" + vectorSize + ");\n";
 
-            file2.writeLine(generatePFNcall());
+            output += "        " + generatePFNcall() + "\n";
 
-            file2.writeLine(generateReturn(lastVar->identifier()));
+            output += "        " + generateReturn(lastVar->identifier()) + "\n";
+            return output;
         }
     };
 
@@ -3246,12 +1965,14 @@ class Generator {
             dbgtag = "Return template proxy";
         }
 
-        void generateMemberBody() override {
-            file2.writeLine("T " + last->identifier() + ";");
+        std::string generateMemberBody() override {
+            std::string output;
+            output += "        T " + last->identifier() + ";\n";
 
-            file2.writeLine(generatePFNcall()); // TODO missing &
+            output += "        " + generatePFNcall() + "\n"; // TODO missing &
 
-            file2.writeLine(generateReturn(last->identifier()));
+            output += "        " + generateReturn(last->identifier()) + "\n";
+            return output;
         }
     };
 
@@ -3279,16 +2000,19 @@ class Generator {
             dbgtag = "Return vector of template proxy";
         }
 
-        void generateMemberBody() override {
-            file2.writeLine("VULKAN_HPP_ASSERT( " + sizeVar->identifier() +
-                            " % sizeof( T ) == 0 );");
+        std::string generateMemberBody() override {
+            std::string output;
+            output += "        VULKAN_HPP_ASSERT( " + sizeVar->identifier() +
+                      " % sizeof( T ) == 0 );\n";
 
-            file2.writeLine(last->toString() + "( " + sizeVar->identifier() +
-                            " / sizeof(T)"
-                            " );");
-            file2.writeLine(generatePFNcall());
+            output += "        " + last->toString() + "( " +
+                      sizeVar->identifier() +
+                      " / sizeof(T)"
+                      " );\n";
+            output += "        " + generatePFNcall() + "\n";
 
-            file2.writeLine(generateReturn(last->identifier()));
+            output += "        " + generateReturn(last->identifier()) + "\n";
+            return output;
         }
     };
 
@@ -3312,47 +2036,46 @@ class Generator {
             lenVar->setAltPFN("&" + lenVar->original.identifier());
         }
 
-        void generateMemberBody() override {
-            file2.writeLine(last->toString() + ";");
-            file2.writeLine(lenVar->type() + " " + lenVar->identifier() + ";");
+        std::string generateMemberBody() override {
+            std::string output;
+            output += "        " + last->toString() + ";\n";
+            output += "        " + lenVar->type() + " " + lenVar->identifier() +
+                      ";\n";
 
             if (ctx.pfnReturn == PFNReturnCategory::VK_RESULT) {
-                file2.writeLine(assignToResult(""));
+                output += "        " + assignToResult("") + "\n";
                 std::string call = generatePFNcall();
-                file2.writeLine("do {");
-                file2.pushIndent();
+                output += "        do {\n";
 
-                file2.writeLine(call);
-                file2.writeLine("if (( result == Result::eSuccess ) && " +
-                                lenVar->identifier() + ") {");
-                file2.pushIndent();
+                output += "          " + call + "\n";
 
-                file2.writeLine(last->identifier() + ".resize(" +
-                                lenVar->identifier() + ");");
-                file2.writeLine(call);
+                output += "          if (( result == Result::eSuccess ) && " +
+                          lenVar->identifier() + ") {\n";
+                output += "            " + last->identifier() + ".resize(" +
+                          lenVar->identifier() + ");\n";
+                output += "            " + call + "\n";
 
-                file2.writeLine("//VULKAN_HPP_ASSERT( " + lenVar->identifier() +
-                                " <= " + last->identifier() + ".size() );");
+                output += "            //VULKAN_HPP_ASSERT( " +
+                          lenVar->identifier() + " <= " + last->identifier() +
+                          ".size() );\n";
 
-                file2.popIndent();
-                file2.writeLine("}");
+                output += "          }\n";
 
-                file2.popIndent();
-                file2.writeLine("} while ( result == Result::eIncomplete );");
+                output +=
+                    "        } while ( result == Result::eIncomplete );\n";
 
-                file2.writeLine("if ( ( result == Result::eSuccess ) && ( " +
-                                lenVar->identifier() + "< " +
-                                last->identifier() + ".size() ) ) {");
-                file2.pushIndent();
+                output += "        if ( ( result == Result::eSuccess ) && ( " +
+                          lenVar->identifier() + "< " + last->identifier() +
+                          ".size() ) ) {\n";
+                output += "          " + last->identifier() + ".resize(" +
+                          lenVar->identifier() + ");\n";
 
-                file2.writeLine(last->identifier() + ".resize(" +
-                                lenVar->identifier() + ");");
+                output += "        }\n";
 
-                file2.popIndent();
-                file2.writeLine("}");
-
-                file2.writeLine(generateReturn(last->identifier()));
+                output +=
+                    "        " + generateReturn(last->identifier()) + "\n";
             }
+            return output;
         }
     };
 
@@ -3376,63 +2099,62 @@ class Generator {
             lenVar->setAltPFN("&" + lenVar->original.identifier());
         }
 
-        void generateMemberBody() override {
+        std::string generateMemberBody() override {
+            std::string output;
             bool returnsObject = ctx.gen.handles.find(last->original.type()) !=
                                  ctx.gen.handles.end();
 
             std::string objvector = last->fullType();
             if (returnsObject) {
-                last->setType(last->type() + "Base");
+                last->setType(last->original.type());
             }
-            file2.writeLine(last->toString() + ";");
-            file2.writeLine(lenVar->type() + " " + lenVar->identifier() + ";");
+            output += "        " + last->toString() + ";\n";
+            output += "        " + lenVar->type() + " " + lenVar->identifier() +
+                      ";\n";
 
             if (ctx.pfnReturn == PFNReturnCategory::VK_RESULT) {
-                file2.writeLine(assignToResult(""));
+                output += "        " + assignToResult("") + "\n";
                 std::string call = generatePFNcall();
                 last->setAltPFN("nullptr");
                 std::string call2 = generatePFNcall();
-                file2.writeLine("do {");
-                file2.pushIndent();
+                output += "        do {\n";
+                output += "          " + call2 + "\n";
+                output += "          if (( result == Result::eSuccess ) && " +
+                          lenVar->identifier() + ") {\n";
 
-                file2.writeLine(call2);
-                file2.writeLine("if (( result == Result::eSuccess ) && " +
-                                lenVar->identifier() + ") {");
-                file2.pushIndent();
+                output += "            " + last->identifier() + ".resize(" +
+                          lenVar->identifier() + ");\n";
 
-                file2.writeLine(last->identifier() + ".resize(" +
-                                lenVar->identifier() + ");");
+                output += "            " + call + "\n";
 
-                file2.writeLine(call);
+                output += "            //VULKAN_HPP_ASSERT( " +
+                          lenVar->identifier() + " <= " + last->identifier() +
+                          ".size() );\n";
 
-                file2.writeLine("//VULKAN_HPP_ASSERT( " + lenVar->identifier() +
-                                " <= " + last->identifier() + ".size() );");
+                output += "          }\n";
 
-                file2.popIndent();
-                file2.writeLine("}");
+                output +=
+                    "        } while ( result == Result::eIncomplete );\n";
 
-                file2.popIndent();
-                file2.writeLine("} while ( result == Result::eIncomplete );");
+                output += "        if ( ( result == Result::eSuccess ) && ( " +
+                          lenVar->identifier() + "< " + last->identifier() +
+                          ".size() ) ) {\n";
+                output += "          " + last->identifier() + ".resize(" +
+                          lenVar->identifier() + ");\n";
 
-                file2.writeLine("if ( ( result == Result::eSuccess ) && ( " +
-                                lenVar->identifier() + "< " +
-                                last->identifier() + ".size() ) ) {");
-                file2.pushIndent();
+                output += "        }\n";
 
-                file2.writeLine(last->identifier() + ".resize(" +
-                                lenVar->identifier() + ");");
-
-                file2.popIndent();
-                file2.writeLine("}");
                 if (returnsObject) {
-                    file2.writeLine(objvector + " out{" + last->identifier() +
-                                    ".begin(), " + last->identifier() +
-                                    ".end()};");
-                    file2.writeLine(generateReturn("out"));
+                    output += "        " + objvector + " out{" +
+                              last->identifier() + ".begin(), " +
+                              last->identifier() + ".end()};\n";
+                    output += "        " + generateReturn("out") + "\n";
                 } else {
-                    file2.writeLine(generateReturn(last->identifier()));
+                    output +=
+                        "        " + generateReturn(last->identifier()) + "\n";
                 }
             }
+            return output;
         }
     };
 
@@ -3480,97 +2202,7 @@ class Generator {
         return out;
     }
 
-    std::vector<MemberResolver *> createMemberResolvers(MemberContext &ctx) {
-        std::vector<MemberResolver *> resolvers;
-        if (ctx.mdata.params.empty()) {
-            std::cerr << " >>> Unhandled: no params" << ctx.mdata.name << std::endl;
-            return resolvers;
-        }
-
-        VariableArray::reverse_iterator last =
-            ctx.mdata.params.rbegin(); // last argument
-        MemberNameCategory nameCategory = evalMemberNameCategory(ctx);
-
-        if (ctx.pfnReturn == PFNReturnCategory::VK_OBJECT ||
-            ctx.pfnReturn == PFNReturnCategory::OTHER) {
-            MemberResolver *resolver = new MemberResolver(ctx);
-            resolver->dbgtag = "PFN return";
-            resolvers.push_back(resolver);
-            return resolvers;
-        }
-
-        MemberResolver *resolver = nullptr;
-        switch (nameCategory) {
-        case MemberNameCategory::GET: {
-            std::pair<VariableArray::reverse_iterator,
-                      VariableArray::reverse_iterator>
-                data;
-            if (getLastTwo(ctx, data)) {
-                if (isPointerToCArray(data.first->get()->identifier()) &&
-                    data.second->get()->identifier() ==
-                        stripStartingP(data.first->get()->identifier()) +
-                            "Size") { // refactor?
-
-                    resolvers.push_back(new MemberResolverReturnProxy(ctx));
-                    resolver = new MemberResolverReturnVectorOfProxy(ctx);
-                    resolver->dbgtag = "get";
-                    return resolvers;
-                } else if (data.second->get()->identifier() ==
-                           data.first->get()->identifier() + "Size") {
-                    if (isTypePointer(*data.second->get())) {
-                        resolver = new MemberResolverReturnVectorData(ctx);
-                    } else {
-                        resolver = new MemberResolverReturnProxy(ctx);
-                    }
-                }
-            }
-
-            if (!resolver) { // fallback
-                if (strContains(last->get()->suffix(), "*") &&
-                    !strContains(last->get()->prefix(), "const")) {
-                    resolver = new MemberResolverStruct(ctx);
-                } else {
-                    resolver = new MemberResolver(ctx);
-                }
-            }
-            resolver->dbgtag = "get";
-        } break;
-        case MemberNameCategory::GET_ARRAY:
-            resolver = new MemberResolverGet(ctx);
-            resolver->dbgtag = "get array";
-            break;
-        case MemberNameCategory::CREATE:
-            resolver = new MemberResolverStruct(ctx);
-            resolver->dbgtag = "create";
-            break;
-        case MemberNameCategory::CREATE_ARRAY:
-            resolver = new MemberResolverCreateArray(ctx);
-            resolver->dbgtag = "create array";
-            break;
-        case MemberNameCategory::ALLOCATE:
-            resolver = new MemberResolverStruct(ctx);
-            resolver->dbgtag = "allocate";
-            break;
-        case MemberNameCategory::ALLOCATE_ARRAY:
-            resolver = new MemberResolverAllocateArray(ctx);
-            resolver->dbgtag = "allocate array";
-            break;
-        case MemberNameCategory::ENUMERATE:
-            resolver = new MemberResolverEnumerate(ctx);
-            break;
-        case MemberNameCategory::UNKNOWN:
-            // std::cout << ">> HERE" << std::endl;
-            if (strContains(last->get()->suffix(), "*") &&
-                !strContains(last->get()->prefix(), "const")) {
-                resolver = new MemberResolverStruct(ctx);
-            } else {
-                resolver = new MemberResolver(ctx);
-            }
-            break;
-        }
-        resolvers.push_back(resolver);
-        return resolvers;
-    }
+    std::vector<MemberResolver *> createMemberResolvers(MemberContext &ctx);
 
     void generateClassMemberCpp(MemberContext &ctx) {
         std::string dbgProtoComment; // debug info
@@ -3578,362 +2210,29 @@ class Generator {
 
         for (size_t i = 0; i < resolvers.size(); ++i) {
             MemberResolver *resolver = resolvers[i];
-            resolver->generateDeclaration();
-            resolver->generateDefinition();
+            genOptional(ctx.mdata.name,
+                        [&] { output += resolver->generateDeclaration(); });
+
+            genOptional(ctx.mdata.name,
+                        [&] { outputFuncs += resolver->generateDefinition(); });
             delete resolver;
         }
     }
 
-    static VariableData createClassVar(const std::string_view &type) {
-        VariableData data;
-        std::string id = toCppStyle(type.data(), true);
-        data.setFullType("const ", id, "");
-        id[0] = std::tolower(id[0]);
-        data.setIdentifier(id);
-        data.setReferenceFlag(true);
-        return data;
-    }
+    static VariableData createClassVar(const std::string_view &type);
 
     void generateClassMembers(const std::string &className,
                               const std::string &handle,
-                              const HandleData &data) {
+                              const HandleData &data);
 
-        const std::string &getAddr = data.getAddrCmd.name;
+    static std::string_view getHandleSuperclass(const HandleData &data);
 
-        VariableData super = createClassVar(data.superclass);
-        VariableData parent;
-        if (data.parent && data.superclass != data.parent->first) {
-            parent = createClassVar(data.parent->first);
-        }
-        else {
-            parent.setSpecialType(VariableData::TYPE_INVALID);
-        }
+    void generateClass(const std::string &name, HandleData &data);
 
-        // PFN function pointers
-        for (const ClassCommandData &m : data.members) {
-            genOptional(m.name, [&] {
-                file.writeLine("PFN_" + m.name + " m_" + m.name + " = {};");
-            });
-        }
-
-        if (!getAddr.empty()) {
-            file.writeLine("PFN_" + getAddr + " m_" + getAddr + " = {};");
-        }
-
-        file.popIndent();
-        file.writeLine("public:");
-        file.pushIndent();
-        if (!getAddr.empty()) {
-            // getProcAddr member
-            file.writeLine("template<typename T>");
-            file.writeLine(
-                "inline T getProcAddr(const std::string_view &name) const {");
-            file.pushIndent();
-            file.writeLine("return std::bit_cast<T>(m_" +
-                           getAddr + "(" + handle +
-                           ", name.data()));");
-            file.popIndent();
-            file.writeLine("}");
-        }
-
-        std::string initParams = super.toString();
-        if (!parent.isInvalid()) {
-            initParams += ", " + parent.toString();
-        }
-        if (!data.createCmd.name.empty()) {
-            initParams += ", const " + className + "CreateInfo &createInfo";
-        }
-        file.writeLine("void init(" + initParams + ");");
-
-        file2.writeLine("void " + className + "::init(" + initParams + ") {");
-        file2.pushIndent();
-        if (!getAddr.empty()) {
-            file2.write("m_" + getAddr + " = " + super.identifier() + ".getProcAddr<PFN_" + getAddr + ">(\"" + getAddr + "\");");
-        }
-
-        if (!data.createCmd.name.empty()) {
-            file2.writeLine("PFN_" + data.createCmd.name + " m_" + data.createCmd.name + " = " + super.identifier() + ".getProcAddr<PFN_" + data.createCmd.name + ">(\"" + getAddr + "\");");
-            MemberContext ctx{
-                .gen = *this,
-                .className = className,
-                .handle = handle,
-                .protoName = std::regex_replace(
-                    toCppStyle(data.createCmd.name), std::regex(className),
-                    ""), // filtered prototype name (without vk)
-                .pfnReturn = evaluatePFNReturn(data.createCmd.type),
-                .mdata = data.createCmd
-            };
-
-            for (auto &m : ctx.mdata.params) {
-                if (m->identifier() == "pCreateInfo") {
-                    m->convertToReturn();
-                    m->setIdentifier("createInfo");
-                }
-                if (m->original.type() == "VkAllocationCallbacks") {
-                    m->setAltPFN("nullptr");
-                }
-                if (m->type() == className) {
-                    m->convertToReturn();
-                }
-            }
-
-            MemberResolverInit r(ctx);
-            r.generateMemberBody();
-        }
-
-        std::string loadParamCall;
-        if (data.getAddrCmd.name.empty()) {
-            loadParamCall = super.identifier() ;
-        }
-        file2.writeLine("loadPFNs(" + loadParamCall + ");");
-
-        file2.popIndent();
-        file2.writeLine("}");
-
-        // wrapper functions
-
-        for (const ClassCommandData &m : data.members) {
-            // debug
-            static const std::vector<std::string> debugNames;
-            if (!debugNames.empty()) {
-                bool contains = false;
-                for (const auto &s : debugNames) {
-                    if (strContains(m.name, s)) {
-                        contains = true;
-                        break;
-                    }
-                }
-                if (!contains) {
-                    continue;
-                }
-            }
-
-            mname2 = m.name;
-            genOptional(m.name, [&] {
-                MemberContext ctx{.gen = *this,
-                                  .className = className,
-                                  .handle = handle,
-                                  .protoName = std::regex_replace(
-                                      toCppStyle(m.name), std::regex(className),
-                                      ""), // prototype name (without vk)
-                                  .pfnReturn = evaluatePFNReturn(m.type),
-                                  .mdata = m};
-
-                generateClassMemberCpp(ctx);
-            });
-        }
-
-        file.get() << std::endl;
-
-        std::string loadParam;
-        if (data.getAddrCmd.name.empty()) {
-            loadParam = super.toString() ;
-        }
-        file.writeLine("void loadPFNs(" + loadParam + ");");
-
-        file2.writeLine("void " + className + "::loadPFNs(" + loadParam + ")");
-        file2.writeLine("{");
-        file2.pushIndent();
-
-        std::string loadSrc;
-        if (data.getAddrCmd.name.empty()) {
-            loadParam = "." + super.identifier();
-        }
-        // function pointers initialization
-        for (const ClassCommandData &m : data.members) {
-            genOptional2(m.name, [&] {
-                file2.writeLine("m_" + m.name + " = " + loadSrc +
-                                "getProcAddr<" + "PFN_" + m.name + ">(\"" +
-                                m.name + "\");");
-            });
-        }
-        file2.popIndent();
-        file2.writeLine("}");
-    }
-
-    static std::string_view getHandleSuperclass(const HandleData &data) {
-        if (!data.parent) {
-            return "LibraryLoader";
-        }
-        auto *it = data.parent;
-        while (it->second.parent) {
-            if (it->first == "VkInstance" || /*it->first == "VkPhysicalDevice" ||*/ it->first == "VkDevice")  {
-                break;
-            }
-            it = it->second.parent;
-        }
-        return it->first;
-    }
-
-    void generateClass(const std::string &name, HandleData &data) {
-        genOptional(name, [&] {
-            std::string className = toCppStyle(name, true);
-            std::string classNameLower = toCppStyle(name);
-            std::string handle = "m_" + classNameLower;
-
-            std::string_view superclass = getHandleSuperclass(data);
-
-            std::cout << "Gen class: " << className << std::endl;
-            std::cout << "  ->superclass: " << superclass<< std::endl;
-
-            file.writeLine("class " + className + " : public " + className +
-                           "Base {");
-            file.pushIndent();
-
-
-            if (!data.members.empty()) {
-                generateClassMembers(className, handle, data);
-            }
-
-            file.popIndent();
-            file.writeLine("public:");
-            file.pushIndent();
-
-            file.writeLine("VULKAN_HPP_CONSTEXPR         " + className +
-                           "() = default;");
-            file.writeLine("VULKAN_HPP_CONSTEXPR         " + className +
-                           "( std::nullptr_t ) VULKAN_HPP_NOEXCEPT {}");
-
-            file.writeLine("VULKAN_HPP_TYPESAFE_EXPLICIT " + className + "(Vk" +
-                           className + " " + classNameLower +
-                           ") VULKAN_HPP_NOEXCEPT {");
-            file.writeLine("    " + handle + " = " + classNameLower + ";");
-            file.writeLine("}");
-
-            file.popIndent();
-            file.writeLine("};");
-        });
-    }
-
-    void parseCommands(XMLNode *node) {
-        std::cout << "Parsing commands" << std::endl;
-
-        std::vector<std::string_view> deviceObjects;
-        std::vector<std::string_view> instanceObjects;
-
-        std::vector<ClassCommandData> elementsUnassigned;
-        std::vector<ClassCommandData> elementsStatic;
-
-        for (auto &h : handles) {
-            if (h.first == "VkDevice" || h.second.superclass == "VkDevice") {
-                deviceObjects.push_back(h.first);
-            }
-            else if (h.first == "VkInstance" || h.second.superclass == "VkInstance") {
-                instanceObjects.push_back(h.first);
-            }
-        }
-
-        std::cout << "Instance objects:" << std::endl;
-        for (auto &o : instanceObjects) {
-            std::cout << "  " << o << std::endl;
-        }
-        std::cout << "Device objects:" << std::endl;
-        for (auto &o : deviceObjects) {
-            std::cout << "  " << o << std::endl;
-        }
-
-        const auto assignCommand = [&](const std::string &className, const ClassCommandData &command) {
-            auto handle = handles.find("Vk" + className);
-            if (handle == handles.end()) {
-                throw std::runtime_error("Handle not found");
-            }
-            if (command.name == "vkCreate" + className) {
-                handle->second.createCmd = command;
-                return true;
-            }
-            else if (command.name == "vkGet" + className + "ProcAddr") {
-                handle->second.getAddrCmd = command;
-                return true;
-            }
-            return false;
-        };
-
-        std::map<std::string_view, std::vector<std::string_view>> aliased;
-
-        const auto addCommand = [&](XMLElement *element, const std::string &className, const ClassCommandData &command) {
-            auto handle = handles.find("Vk" + className);
-            if (handle == handles.end()) {
-                throw std::runtime_error("Handle not found");
-            }
-            handle->second.members.push_back(command);
-
-            auto alias = aliased.find(command.name);
-            if (alias != aliased.end()) {
-                for (auto &a : alias->second) {
-                    ClassCommandData data = parseClassMember(element);
-                    data.name = a;
-                    handle->second.members.push_back(data);
-                }
-            }
-        };
-
-
-        for (XMLElement *commandElement : Elements(node) | ValueFilter("command")) {
-            const char *alias = commandElement->Attribute("alias");
-            if (alias) {
-                const char *name = commandElement->Attribute("name");
-                if (!name) {
-                    std::cerr << "Command has no name" << std::endl;
-                    continue;
-                }
-                auto it = aliased.find(alias);
-                if (it == aliased.end()) {
-                    aliased.emplace(
-                        alias, std::vector<std::string_view>{{name}});
-                } else {
-                    it->second.push_back(name);
-                }
-            }
-        }
-
-        // iterate contents of <commands>, filter only <command> children
-        for (XMLElement *element : Elements(node) | ValueFilter("command")) {
-
-            const char *alias = element->Attribute("alias");
-            if (alias) {
-                continue;
-            }
-
-            const ClassCommandData &command = parseClassMember(element);
-
-            if (assignCommand("Instance", command) || assignCommand("Device", command)) {
-                continue;
-            }
-
-            if (command.params.size() > 0) {
-                // first argument of a command
-                std::string_view first = command.params.at(0)->original.type();
-                if (isInContainter(deviceObjects, first)) { // command is for device
-                    addCommand(element, "Device", command);
-                } else if (isInContainter(instanceObjects, first)) { // command is for instance
-                    addCommand(element, "Instance", command);
-                }
-                else {
-                    elementsStatic.push_back(command);
-                }
-            }
-            else {
-                addCommand(element, "Instance", command);
-            }
-        }
-
-        std::cout << "Parsing commands done" << std::endl;
-
-        if (!elementsUnassigned.empty()) {
-            std::cout << "Unassigned commands: " << elementsUnassigned.size() << std::endl;
-            for (auto &c : elementsUnassigned) {
-                std::cout << "  " << c.name << std::endl;
-            }
-        }
-        std::cout << "Static commands: " << elementsStatic.size() << std::endl;
-        for (auto &c : elementsStatic) {
-            std::cout << "  " << c.name << std::endl;
-        }
-
-    }
+    void parseCommands(XMLNode *node);
 
   public:
-    Generator() { root = nullptr; }
+    Generator();
 
     bool isLoaded() const { return root != nullptr; }
 
@@ -3945,68 +2244,15 @@ class Generator {
 
     std::string getOutputFilePath() const { return outputFilePath; }
 
-    void load(const std::string &xmlPath) {
-        if (isLoaded()) {
-            std::cout << "Already loaded!" << std::endl;
-            return;
-        }
+    void load(const std::string &xmlPath);
 
-        std::cout << "Gen load xml: " << xmlPath << std::endl;
-        if (XMLError e = doc.LoadFile(xmlPath.c_str()); e != XML_SUCCESS) {
-            throw std::runtime_error("XML load failed: " + std::to_string(e) +
-                                     " (file: " + xmlPath + ")");
-        }
-
-        root = doc.RootElement();
-        if (!root) {
-            throw std::runtime_error("XML file is empty");
-        }
-
-        // specifies order of parsing vk.xml registry
-        static const std::vector<OrderPair> loadOrder{
-            {"platforms", std::bind(&Generator::parsePlatforms, this,
-                                    std::placeholders::_1)},
-            {"tags",
-             std::bind(&Generator::parseTags, this, std::placeholders::_1)},
-            {"types", std::bind(&Generator::parseTypeDeclarations, this,
-                                std::placeholders::_1)},
-            {"feature",
-             std::bind(&Generator::parseFeature, this, std::placeholders::_1)},
-            {"extensions", std::bind(&Generator::parseExtensions, this,
-                                     std::placeholders::_1)},
-            {"commands", std::bind(&Generator::parseCommands, this,
-                                   std::placeholders::_1)}};
-
-
-        std::string prev;
-        // call each function in rootParseOrder with corresponding XMLNode
-        for (auto &key : loadOrder) {
-            for (XMLNode &n : Elements(root)) {
-                if (key.first == n.Value()) {
-                    key.second(&n); // call function(XMLNode*)
-                }
-            }
-        }
-    }
-
-    void generate() {   
-
-        file.open(outputFilePath);
-        std::string f2path = std::regex_replace(
-            outputFilePath, std::regex(".hpp"), "_funcs.hpp");
-        file2.open(f2path);
-        file2.pushIndent();
-
-        generateFile(f2path);        
-
-        file.close();
-        file2.close();
-
-    }
+    void generate();
 
     Platforms &getPlatforms() { return platforms; };
 
     Extensions &getExtensions() { return extensions; };
+
+    Config &getConfig() { return cfg; }
 };
 
 #endif // GENERATOR_HPP

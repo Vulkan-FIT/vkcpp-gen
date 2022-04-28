@@ -24,14 +24,15 @@ SOFTWARE.
 #ifndef ARGUMENTSPARSER_H
 #define ARGUMENTSPARSER_H
 
+#include <optional>
 #include <vector>
 #include <stdexcept>
 
 // holds arguments data
 struct ArgOption {
-    std::string shortName = {}; // -
-    std::string longName = {};  // --
-    bool usesValue = false; // if true parser loads value with next argument
+    std::optional<std::string> shortName;
+    std::optional<std::string> longName;
+    bool requiredValue = false; // if true parser loads value with next argument
     bool set = false; // set to true if argument exists
     std::string value = {};
 };
@@ -47,7 +48,7 @@ public:
     {}
 
     // parses arguments. throws if there are less arguments than expected
-    void parse(int argc, char **argv) {
+    inline void parse(int argc, char **argv) {
 
         const auto getArg = [&](int index) { // tries to access argument at index, throws on fail
             if (argc <= index) {
@@ -59,10 +60,10 @@ public:
         for (int i = 0; i < argc; ++i) {
             for (Option *o : options) {
                 std::string_view arg = getArg(i); // fetch current argument
-                if ((!o->shortName.empty() && arg == o->shortName) || // compares short name
-                    (!o->longName.empty()  && arg == o->longName))    // comapres long name
+                if ((o->shortName.has_value() && arg == o->shortName.value()) || // compares short name
+                    (o->longName.has_value()  && arg == o->longName.value()))    // comapres long name
                 {
-                    if (o->usesValue) {
+                    if (o->requiredValue) {
                         o->value = getArg(++i); // try to fetch next argument
                     }
                     o->set = true;

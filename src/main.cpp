@@ -24,10 +24,9 @@ SOFTWARE.
 #include <algorithm>
 #include <functional>
 #include <iostream>
-
+#include <fstream>
 #include <map>
 #include <memory>
-
 #include <stdexcept>
 #include <unordered_set>
 #include <vector>
@@ -39,10 +38,6 @@ SOFTWARE.
 #include "Gui.hpp"
 #endif
 
-std::string Generator::mname2 = "";
-FileHandle Generator::file;
-FileHandle Generator::file2;
-
 static constexpr char const *HELP_TEXT{
     R"(Usage:
     -r, --reg       path to source registry file
@@ -50,12 +45,46 @@ static constexpr char const *HELP_TEXT{
     -d, --dest      path to destination file)"};
 
 
-static void genFlags();
-static void genTypes();
+class A {
 
-static VariableData invalidVar(VariableData::TYPE_INVALID);
+    int data;
+public:
+    A() {
+        std::cout << "A constructor" << std::endl;
+    }
 
-int main(int argc, char **argv) {
+    A(const A& o) = delete;
+//    {
+//        std::cout << "copy constructor called" << std::endl;
+//    }
+    A(A&& o) = delete;
+//    {
+//        std::cout << "move constructor called" << std::endl;
+//    };
+    A& operator=(const A& o) = delete;
+//    {
+//        std::cout << "assignment operator called " << std::endl;
+//        return *this;
+//    }
+
+    int get() const {
+        return data;
+    }
+
+};
+
+class I {
+
+    public:
+
+
+    void createA(A &a) {
+
+    }
+
+};
+
+int main(int argc, char **argv) {    
     try {
         ArgOption helpOption{"-h", "--help"};
         ArgOption xmlOption{"-r", "--reg", true};
@@ -68,12 +97,9 @@ int main(int argc, char **argv) {
             std::cout << HELP_TEXT;
             return 0;
         }
-        // argument check
-//        if (!destOption.set || !xmlOption.set) {
-//            throw std::runtime_error("Missing arguments. See usage.");
-//        }
 
-        Generator gen;
+        Generator gen;        
+
         if (destOption.set) {
             gen.setOutputFilePath(destOption.value);
         }
@@ -85,10 +111,17 @@ int main(int argc, char **argv) {
         GUI gui{gen};
         gui.init();
         gui.run();
+#else
+        // argument check
+        if (!destOption.set || !xmlOption.set) {
+            throw std::runtime_error("Missing arguments. See usage.");
+        }
+        gen.generate();
 #endif
 
     } catch (const std::exception &e) {
         std::cerr << "Error: " << e.what() << std::endl;
+        return 1;
     }
 
     return 0;
