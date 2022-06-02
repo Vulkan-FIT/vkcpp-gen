@@ -34,6 +34,8 @@ SOFTWARE.
 
 #include "StringUtils.hpp"
 
+class Generator;
+
 enum State { // State used for indexing and parsing FSM
     PREFIX = 0,
     TYPE = 1,
@@ -77,46 +79,60 @@ struct VariableFields : public std::array<std::string, 4> {
         return s.find("*") != std::string::npos;
     }
 
+    bool isConst() const {
+        std::string s = get(PREFIX);
+        return s.find("const") != std::string::npos;
+    }
+
 };
 
 // holds variable information broken into 4 sections
 struct VariableData : public VariableFields {
 
-    std::string altPFN;
-    std::string optionalAmp;
   public:
     enum Type {
         TYPE_INVALID,
         TYPE_DEFAULT,
         TYPE_RETURN,
+        TYPE_REFERENCE,
         TYPE_ARRAY_PROXY,
-        TYPE_SIZE_AND_ARRAY_PROXY,
-        // TYPE_TEMPLATE,
-        // TYPE_TEMPLATE_WITH_SIZE,
-        TYPE_VECTOR
+        TYPE_VECTOR,
+        TYPE_OPTIONAL
+    };
+
+    enum class Flags : int {
+        NONE = 0,
+        HANDLE = 1,
+        ARRAY = 2,
+        ARRAY_IN = 4,
+        ARRAY_OUT = 8
     };
 
     VariableFields original;
 
-    VariableData();
+    VariableData(Type type = TYPE_DEFAULT);
 
-    VariableData(Type type) {
-        arrayLengthFound = false;
-        specialType = type;
-        if (specialType == TYPE_INVALID) {
-            ignoreFlag = true;
-        }
-    }
+    VariableData(const String &object);
+
+    VariableData(const String &object, const std::string &id);
+
+    VariableData(const VariableData &o) {
+        *this = o;
+    }    
 
     void setAltPFN(const std::string &str) { altPFN = str; }
 
     void setSpecialType(Type type) { specialType = type; }
 
-    bool hasLenAttrib() const { return _hasLenAttrib; }
+    Type getSpecialType() { return specialType; }
 
-    std::string lenAttrib() { return _lenAttrib; }
+    std::string getLenAttrib() const { return lenAttribStr; }
 
-    std::string lenAttribVarName();
+    std::string getLenAttribIdentifier() const;
+
+    std::string getLenAttribRhs() const;
+
+    bool isLenAttribIndirect() const;
 
     // arrayLength flag getter
     bool hasArrayLength() const { return arrayLengthFound; }
@@ -129,6 +145,8 @@ struct VariableData : public VariableFields {
 
     bool getIgnoreFlag() const { return ignoreFlag; }
 
+    void setNamespace(const std::string &ns);
+
     void setIgnorePFN(bool value) { ignorePFN = value; }
 
     bool getIgnorePFN() const { return ignorePFN; }
@@ -137,27 +155,44 @@ struct VariableData : public VariableFields {
 
     bool isReturn() const { return specialType == TYPE_RETURN; }
 
-    void convertToCpp();
+    void convertToCpp(const Generator &gen);
+
+    bool isNullTerminated() const;
 
     void convertToArrayProxy(bool bindSizeArgument = true);
 
-    void bindLengthAttrib(std::shared_ptr<VariableData> var) {
-        //  std::cout << "Obj[" << this << "] " << "Bind to lenght attrib var: "
-        //  << var->identifier() << std::endl;
-        _lenAttribVar = var;
-    }
+    void bindLengthVar(const std::shared_ptr<VariableData> &var);
 
-    bool hasLengthAttribVar() { return _lenAttribVar.get() != nullptr; }
+    void bindArrayVar(const std::shared_ptr<VariableData> &var);
 
-    std::shared_ptr<VariableData> lengthAttribVar();
+    bool hasLengthVar() const { return lenghtVar.get() != nullptr; }
 
-    void convertToTemplate();
+    bool hasArrayVar() const { return arrayVar.get() != nullptr; }
+
+    const std::shared_ptr<VariableData>& getLengthVar() const;
+
+    const std::shared_ptr<VariableData>& getArrayVar() const;
+
+    // void convertToTemplate();
 
     void convertToReturn();
+
+    void convertToReference();
+
+    void convertToOptional();
 
     void convertToStdVector();
 
     bool removeLastAsterisk();
+
+    void setConst(bool enabled);
+
+    Flags getFlags() const;
+
+    bool flagHandle() const;
+    bool flagArray() const;
+    bool flagArrayIn() const;
+    bool flagArrayOut() const;
 
     std::string toArgument() const;
 
@@ -185,24 +220,36 @@ struct VariableData : public VariableFields {
 
     std::string assignment() const { return _assignment; }
 
-  protected:
-    Type specialType;
-    bool ignoreFlag;
-    bool arrayLengthFound;
-    std::string arrayLengthStr;
-    bool _hasLenAttrib;
-    std::string _lenAttrib;
-    std::shared_ptr<VariableData> _lenAttribVar;
-    std::string _assignment;
-    bool ignorePFN;
+    void setTemplate(const std::string &str);
 
+    std::string getTemplate() const;
+
+  protected:
+    std::string altPFN;
+    std::string optionalAmp;
+    Type specialType;
+    Flags flags;
+    bool ignoreFlag;
+    bool ignorePFN;
+    bool arrayLengthFound;
+    bool nullTerminated;
+    std::string arrayLengthStr;
+    std::string lenAttribStr;
+    std::string _assignment;
+    std::string optionalNamespace;
+    std::string optionalTemplate;
+
+    std::shared_ptr<VariableData> lenghtVar;
+    std::shared_ptr<VariableData> arrayVar;
+
+    void evalFlags(const Generator &gen);
   private:
     std::string optionalArraySuffix() const;
 
-    std::string
-    toArgumentSizeAndArrayProxy() const { // in reality it's two arguments
-        return get(IDENTIFIER) + ".size()" + ", " + toArgumentArrayProxy();
-    }
+//    std::string
+//    toArgumentSizeAndArrayProxy() const { // in reality it's two arguments
+//        return get(IDENTIFIER) + ".size()" + ", " + toArgumentArrayProxy();
+//    }
 
     std::string toArgumentArrayProxy() const {
         return "std::bit_cast<" + originalFullType() + ">(" + get(IDENTIFIER) +
@@ -210,7 +257,6 @@ struct VariableData : public VariableFields {
     }
 
     std::string createCast(std::string from) const;
-
 
     //    std::string toArgumentTemplateWithSize() const {
     //        return "sizeof(" + get(TYPE) + "), " + toArgumentDefault();
@@ -232,10 +278,10 @@ class XMLVariableParser : public VariableData, protected tinyxml2::XMLVisitor {
   public:
     XMLVariableParser() = default;
 
-    XMLVariableParser(tinyxml2::XMLElement *element);
+    XMLVariableParser(tinyxml2::XMLElement *element, const Generator &gen);
 
     // Entry point, reset state to initial, parse XMLElement and trim
-    void parse(tinyxml2::XMLElement *element);
+    void parse(tinyxml2::XMLElement *element, const Generator &gen);
 
     // next Visit call appends according to state until set to DONE
     virtual bool Visit(const tinyxml2::XMLText &text) override;
@@ -243,5 +289,42 @@ class XMLVariableParser : public VariableData, protected tinyxml2::XMLVisitor {
     // leaves one space in suffix
     void trim();
 };
+
+inline VariableData::Flags operator|(const VariableData::Flags &a,
+                                         const VariableData::Flags &b) {
+    return static_cast<VariableData::Flags>(static_cast<int>(a) |
+                                                static_cast<int>(b));
+}
+
+inline VariableData::Flags operator&(const VariableData::Flags &a,
+                                         const VariableData::Flags &b) {
+    return static_cast<VariableData::Flags>(static_cast<int>(a) &
+                                                static_cast<int>(b));
+}
+
+inline VariableData::Flags &operator|=(VariableData::Flags &a,
+                                           const VariableData::Flags &b) {
+    return a = a | b;
+}
+
+inline VariableData::Flags &operator&=(VariableData::Flags &a,
+                                           const VariableData::Flags &b) {
+    return a = a & b;
+}
+
+inline bool operator==(const VariableData::Flags &a,
+                       const VariableData::Flags &b) {
+    return static_cast<int>(a) == static_cast<int>(b);
+}
+
+inline bool operator!=(const VariableData::Flags &a,
+                       const VariableData::Flags &b) {
+    return static_cast<int>(a) != static_cast<int>(b);
+}
+
+inline bool hasFlag(const VariableData::Flags &a,
+                    const VariableData::Flags &b) {
+    return static_cast<int>(a) & static_cast<int>(b);
+}
 
 #endif // XMLVARIABLEPARSER_H

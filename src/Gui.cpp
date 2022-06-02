@@ -151,7 +151,8 @@ void GUI::checkLayerSupport(const std::vector<const char *> &layers) {
     }
 }
 
-VkShaderModule GUI::createShaderModule(const uint32_t *code, uint32_t codeSize) {
+VkShaderModule GUI::createShaderModule(const uint32_t *code,
+                                       uint32_t codeSize) {
     VkShaderModuleCreateInfo createInfo = {};
     createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
     createInfo.codeSize = codeSize;
@@ -813,56 +814,90 @@ void GUI::cleanup() {
 }
 
 void GUI::initImguiStyle() {
-    ImGuiStyle& style = ImGui::GetStyle();
+    ImGuiStyle &style = ImGui::GetStyle();
 
     ImVec4 col_text = ImVec4(1.0, 1.0, 1.0, 1.0);
-    ImVec4 col_main = ImVec4(0.380, 0.0, 0, 1.0);
+    ImVec4 col_main = ImVec4(0.18, 0.0, 0, 1.0);
     ImVec4 col_back = ImVec4(0.01, 0.01, 0.01, 1.0);
-    ImVec4 col_area = ImVec4(0.5, 0.0, 0, 1.0);
+    ImVec4 col_area = ImVec4(0.15, 0.0, 0, 1.0);
 
-    style.Colors[ImGuiCol_Text]                  = ImVec4(col_text.x, col_text.y, col_text.z, 1.00f);
-    style.Colors[ImGuiCol_TextDisabled]          = ImVec4(col_text.x, col_text.y, col_text.z, 0.58f);
-    style.Colors[ImGuiCol_WindowBg]              = ImVec4(col_back.x, col_back.y, col_back.z, 1.00f);
-    style.Colors[ImGuiCol_ChildBg]               = ImVec4(col_area.x, col_area.y, col_area.z, 0.00f);
-    style.Colors[ImGuiCol_Border]                = ImVec4(col_text.x, col_text.y, col_text.z, 0.30f);
-    style.Colors[ImGuiCol_BorderShadow]          = ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
-    style.Colors[ImGuiCol_FrameBg]               = ImVec4(col_area.x, col_area.y, col_area.z, 1.00f);
-    style.Colors[ImGuiCol_FrameBgHovered]        = ImVec4(col_main.x, col_main.y, col_main.z, 0.68f);
-    style.Colors[ImGuiCol_FrameBgActive]         = ImVec4(col_main.x, col_main.y, col_main.z, 1.00f);
-    style.Colors[ImGuiCol_TitleBg]               = ImVec4(col_main.x, col_main.y, col_main.z, 0.45f);
-    style.Colors[ImGuiCol_TitleBgCollapsed]      = ImVec4(col_main.x, col_main.y, col_main.z, 0.35f);
-    style.Colors[ImGuiCol_TitleBgActive]         = ImVec4(col_main.x, col_main.y, col_main.z, 0.78f);
-    style.Colors[ImGuiCol_MenuBarBg]             = ImVec4(col_area.x, col_area.y, col_area.z, 0.57f);
-    style.Colors[ImGuiCol_ScrollbarBg]           = ImVec4(col_back.x, col_back.y, col_back.z, 1.00f);
-    style.Colors[ImGuiCol_ScrollbarGrab]         = ImVec4(col_main.x, col_main.y, col_main.z, 0.31f);
-    style.Colors[ImGuiCol_ScrollbarGrabHovered]  = ImVec4(col_main.x, col_main.y, col_main.z, 0.78f);
-    style.Colors[ImGuiCol_ScrollbarGrabActive]   = ImVec4(col_main.x, col_main.y, col_main.z, 1.00f);    
-    style.Colors[ImGuiCol_CheckMark]             = ImVec4(col_text.x, col_text.y, col_text.z, 0.80f);
-    style.Colors[ImGuiCol_SliderGrab]            = ImVec4(col_main.x, col_main.y, col_main.z, 0.24f);
-    style.Colors[ImGuiCol_SliderGrabActive]      = ImVec4(col_main.x, col_main.y, col_main.z, 1.00f);
-    style.Colors[ImGuiCol_Button]                = ImVec4(col_main.x, col_main.y, col_main.z, 0.44f);
-    style.Colors[ImGuiCol_ButtonHovered]         = ImVec4(col_main.x, col_main.y, col_main.z, 0.86f);
-    style.Colors[ImGuiCol_ButtonActive]          = ImVec4(col_main.x, col_main.y, col_main.z, 1.00f);
-    style.Colors[ImGuiCol_Header]                = ImVec4(col_main.x, col_main.y, col_main.z, 0.76f);
-    style.Colors[ImGuiCol_HeaderHovered]         = ImVec4(col_main.x, col_main.y, col_main.z, 0.86f);
-    style.Colors[ImGuiCol_HeaderActive]          = ImVec4(col_main.x, col_main.y, col_main.z, 1.00f);
-    style.Colors[ImGuiCol_ResizeGrip]            = ImVec4(col_main.x, col_main.y, col_main.z, 0.20f);
-    style.Colors[ImGuiCol_ResizeGripHovered]     = ImVec4(col_main.x, col_main.y, col_main.z, 0.78f);
-    style.Colors[ImGuiCol_ResizeGripActive]      = ImVec4(col_main.x, col_main.y, col_main.z, 1.00f);
-    style.Colors[ImGuiCol_PlotLines]             = ImVec4(col_text.x, col_text.y, col_text.z, 0.63f);
-    style.Colors[ImGuiCol_PlotLinesHovered]      = ImVec4(col_main.x, col_main.y, col_main.z, 1.00f);
-    style.Colors[ImGuiCol_PlotHistogram]         = ImVec4(col_text.x, col_text.y, col_text.z, 0.63f);
-    style.Colors[ImGuiCol_PlotHistogramHovered]  = ImVec4(col_main.x, col_main.y, col_main.z, 1.00f);
-    style.Colors[ImGuiCol_TextSelectedBg]        = ImVec4(col_main.x, col_main.y, col_main.z, 0.43f);
+    style.Colors[ImGuiCol_Text] =
+        ImVec4(col_text.x, col_text.y, col_text.z, 1.00f);
+    style.Colors[ImGuiCol_TextDisabled] =
+        ImVec4(col_text.x, col_text.y, col_text.z, 0.58f);
+    style.Colors[ImGuiCol_WindowBg] =
+        ImVec4(col_back.x, col_back.y, col_back.z, 1.00f);
+    style.Colors[ImGuiCol_ChildBg] =
+        ImVec4(col_area.x, col_area.y, col_area.z, 0.00f);
+    style.Colors[ImGuiCol_Border] =
+        ImVec4(col_text.x, col_text.y, col_text.z, 0.30f);
+    style.Colors[ImGuiCol_BorderShadow] = ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
+    style.Colors[ImGuiCol_FrameBg] =
+        ImVec4(col_area.x, col_area.y, col_area.z, 1.00f);
+    style.Colors[ImGuiCol_FrameBgHovered] =
+        ImVec4(col_main.x, col_main.y, col_main.z, 0.68f);
+    style.Colors[ImGuiCol_FrameBgActive] =
+        ImVec4(col_main.x, col_main.y, col_main.z, 1.00f);
+    style.Colors[ImGuiCol_TitleBg] =
+        ImVec4(col_main.x, col_main.y, col_main.z, 0.45f);
+    style.Colors[ImGuiCol_TitleBgCollapsed] =
+        ImVec4(col_main.x, col_main.y, col_main.z, 0.35f);
+    style.Colors[ImGuiCol_TitleBgActive] =
+        ImVec4(col_main.x, col_main.y, col_main.z, 0.78f);
+    style.Colors[ImGuiCol_MenuBarBg] =
+        ImVec4(col_area.x, col_area.y, col_area.z, 0.57f);
+    style.Colors[ImGuiCol_ScrollbarBg] =
+        ImVec4(col_back.x, col_back.y, col_back.z, 1.00f);
+    style.Colors[ImGuiCol_ScrollbarGrab] =
+        ImVec4(col_main.x, col_main.y, col_main.z, 0.31f);
+    style.Colors[ImGuiCol_ScrollbarGrabHovered] =
+        ImVec4(col_main.x, col_main.y, col_main.z, 0.78f);
+    style.Colors[ImGuiCol_ScrollbarGrabActive] =
+        ImVec4(col_main.x, col_main.y, col_main.z, 1.00f);
+    style.Colors[ImGuiCol_CheckMark] =
+        ImVec4(col_text.x, col_text.y, col_text.z, 0.80f);
+    style.Colors[ImGuiCol_SliderGrab] =
+        ImVec4(col_main.x, col_main.y, col_main.z, 0.24f);
+    style.Colors[ImGuiCol_SliderGrabActive] =
+        ImVec4(col_main.x, col_main.y, col_main.z, 1.00f);
+    style.Colors[ImGuiCol_Button] =
+        ImVec4(col_main.x, col_main.y, col_main.z, 0.44f);
+    style.Colors[ImGuiCol_ButtonHovered] =
+        ImVec4(col_main.x, col_main.y, col_main.z, 0.86f);
+    style.Colors[ImGuiCol_ButtonActive] =
+        ImVec4(col_main.x, col_main.y, col_main.z, 1.00f);
+    style.Colors[ImGuiCol_Header] =
+        ImVec4(col_main.x, col_main.y, col_main.z, 0.76f);
+    style.Colors[ImGuiCol_HeaderHovered] =
+        ImVec4(col_main.x, col_main.y, col_main.z, 0.86f);
+    style.Colors[ImGuiCol_HeaderActive] =
+        ImVec4(col_main.x, col_main.y, col_main.z, 1.00f);
+    style.Colors[ImGuiCol_ResizeGrip] =
+        ImVec4(col_main.x, col_main.y, col_main.z, 0.20f);
+    style.Colors[ImGuiCol_ResizeGripHovered] =
+        ImVec4(col_main.x, col_main.y, col_main.z, 0.78f);
+    style.Colors[ImGuiCol_ResizeGripActive] =
+        ImVec4(col_main.x, col_main.y, col_main.z, 1.00f);
+    style.Colors[ImGuiCol_PlotLines] =
+        ImVec4(col_text.x, col_text.y, col_text.z, 0.63f);
+    style.Colors[ImGuiCol_PlotLinesHovered] =
+        ImVec4(col_main.x, col_main.y, col_main.z, 1.00f);
+    style.Colors[ImGuiCol_PlotHistogram] =
+        ImVec4(col_text.x, col_text.y, col_text.z, 0.63f);
+    style.Colors[ImGuiCol_PlotHistogramHovered] =
+        ImVec4(col_main.x, col_main.y, col_main.z, 1.00f);
+    style.Colors[ImGuiCol_TextSelectedBg] =
+        ImVec4(col_main.x, col_main.y, col_main.z, 0.43f);
 }
 
 void GUI::guiInputText(std::string &data) {
     int s = ImGui::CalcTextSize(data.c_str()).x;
     s = std::clamp(s, 0, width / 3) + 20;
     ImGui::PushItemWidth(s);
+    ImGui::PushID(id++);
     if (ImGui::InputText("", &data)) {
-
     }
+    ImGui::PopID();
     ImGui::PopItemWidth();
 }
 
@@ -876,7 +911,7 @@ void GUI::guiMacroOption(MacroGUI &m) {
 
     if (disabled) {
         ImGui::PushStyleVar(ImGuiStyleVar_Alpha,
-                                ImGui::GetStyle().Alpha * 0.5f);
+                            ImGui::GetStyle().Alpha * 0.5f);
     }
 
     ImGui::Checkbox("#define ", &m.data->usesDefine);
@@ -903,14 +938,13 @@ void GUI::guiBoolOption(BoolGUI &data) {
     ImGui::Text("%s", data.text.c_str());
     ImGui::SameLine();
 
-
-//    ImGui::PushItemFlag(ImGuiItemFlags_Disabled, false);
+    //    ImGui::PushItemFlag(ImGuiItemFlags_Disabled, false);
 
     ImGui::Checkbox("", data.data);
 
-  //  ImGui::PopItemFlag();
-    //std::cout << data.text << " " << data.data << " : " << (*data.data? "true" : "false") << std::endl;
-
+    //  ImGui::PopItemFlag();
+    // std::cout << data.text << " " << data.data << " : " << (*data.data?
+    // "true" : "false") << std::endl;
 
     ImGui::PopID();
 }
@@ -947,6 +981,17 @@ void GUI::setupImguiFrame() {
     imguiFrameBuilt = true;
 }
 
+void GUI::HelpMarker(const char *desc) {
+    ImGui::TextDisabled("(?)");
+    if (ImGui::IsItemHovered()) {
+        ImGui::BeginTooltip();
+        ImGui::PushTextWrapPos(ImGui::GetFontSize() * 35.0f);
+        ImGui::TextUnformatted(desc);
+        ImGui::PopTextWrapPos();
+        ImGui::EndTooltip();
+    }
+}
+
 void GUI::updateImgui() {
     Generator::Config &cfg = gen.getConfig();
 
@@ -957,7 +1002,6 @@ void GUI::updateImgui() {
 
     ImGui::SetNextWindowPos(ImVec2(.0f, .0f), ImGuiCond_Always);
     ImGui::SetNextWindowSize(ImVec2(width, height), ImGuiCond_Always);
-
 
     ImGui::Begin("Gen", &mainw,
                  ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
@@ -1004,8 +1048,6 @@ void GUI::updateImgui() {
 
         if (ImGui::CollapsingHeader("Platforms")) {
 
-            ImGui::BeginChild("Platforms", ImVec2(0.0, height / 2), false, ImGuiWindowFlags_AlwaysAutoResize);
-
             int i = 0;
             for (auto &p : platforms) {
 
@@ -1016,14 +1058,16 @@ void GUI::updateImgui() {
                     if (*v == 0) {
                         for (auto &e : extensions) {
                             if (e.second.platform &&
-                                e.second.platform->first == p.first && e.second.enabled) {
+                                e.second.platform->first == p.first &&
+                                e.second.enabled) {
                                 e.second.whitelisted = false;
                             }
                         }
                     } else {
                         for (auto &e : extensions) {
                             if (e.second.platform &&
-                                e.second.platform->first == p.first && e.second.enabled) {
+                                e.second.platform->first == p.first &&
+                                e.second.enabled) {
                                 e.second.whitelisted = true;
                             }
                         }
@@ -1040,7 +1084,8 @@ void GUI::updateImgui() {
                     for (auto &e : extensions) {
                         if (e.second.platform &&
                             e.second.platform->first == p.first) {
-                            std::string suf = e.second.enabled ? "" : " (disabled)";
+                            std::string suf =
+                                e.second.enabled ? "" : " (disabled)";
 
                             bool *v = &e.second.whitelisted;
                             bool disabled = !*v;
@@ -1050,9 +1095,10 @@ void GUI::updateImgui() {
                                                         0.4f);
                             }
                             if (!e.second.enabled) {
-                                ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
-                                ImGui::PushStyleColor(ImGuiCol_Text,
-                                              IM_COL32(180, 10, 10, 255));
+                                ImGui::PushItemFlag(ImGuiItemFlags_Disabled,
+                                                    true);
+                                ImGui::PushStyleColor(
+                                    ImGuiCol_Text, IM_COL32(180, 10, 10, 255));
                             }
                             ImGui::PushID(j);
                             if (ImGui::Checkbox("", v)) {
@@ -1076,19 +1122,18 @@ void GUI::updateImgui() {
                 }
 
                 if (recalc && !extensions.empty()) {
-                   for (auto &e : extensions) {
+                    for (auto &e : extensions) {
                         if (e.second.platform &&
-                        e.second.platform->first == p.first
-                        && e.second.enabled)
-                        {
+                            e.second.platform->first == p.first &&
+                            e.second.enabled) {
                             *v = e.second.whitelisted ? 1 : 0;
                             break;
                         }
                     }
                     for (auto &e : extensions) {
                         if (e.second.platform &&
-                            e.second.platform->first == p.first && e.second.enabled)
-                        {
+                            e.second.platform->first == p.first &&
+                            e.second.enabled) {
                             if (e.second.whitelisted) {
                                 if (*v == 0) {
                                     *v = -1;
@@ -1108,32 +1153,9 @@ void GUI::updateImgui() {
                 i++;
             }
 
-            ImGui::EndChild();
-        }
+        }   
 
-
-        if (ImGui::CollapsingHeader("Advanced")) {
-            ImGui::BeginChild("Advanced");
-
-            static std::array<MacroGUI, 1> macros = {MacroGUI{&cfg.vkname, "Namespace"}};
-
-            static std::array<BoolGUI, 2> bools = {BoolGUI{&cfg.genStructNoinit, "Struct Noinit"},
-
-                                                   BoolGUI{&cfg.genStructProxy, "Struct Proxy"}};
-
-
-            for (auto &b : bools) {
-                guiBoolOption(b);
-            }
-            for (auto &m : macros) {
-                guiMacroOption(m);
-            }
-
-            ImGui::EndChild();
-        }
-
-        if (ImGui::CollapsingHeader("Other extensions")) {
-            ImGui::BeginChild("Other extensions");
+        if (ImGui::CollapsingHeader("Other extensions")) {            
             int i = 0;
             for (auto &e : extensions) {
                 if (!e.second.platform) {
@@ -1158,8 +1180,47 @@ void GUI::updateImgui() {
                     }
                     i++;
                 }
+            }            
+        }
+
+        if (ImGui::CollapsingHeader("Advanced")) {
+
+            ImGui::Text("Fileprotect");
+            ImGui::SameLine();
+            guiInputText(cfg.fileProtect);
+
+            static std::array<BoolGUI, 3> bools = {
+                BoolGUI{&cfg.genObjectParents, "Parent object pointers"},
+                BoolGUI{&cfg.genStructNoinit, "Struct noinit"},
+                BoolGUI{&cfg.genStructProxy, "Struct proxy"}
+            };
+            for (auto &b : bools) {
+                guiBoolOption(b);
             }
-            ImGui::EndChild();
+
+            if (ImGui::TreeNode("C++ macros")) {
+                static std::array<MacroGUI, 5> macros = {
+                    MacroGUI{&cfg.mcName, "Namespace"},
+                    MacroGUI{&cfg.mcConstexpr, "Constexpr"},
+                    MacroGUI{&cfg.mcNoexcept, "Noexcept"},
+                    MacroGUI{&cfg.mcInline, "Inline"},
+                    MacroGUI{&cfg.mcExplicit, "Explicit"}
+                };
+                for (auto &m : macros) {
+                    guiMacroOption(m);
+                }
+                ImGui::TreePop();
+            }
+
+            if (ImGui::TreeNode("Debug")) {
+                static std::array<BoolGUI, 1> bools = {
+                    BoolGUI{&cfg.dbgMethodTags, "Show functions categories"}
+                };
+                for (auto &b : bools) {
+                    guiBoolOption(b);
+                }
+                ImGui::TreePop();
+            }
         }
     } else {
 

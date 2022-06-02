@@ -1,5 +1,7 @@
 #include "XMLVariableParser.hpp"
 
+#include "Generator.hpp"
+
 void VariableFields::set(size_t index, const std::string &str) {
     if (index >= size()) {
         return;
@@ -9,43 +11,75 @@ void VariableFields::set(size_t index, const std::string &str) {
 
 const std::string &VariableFields::get(size_t index) const {
     if (index >= size()) {
-        throw std::exception();
-        // return "";
+        throw std::runtime_error("index out of bounds");
     }
     return std::array<std::string, 4>::operator[](index);
 }
 
-VariableData::VariableData() {
+VariableData::VariableData(Type type) {
+    specialType = type;
+    ignoreFlag = specialType == TYPE_INVALID;
     arrayLengthFound = false;
-    ignoreFlag = false;
     ignorePFN = false;
-    _hasLenAttrib = false;
-    specialType = TYPE_DEFAULT;
+    nullTerminated = false;
 }
 
-std::string VariableData::lenAttribVarName() {
-    size_t pos = _lenAttrib.find_first_of("->");
-    if (pos != std::string::npos) {
-        return _lenAttrib.substr(0, pos);
+VariableData::VariableData(const String &object) : VariableData(object, strFirstLower(object))
+{}
+
+VariableData::VariableData(const String &object, const std::string &id) : VariableData(TYPE_DEFAULT) {
+    setIdentifier(id);
+    original.setFullType("", object.original, " *");
+    setFullType("", object, " *");
+    convertToReference();
+}
+
+std::string VariableData::getLenAttribIdentifier() const {
+    size_t pos = lenAttribStr.find_first_of("->");
+    if (pos != std::string::npos) {        
+        return lenAttribStr.substr(0, pos);
     }
-    return _lenAttrib;
+    return lenAttribStr;
 }
 
-void VariableData::convertToCpp() {
+std::string VariableData::getLenAttribRhs() const {
+    size_t pos = lenAttribStr.find_first_of("->");
+    if (pos != std::string::npos) {
+        return lenAttribStr.substr(pos + 2);
+    }
+    return lenAttribStr;
+}
+
+bool VariableData::isLenAttribIndirect() const {
+    size_t pos = lenAttribStr.find_first_of("->");
+    return pos != std::string::npos;
+}
+
+void VariableData::setNamespace(const std::string &ns) {
+    optionalNamespace = ns;
+}
+
+void VariableData::convertToCpp(const Generator &gen) {
     for (size_t i = 0; i < size(); ++i) {
         original.set(i, get(i));
     }
 
+    if (gen.isInNamespace(get(TYPE))) {
+        optionalNamespace = gen.cfg.mcName.get();
+    }
     set(TYPE, strStripVk(get(TYPE)));
-    // std::string temp = get(IDENTIFIER);
     set(IDENTIFIER, strStripVk(get(IDENTIFIER)));
-    // std::cout << "Original id: " << temp << " converted: " <<
-    // get(IDENTIFIER) << std::endl;
+}
+
+bool VariableData::isNullTerminated() const {
+    return nullTerminated;
 }
 
 void VariableData::convertToArrayProxy(bool bindSizeArgument) {
-    specialType =
-        bindSizeArgument ? TYPE_SIZE_AND_ARRAY_PROXY : TYPE_ARRAY_PROXY;
+//    specialType =
+//        bindSizeArgument ? TYPE_SIZE_AND_ARRAY_PROXY : TYPE_ARRAY_PROXY;
+
+    specialType = TYPE_ARRAY_PROXY;
 
          // it->setFullType("", "ArrayProxy<const " + it->type() + ">", " const
          // &");
@@ -53,28 +87,59 @@ void VariableData::convertToArrayProxy(bool bindSizeArgument) {
     // std::cout << get(IDENTIFIER) << " --> to array proxy"  << std::endl;
 }
 
-std::shared_ptr<VariableData> VariableData::lengthAttribVar() {
-    // std::cout << "Obj[" << this << "] " << "len attrib var get:" <<
-    // _lenAttribVar.get() << std::endl;
-    if (!_lenAttribVar.get()) {
-        throw std::runtime_error("access to null lengthAttrib");
+void VariableData::bindLengthVar(const std::shared_ptr<VariableData> &var) {
+    lenghtVar = var;
+
+    flags |= Flags::ARRAY;
+    if (var->isPointer()) {
+        flags |= Flags::ARRAY_OUT;
+    } else {
+        flags |= Flags::ARRAY_IN;
     }
-    return _lenAttribVar;
 }
 
-void VariableData::convertToTemplate() {
-    // specialType = bindSizeArgument ? TYPE_TEMPLATE_WITH_SIZE
-    //                              : TYPE_TEMPLATE;
-
-    setFullType("", "T", "");
-    // std::cout << get(IDENTIFIER) << " --> to array proxy"  << std::endl;
+void VariableData::bindArrayVar(const std::shared_ptr<VariableData> &var) {
+    arrayVar = var;
 }
+
+const std::shared_ptr<VariableData>& VariableData::getLengthVar() const {
+    if (!lenghtVar.get()) {
+        throw std::runtime_error("access to null lengthVar");
+    }
+    return lenghtVar;
+}
+
+const std::shared_ptr<VariableData> &VariableData::getArrayVar() const {
+    if (!arrayVar.get()) {
+        throw std::runtime_error("access to null arrayVar");
+    }
+    return arrayVar;
+}
+
+//void VariableData::convertToTemplate() {
+//    // specialType = bindSizeArgument ? TYPE_TEMPLATE_WITH_SIZE
+//    //                              : TYPE_TEMPLATE;
+
+//    setFullType("", "T", "");
+//    // std::cout << get(IDENTIFIER) << " --> to array proxy"  << std::endl;
+//}
 
 void VariableData::convertToReturn() {
     specialType = TYPE_RETURN;
     ignoreFlag = true;
 
     removeLastAsterisk();
+}
+
+void VariableData::convertToReference() {
+    specialType = TYPE_REFERENCE;
+    removeLastAsterisk();
+    setReferenceFlag(true);
+}
+
+void VariableData::convertToOptional() {
+    setReferenceFlag(false);
+    specialType = TYPE_OPTIONAL;
 }
 
 void VariableData::convertToStdVector() {
@@ -91,33 +156,65 @@ bool VariableData::removeLastAsterisk() {
     return false;
 }
 
+void VariableData::setConst(bool enabled) {
+    if (enabled) {
+        if (get(PREFIX) != "const ") {
+            set(PREFIX, "const ");
+        }
+    }
+    else {
+        if (get(PREFIX) == "const ") {
+            set(PREFIX, "");
+        }
+    }
+}
+
+VariableData::Flags VariableData::getFlags() const {
+    return flags;
+}
+
+bool VariableData::flagHandle() const {
+    return hasFlag(flags, Flags::HANDLE);
+}
+
+bool VariableData::flagArray() const {
+    return hasFlag(flags, Flags::ARRAY);
+}
+
+bool VariableData::flagArrayIn() const {
+    return hasFlag(flags, Flags::ARRAY_IN);
+}
+
+bool VariableData::flagArrayOut() const {
+    return hasFlag(flags, Flags::ARRAY_OUT);
+}
+
 std::string VariableData::toArgument() const {
     if (!altPFN.empty()) {
         return altPFN;
-    }
-    // std::cout << "to argument: " << get(TYPE) << " vs " <<
-    // original.get(TYPE) << std::endl;
+    }    
     switch (specialType) {
     case TYPE_VECTOR:
     case TYPE_ARRAY_PROXY:
         return toArgumentArrayProxy();
-    case TYPE_SIZE_AND_ARRAY_PROXY:
-        return toArgumentSizeAndArrayProxy();    
-    // case TYPE_TEMPLATE_WITH_SIZE:
-    //   return toArgumentTemplateWithSize();
     default:
         return toArgumentDefault();
     }
 }
 
 std::string VariableData::fullType() const {
-    std::string type = get(PREFIX) + get(TYPE) + get(SUFFIX);
+    std::string type = get(PREFIX);
+    if (!optionalNamespace.empty()) {
+        type += optionalNamespace + "::";
+    }
+    type += get(TYPE) + get(SUFFIX);
     switch (specialType) {
-    case TYPE_ARRAY_PROXY:
-    case TYPE_SIZE_AND_ARRAY_PROXY:
+    case TYPE_ARRAY_PROXY:    
         return "ArrayProxy<" + type + "> const &";
     case TYPE_VECTOR:
         return "std::vector<" + type + ">";
+    case TYPE_OPTIONAL:
+        return "Optional<" + type + ">";
     default:
         return type;
     }
@@ -155,6 +252,21 @@ std::string VariableData::originalToString() const {
     return out;
 }
 
+void VariableData::setTemplate(const std::string &str) {
+    optionalTemplate = str;
+}
+
+std::string VariableData::getTemplate() const {
+    return optionalTemplate;
+}
+
+void VariableData::evalFlags(const Generator &gen) {
+    flags = Flags::NONE;
+    if (gen.isHandle(original.type())) {
+        flags |= Flags::HANDLE;
+    }
+}
+
 std::string VariableData::optionalArraySuffix() const {
     if (arrayLengthFound) {
         return "[" + arrayLengthStr + "]";
@@ -164,7 +276,7 @@ std::string VariableData::optionalArraySuffix() const {
 
 std::string VariableData::createCast(std::string from) const {
     std::string cast = "static_cast";
-    if (strContains(original.get(SUFFIX), "*") || arrayLengthFound) {
+    if ((strContains(original.get(SUFFIX), "*") || arrayLengthFound)) {
         cast = "std::bit_cast";
     }    
     return cast + "<" + originalFullType() + (arrayLengthFound ? "*" : "") +
@@ -172,6 +284,16 @@ std::string VariableData::createCast(std::string from) const {
 }
 
 std::string VariableData::toArgumentDefault() const {
+    if (hasArrayVar()) {
+        const auto &var = getArrayVar();
+        if (var->flagArrayIn()) {
+            std::string size = var->identifier() + ".size()";
+            if (const auto &str = var->getTemplate(); !str.empty()) {
+                size += " * sizeof(" + str+ ")";
+            }
+            return size;
+        }
+    }
     std::string id = identifierAsArgument();
     if (get(TYPE) == original.get(TYPE)) {
         return id;
@@ -179,33 +301,54 @@ std::string VariableData::toArgumentDefault() const {
     return createCast(id);
 }
 
-std::string VariableData::identifierAsArgument() const
-{
-    std::string_view osuf = original.get(SUFFIX);
-    std::string_view suf = get(SUFFIX);
-    if (std::count(osuf.begin(), osuf.end(), '*') > std::count(suf.begin(), suf.end(), '*')) {
+std::string VariableData::identifierAsArgument() const {
+    std::string_view ogsuf = original.get(SUFFIX);
+    std::string_view suf = get(SUFFIX);    
+    if (specialType == TYPE_OPTIONAL) {
+        std::string type = get(PREFIX);
+        if (!optionalNamespace.empty()) {
+            type += optionalNamespace + "::";
+        }
+        type += get(TYPE) + get(SUFFIX);
+        return "static_cast<" + type + "*>(" + get(IDENTIFIER) + ")";
+    }
+    if (std::count(ogsuf.begin(), ogsuf.end(), '*') > std::count(suf.begin(), suf.end(), '*')) {
         return "&" + get(IDENTIFIER);
     }
     return get(IDENTIFIER);
 }
 
-XMLVariableParser::XMLVariableParser(tinyxml2::XMLElement *element) {
-    const char *len = element->Attribute("len");
-    if (len) {
-        // std::cout << "Parsing has len: " << len << std::endl;
-        _lenAttrib = len;
-        _hasLenAttrib = true;
-    }
-
-    parse(element);
+XMLVariableParser::XMLVariableParser(tinyxml2::XMLElement *element, const Generator &gen) {    
+    parse(element, gen);
 }
 
-void XMLVariableParser::parse(tinyxml2::XMLElement *element) {
+void XMLVariableParser::parse(tinyxml2::XMLElement *element, const Generator &gen) {
+    const char *len = element->Attribute("len");
+    if (len) {
+        const auto s = split(std::string(len), ",");
+        for (const auto &str : s) {
+            if (str.empty() || std::isdigit(str[0])) {
+                continue;
+            }
+            if (str == "null-terminated") {
+                nullTerminated = true;
+            }
+            else {
+                if (!lenAttribStr.empty()) {
+                    std::cout << "Warn: len attrib currently set (is " << lenAttribStr << ", new: " << str << "). xml: " << len << std::endl;
+                }
+                lenAttribStr = str;
+            }
+        }
+    }
+
     state = PREFIX;
     arrayLengthFound = false;
     element->Accept(this);
+
     trim();
-    convertToCpp();
+    convertToCpp(gen);
+    evalFlags(gen);
 }
 
 bool XMLVariableParser::Visit(const tinyxml2::XMLText &text) {
@@ -252,6 +395,5 @@ void XMLVariableParser::trim() {
     const auto it = suffix.find_last_not_of(' ');
     if (it != std::string::npos) {
         suffix.erase(it + 1); // removes trailing space
-    }
-    // suffix += " ";
+    }    
 }

@@ -44,46 +44,6 @@ static constexpr char const *HELP_TEXT{
     -s, --source    path to source directory
     -d, --dest      path to destination file)"};
 
-
-class A {
-
-    int data;
-public:
-    A() {
-        std::cout << "A constructor" << std::endl;
-    }
-
-    A(const A& o) = delete;
-//    {
-//        std::cout << "copy constructor called" << std::endl;
-//    }
-    A(A&& o) = delete;
-//    {
-//        std::cout << "move constructor called" << std::endl;
-//    };
-    A& operator=(const A& o) = delete;
-//    {
-//        std::cout << "assignment operator called " << std::endl;
-//        return *this;
-//    }
-
-    int get() const {
-        return data;
-    }
-
-};
-
-class I {
-
-    public:
-
-
-    void createA(A &a) {
-
-    }
-
-};
-
 int main(int argc, char **argv) {    
     try {
         ArgOption helpOption{"-h", "--help"};
