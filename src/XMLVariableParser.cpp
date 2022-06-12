@@ -395,5 +395,47 @@ void XMLVariableParser::trim() {
     const auto it = suffix.find_last_not_of(' ');
     if (it != std::string::npos) {
         suffix.erase(it + 1); // removes trailing space
-    }    
+    }
+}
+
+XMLDefineParser::XMLDefineParser(tinyxml2::XMLElement *element, const Generator &gen) {
+    parse(element, gen);
+}
+
+void XMLDefineParser::parse(tinyxml2::XMLElement *element, const Generator &gen) {
+    state = DEFINE;
+    element->Accept(this);
+    trim();
+}
+
+void XMLDefineParser::trim() {
+    const auto it = value.find_first_not_of(' ');
+    if (it != std::string::npos) {
+        value.erase(0, it);
+    }
+}
+
+bool XMLDefineParser::Visit(const tinyxml2::XMLText &text) {
+    std::string_view tag = text.Parent()->Value();
+    std::string_view value = text.Value();
+    // std::cout << "tag: " << tag << ", " << value << std::endl;
+    if (tag == "name") {
+        state = NAME;
+    }
+
+    switch (state) {
+        case DEFINE:
+            break;
+        case NAME:
+            name = value;
+            state = VALUE;
+            break;
+        case VALUE:
+            this->value = value;
+            state = DONE;
+            break;
+        default:
+            return false;
+    }
+    return true;
 }

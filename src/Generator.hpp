@@ -18,10 +18,6 @@
 
 static constexpr char const *RES_HEADER{
     R"(
-//#include <vulkan/vulkan_core.h>
-//#include <vulkan/vulkan.hpp>
-#include <iostream>
-
 #if defined( _MSVC_LANG )
 #  define VULKAN_HPP_CPLUSPLUS _MSVC_LANG
 #else
@@ -136,7 +132,7 @@ extern "C" __declspec( dllimport ) FARPROC __stdcall GetProcAddress( HINSTANCE h
 #  include <span>
 #endif
 
-//static_assert( VK_HEADER_VERSION == 198, "Wrong VK_HEADER_VERSION!" );
+static_assert(VK_HEADER_VERSION == {0}, "Wrong VK_HEADER_VERSION!");
 
 // 32-bit vulkan is not typesafe for handles, so don't allow copy constructors on this platform by default.
 // To enable this feature on 32-bit platforms please define VULKAN_HPP_TYPESAFE_CONVERSION
@@ -1085,6 +1081,8 @@ class Generator {
     XMLDocument doc;
     XMLElement *root;
 
+    std::string headerVersion;
+
     struct PlatformData {
         std::string_view protect;
         int guiState;
@@ -1305,7 +1303,7 @@ class Generator {
         std::vector<std::string> aliases;
     };
 
-    std::unordered_map<std::string, StructData> structs;
+    std::unordered_map<std::string, StructData> structs;    
 
     struct FlagData {
         std::string name;
@@ -1318,6 +1316,8 @@ class Generator {
     std::unordered_map<std::string,
                        std::vector<std::pair<std::string, const char *>>>
         enumMembers;
+
+    std::map<std::string_view, std::string> defines;
 
     struct GenOutputClass {
         std::string sPublic;

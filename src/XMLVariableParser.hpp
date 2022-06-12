@@ -327,4 +327,29 @@ inline bool hasFlag(const VariableData::Flags &a,
     return static_cast<int>(a) & static_cast<int>(b);
 }
 
+class XMLDefineParser : protected tinyxml2::XMLVisitor {
+    enum State { // State used for parsing
+        DEFINE = 0,
+        NAME = 1,
+        VALUE = 2,
+        DONE
+    };
+
+
+    State state; // FSM state
+
+  public:
+    std::string name;
+    std::string value;
+
+    XMLDefineParser(tinyxml2::XMLElement *element, const Generator &gen);
+
+    // Entry point, reset state to initial, parse XMLElement and trim
+    void parse(tinyxml2::XMLElement *element, const Generator &gen);
+
+    void trim();
+
+    virtual bool Visit(const tinyxml2::XMLText &text) override;
+};
+
 #endif // XMLVARIABLEPARSER_H

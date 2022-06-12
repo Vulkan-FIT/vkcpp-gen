@@ -349,8 +349,7 @@ std::string Generator::generateFile() {
     out += "#ifndef " + fileProtect + "\n";
     out += "#define " + fileProtect + "\n";
 
-    out += RES_HEADER;
-    out += "\n";
+    out += format(RES_HEADER, headerVersion);
 
     out += genMacro(cfg.mcName);
 
@@ -1313,7 +1312,6 @@ void Generator::parseTypeDeclarations(XMLNode *node) {
     for (XMLElement *type : Elements(node) | ValueFilter("type")) {
         const char *cat = type->Attribute("category");
         if (!cat) {
-            // warn?
             continue;
         }
         const char *name = type->Attribute("name");
@@ -1429,6 +1427,17 @@ void Generator::parseTypeDeclarations(XMLNode *node) {
                 }
             }
         }
+        else if (strcmp(cat, "define") == 0) {
+            XMLDefineParser parser{type, *this};
+            if (parser.name ==  "VK_HEADER_VERSION") {
+                std::cout << ">>> version: " << parser.value << std::endl;
+                headerVersion = parser.value;
+            }
+        }
+    }
+
+    if (headerVersion.empty()) {
+        throw std::runtime_error("header version not found.");
     }
 
     for (auto &h : handleBuffer) {
@@ -2626,10 +2635,12 @@ void Generator::unload() {
     root = nullptr;
     loaded = false;
 
+    headerVersion.clear();
     platforms.clear();
     enums.clear();
     enumMembers.clear();
     tags.clear();
+    defines.clear();
     flags.clear();
     handles.clear();
     structs.clear();
