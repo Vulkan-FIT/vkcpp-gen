@@ -1190,9 +1190,9 @@ void GUI::updateImgui() {
             guiInputText(cfg.fileProtect);
 
             static std::array<BoolGUI, 3> bools = {
-                BoolGUI{&cfg.genObjectParents, "Parent object pointers"},
-                BoolGUI{&cfg.genStructNoinit, "Struct noinit"},
-                BoolGUI{&cfg.genStructProxy, "Struct proxy"}
+                BoolGUI{&cfg.gen.objectParents, "Parent object pointers"},
+                BoolGUI{&cfg.gen.structNoinit, "Struct noinit"},
+                BoolGUI{&cfg.gen.structProxy, "Struct proxy"}
             };
             for (auto &b : bools) {
                 guiBoolOption(b);
@@ -1200,11 +1200,11 @@ void GUI::updateImgui() {
 
             if (ImGui::TreeNode("C++ macros")) {
                 static std::array<MacroGUI, 5> macros = {
-                    MacroGUI{&cfg.mcName, "Namespace"},
-                    MacroGUI{&cfg.mcConstexpr, "Constexpr"},
-                    MacroGUI{&cfg.mcNoexcept, "Noexcept"},
-                    MacroGUI{&cfg.mcInline, "Inline"},
-                    MacroGUI{&cfg.mcExplicit, "Explicit"}
+                    MacroGUI{&cfg.macro.mNamespace, "Namespace"},
+                    MacroGUI{&cfg.macro.mConstexpr, "Constexpr"},
+                    MacroGUI{&cfg.macro.mNoexcept, "Noexcept"},
+                    MacroGUI{&cfg.macro.mInline, "Inline"},
+                    MacroGUI{&cfg.macro.mExplicit, "Explicit"}
                 };
                 for (auto &m : macros) {
                     guiMacroOption(m);
@@ -1214,7 +1214,7 @@ void GUI::updateImgui() {
 
             if (ImGui::TreeNode("Debug")) {
                 static std::array<BoolGUI, 1> bools = {
-                    BoolGUI{&cfg.dbgMethodTags, "Show functions categories"}
+                    BoolGUI{&cfg.dbg.methodTags, "Show functions categories"}
                 };
                 for (auto &b : bools) {
                     guiBoolOption(b);

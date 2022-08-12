@@ -16,18 +16,19 @@ const std::string &VariableFields::get(size_t index) const {
     return std::array<std::string, 4>::operator[](index);
 }
 
-VariableData::VariableData(Type type) {
+VariableData::VariableData(const Generator &gen, Type type) : gen(gen) {
     specialType = type;
+    ns = Namespace::NONE;
     ignoreFlag = specialType == TYPE_INVALID;
     arrayLengthFound = false;
     ignorePFN = false;
     nullTerminated = false;
 }
 
-VariableData::VariableData(const String &object) : VariableData(object, strFirstLower(object))
+VariableData::VariableData(const Generator &gen, const String &object) : VariableData(gen, object, strFirstLower(object))
 {}
 
-VariableData::VariableData(const String &object, const std::string &id) : VariableData(TYPE_DEFAULT) {
+VariableData::VariableData(const Generator &gen, const String &object, const std::string &id) : VariableData(gen, TYPE_DEFAULT) {
     setIdentifier(id);
     original.setFullType("", object.original, " *");
     setFullType("", object, " *");
@@ -50,13 +51,27 @@ std::string VariableData::getLenAttribRhs() const {
     return lenAttribStr;
 }
 
+std::string VariableData::namespaceString() const {
+    return gen.getNamespace(ns);
+}
+
 bool VariableData::isLenAttribIndirect() const {
     size_t pos = lenAttribStr.find_first_of("->");
     return pos != std::string::npos;
 }
 
-void VariableData::setNamespace(const std::string &ns) {
-    optionalNamespace = ns;
+void VariableData::setNamespace(Namespace value) {
+    ns = value;
+}
+
+void VariableData::toRAII() {
+    ns = Namespace::RAII;
+    convertToReference();
+    setConst(true);
+}
+
+Namespace VariableData::getNamespace() const {
+    return ns;
 }
 
 void VariableData::convertToCpp(const Generator &gen) {
@@ -65,7 +80,7 @@ void VariableData::convertToCpp(const Generator &gen) {
     }
 
     if (gen.isInNamespace(get(TYPE))) {
-        optionalNamespace = gen.cfg.mcName.get();
+        ns = Namespace::VK;        
     }
     set(TYPE, strStripVk(get(TYPE)));
     set(IDENTIFIER, strStripVk(get(IDENTIFIER)));
@@ -75,26 +90,19 @@ bool VariableData::isNullTerminated() const {
     return nullTerminated;
 }
 
-void VariableData::convertToArrayProxy(bool bindSizeArgument) {
-//    specialType =
-//        bindSizeArgument ? TYPE_SIZE_AND_ARRAY_PROXY : TYPE_ARRAY_PROXY;
-
+void VariableData::convertToArrayProxy() {
     specialType = TYPE_ARRAY_PROXY;
-
-         // it->setFullType("", "ArrayProxy<const " + it->type() + ">", " const
-         // &");
-    removeLastAsterisk();
-    // std::cout << get(IDENTIFIER) << " --> to array proxy"  << std::endl;
+    removeLastAsterisk();    
 }
 
 void VariableData::bindLengthVar(const std::shared_ptr<VariableData> &var) {
     lenghtVar = var;
 
     flags |= Flags::ARRAY;
-    if (var->isPointer()) {
-        flags |= Flags::ARRAY_OUT;
-    } else {
+    if (isConst()) {
         flags |= Flags::ARRAY_IN;
+    } else {
+        flags |= Flags::ARRAY_OUT;
     }
 }
 
@@ -116,14 +124,6 @@ const std::shared_ptr<VariableData> &VariableData::getArrayVar() const {
     return arrayVar;
 }
 
-//void VariableData::convertToTemplate() {
-//    // specialType = bindSizeArgument ? TYPE_TEMPLATE_WITH_SIZE
-//    //                              : TYPE_TEMPLATE;
-
-//    setFullType("", "T", "");
-//    // std::cout << get(IDENTIFIER) << " --> to array proxy"  << std::endl;
-//}
-
 void VariableData::convertToReturn() {
     specialType = TYPE_RETURN;
     ignoreFlag = true;
@@ -132,9 +132,17 @@ void VariableData::convertToReturn() {
 }
 
 void VariableData::convertToReference() {
-    specialType = TYPE_REFERENCE;
+    //specialType = TYPE_REFERENCE;
     removeLastAsterisk();
     setReferenceFlag(true);
+}
+
+void VariableData::convertToPointer() {
+    // specialType = TYPE_DEFAULT;
+    if (!isPointer()) {
+        set(SUFFIX, get(SUFFIX) + "*");
+    }
+    setReferenceFlag(false);
 }
 
 void VariableData::convertToOptional() {
@@ -145,6 +153,12 @@ void VariableData::convertToOptional() {
 void VariableData::convertToStdVector() {
     specialType = TYPE_VECTOR;
     removeLastAsterisk();
+    std::string s = get(PREFIX);
+    auto pos = s.find("const");
+    if (pos != std::string::npos) {
+        s.erase(pos, 5);
+        set(PREFIX, s);
+    }
 }
 
 bool VariableData::removeLastAsterisk() {
@@ -173,23 +187,23 @@ VariableData::Flags VariableData::getFlags() const {
     return flags;
 }
 
-bool VariableData::flagHandle() const {
+bool VariableData::isHandle() const {
     return hasFlag(flags, Flags::HANDLE);
 }
 
-bool VariableData::flagArray() const {
+bool VariableData::isArray() const {
     return hasFlag(flags, Flags::ARRAY);
 }
 
-bool VariableData::flagArrayIn() const {
+bool VariableData::isArrayIn() const {
     return hasFlag(flags, Flags::ARRAY_IN);
 }
 
-bool VariableData::flagArrayOut() const {
+bool VariableData::isArrayOut() const {
     return hasFlag(flags, Flags::ARRAY_OUT);
 }
 
-std::string VariableData::toArgument() const {
+std::string VariableData::toArgument(bool useOriginal) const {
     if (!altPFN.empty()) {
         return altPFN;
     }    
@@ -198,15 +212,13 @@ std::string VariableData::toArgument() const {
     case TYPE_ARRAY_PROXY:
         return toArgumentArrayProxy();
     default:
-        return toArgumentDefault();
+        return toArgumentDefault(useOriginal);
     }
 }
 
 std::string VariableData::fullType() const {
     std::string type = get(PREFIX);
-    if (!optionalNamespace.empty()) {
-        type += optionalNamespace + "::";
-    }
+    type += namespaceString();
     type += get(TYPE) + get(SUFFIX);
     switch (specialType) {
     case TYPE_ARRAY_PROXY:    
@@ -226,6 +238,16 @@ std::string VariableData::toString() const {
         out += " ";
     }
     out += optionalAmp;
+    out += get(IDENTIFIER);
+    out += optionalArraySuffix();
+    return out;
+}
+
+std::string VariableData::declaration() const {
+    std::string out = fullType();
+    if (!out.ends_with(" ")) {
+        out += " ";
+    }
     out += get(IDENTIFIER);
     out += optionalArraySuffix();
     return out;
@@ -274,6 +296,14 @@ std::string VariableData::optionalArraySuffix() const {
     return "";
 }
 
+std::string VariableData::toArgumentArrayProxy() const {
+    std::string out = get(IDENTIFIER) + ".data()";
+    if (get(TYPE) == original.get(TYPE)) {
+        return out;
+    }
+    return "std::bit_cast<" + originalFullType() + ">(" + out + ")";
+}
+
 std::string VariableData::createCast(std::string from) const {
     std::string cast = "static_cast";
     if ((strContains(original.get(SUFFIX), "*") || arrayLengthFound)) {
@@ -283,10 +313,10 @@ std::string VariableData::createCast(std::string from) const {
            ">(" + from + ")";
 }
 
-std::string VariableData::toArgumentDefault() const {
+std::string VariableData::toArgumentDefault(bool useOriginal) const {    
     if (hasArrayVar()) {
         const auto &var = getArrayVar();
-        if (var->flagArrayIn()) {
+        if (var->isArrayIn() && !var->isLenAttribIndirect()) {
             std::string size = var->identifier() + ".size()";
             if (const auto &str = var->getTemplate(); !str.empty()) {
                 size += " * sizeof(" + str+ ")";
@@ -295,7 +325,7 @@ std::string VariableData::toArgumentDefault() const {
         }
     }
     std::string id = identifierAsArgument();
-    if (get(TYPE) == original.get(TYPE)) {
+    if (get(TYPE) == original.get(TYPE) || useOriginal) {
         return id;
     }
     return createCast(id);
@@ -303,22 +333,24 @@ std::string VariableData::toArgumentDefault() const {
 
 std::string VariableData::identifierAsArgument() const {
     std::string_view ogsuf = original.get(SUFFIX);
-    std::string_view suf = get(SUFFIX);    
+    std::string_view suf = get(SUFFIX);
+    std::string id = get(IDENTIFIER);
     if (specialType == TYPE_OPTIONAL) {
         std::string type = get(PREFIX);
-        if (!optionalNamespace.empty()) {
-            type += optionalNamespace + "::";
-        }
+        type += namespaceString();
         type += get(TYPE) + get(SUFFIX);
-        return "static_cast<" + type + "*>(" + get(IDENTIFIER) + ")";
+        return "static_cast<" + type + "*>(" + id + ")";
     }
     if (std::count(ogsuf.begin(), ogsuf.end(), '*') > std::count(suf.begin(), suf.end(), '*')) {
-        return "&" + get(IDENTIFIER);
+        return "&" + id;
     }
-    return get(IDENTIFIER);
+    if (ns == Namespace::RAII) {
+        return "*" + id;
+    }
+    return id;
 }
 
-XMLVariableParser::XMLVariableParser(tinyxml2::XMLElement *element, const Generator &gen) {    
+XMLVariableParser::XMLVariableParser(tinyxml2::XMLElement *element, const Generator &gen) : VariableData(gen) {
     parse(element, gen);
 }
 
@@ -346,9 +378,9 @@ void XMLVariableParser::parse(tinyxml2::XMLElement *element, const Generator &ge
     arrayLengthFound = false;
     element->Accept(this);
 
-    trim();
+    trim();    
     convertToCpp(gen);
-    evalFlags(gen);
+    evalFlags(gen);        
 }
 
 bool XMLVariableParser::Visit(const tinyxml2::XMLText &text) {
@@ -417,8 +449,7 @@ void XMLDefineParser::trim() {
 
 bool XMLDefineParser::Visit(const tinyxml2::XMLText &text) {
     std::string_view tag = text.Parent()->Value();
-    std::string_view value = text.Value();
-    // std::cout << "tag: " << tag << ", " << value << std::endl;
+    std::string_view value = text.Value();    
     if (tag == "name") {
         state = NAME;
     }

@@ -127,29 +127,25 @@ class String : public std::string {
 
 public:
     std::string original;
-
     String& operator=(const std::string &rhs) {
         std::string::assign(rhs);
         return *this;
     }
-
+/*
     explicit operator const char*() const {
       return std::string::data();
     }
+*/
 
     String(const std::string &src) {
-        set(src);
+        reset(src);
     }
 
     String(const std::string &src, bool firstCapital) {
         convert(src, firstCapital);
     }
 
-//    String(const String &o) {
-//        std::string::assign(o);
-//    }
-
-    void set(const std::string &src) {
+    void reset(const std::string &src = "") {
         original = src;
         std::string::assign(src);
     }

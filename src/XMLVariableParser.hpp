@@ -26,8 +26,8 @@ SOFTWARE.
 
 #include "tinyxml2.h"
 #include <array>
+#include <unordered_map>
 #include <string>
-
 #include <iostream>
 #include <memory>
 #include <stdexcept>
@@ -36,7 +36,14 @@ SOFTWARE.
 
 class Generator;
 
-enum State { // State used for indexing and parsing FSM
+enum class Namespace {
+    NONE,
+    VK,
+    RAII,
+    STD
+};
+
+enum State { // State used for indexing and FSM
     PREFIX = 0,
     TYPE = 1,
     SUFFIX = 2,
@@ -110,15 +117,16 @@ struct VariableData : public VariableFields {
 
     VariableFields original;
 
-    VariableData(Type type = TYPE_DEFAULT);
+    VariableData(const Generator &gen, Type type = TYPE_DEFAULT);
 
-    VariableData(const String &object);
+    VariableData(const Generator &gen, const String &object);
 
-    VariableData(const String &object, const std::string &id);
+    VariableData(const Generator &gen, const String &object, const std::string &id);
 
-    VariableData(const VariableData &o) {
-        *this = o;
-    }    
+//    VariableData(const VariableData &o) {
+//        gen = o.gen;
+//        *this = o;
+//    }
 
     void setAltPFN(const std::string &str) { altPFN = str; }
 
@@ -131,6 +139,8 @@ struct VariableData : public VariableFields {
     std::string getLenAttribIdentifier() const;
 
     std::string getLenAttribRhs() const;
+
+    std::string namespaceString() const;
 
     bool isLenAttribIndirect() const;
 
@@ -145,7 +155,11 @@ struct VariableData : public VariableFields {
 
     bool getIgnoreFlag() const { return ignoreFlag; }
 
-    void setNamespace(const std::string &ns);
+    void setNamespace(Namespace);
+
+    void toRAII();
+
+    Namespace getNamespace() const;
 
     void setIgnorePFN(bool value) { ignorePFN = value; }
 
@@ -159,7 +173,7 @@ struct VariableData : public VariableFields {
 
     bool isNullTerminated() const;
 
-    void convertToArrayProxy(bool bindSizeArgument = true);
+    void convertToArrayProxy();
 
     void bindLengthVar(const std::shared_ptr<VariableData> &var);
 
@@ -179,6 +193,8 @@ struct VariableData : public VariableFields {
 
     void convertToReference();
 
+    void convertToPointer();
+
     void convertToOptional();
 
     void convertToStdVector();
@@ -189,12 +205,12 @@ struct VariableData : public VariableFields {
 
     Flags getFlags() const;
 
-    bool flagHandle() const;
-    bool flagArray() const;
-    bool flagArrayIn() const;
-    bool flagArrayOut() const;
+    bool isHandle() const;
+    bool isArray() const;
+    bool isArrayIn() const;
+    bool isArrayOut() const;
 
-    std::string toArgument() const;
+    std::string toArgument(bool useOriginal = false) const;
 
     // full type getter
     std::string fullType() const;
@@ -206,6 +222,8 @@ struct VariableData : public VariableFields {
 
     // getter for all fields combined
     std::string toString() const;
+
+    std::string declaration() const;
 
     std::string toStringWithAssignment() const;
 
@@ -224,11 +242,15 @@ struct VariableData : public VariableFields {
 
     std::string getTemplate() const;
 
+    // static void updateNamespace(Namespace key, const std::string &value);
+
   protected:
+    const Generator &gen;
     std::string altPFN;
     std::string optionalAmp;
     Type specialType;
     Flags flags;
+    Namespace ns;
     bool ignoreFlag;
     bool ignorePFN;
     bool arrayLengthFound;
@@ -236,14 +258,16 @@ struct VariableData : public VariableFields {
     std::string arrayLengthStr;
     std::string lenAttribStr;
     std::string _assignment;
-    std::string optionalNamespace;
+    // std::string optionalNamespace;
     std::string optionalTemplate;
 
     std::shared_ptr<VariableData> lenghtVar;
     std::shared_ptr<VariableData> arrayVar;
 
+    // static std::unordered_map<Namespace, std::string> namespaces;
+
     void evalFlags(const Generator &gen);
-  private:
+
     std::string optionalArraySuffix() const;
 
 //    std::string
@@ -251,10 +275,7 @@ struct VariableData : public VariableFields {
 //        return get(IDENTIFIER) + ".size()" + ", " + toArgumentArrayProxy();
 //    }
 
-    std::string toArgumentArrayProxy() const {
-        return "std::bit_cast<" + originalFullType() + ">(" + get(IDENTIFIER) +
-               ".data())";
-    }
+    std::string toArgumentArrayProxy() const;
 
     std::string createCast(std::string from) const;
 
@@ -262,7 +283,7 @@ struct VariableData : public VariableFields {
     //        return "sizeof(" + get(TYPE) + "), " + toArgumentDefault();
     //    }
 
-    std::string toArgumentDefault() const;
+    std::string toArgumentDefault(bool useOriginal = false) const;
 
     std::string identifierAsArgument() const;
 };
@@ -276,7 +297,7 @@ class XMLVariableParser : public VariableData, protected tinyxml2::XMLVisitor {
     State state{PREFIX}; // FSM state
 
   public:
-    XMLVariableParser() = default;
+    // XMLVariableParser() = default;
 
     XMLVariableParser(tinyxml2::XMLElement *element, const Generator &gen);
 

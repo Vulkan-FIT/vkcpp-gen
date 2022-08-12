@@ -49,7 +49,8 @@ int main(int argc, char **argv) {
         ArgOption helpOption{"-h", "--help"};
         ArgOption xmlOption{"-r", "--reg", true};
         ArgOption destOption{"-d", "--dest", true};
-        ArgParser p({&helpOption, &xmlOption, &destOption});
+        ArgOption noguiOption{"", "--nogui"};
+        ArgParser p({&helpOption, &xmlOption, &destOption, &noguiOption});
 
         p.parse(argc, argv);
         // help option block
@@ -67,16 +68,25 @@ int main(int argc, char **argv) {
             gen.load(xmlOption.value);
         }
 
+        const auto generate = [&]{
+            // argument check
+            if (!destOption.set || !xmlOption.set) {
+                throw std::runtime_error("Missing arguments. See usage.");
+            }
+            gen.generate();
+        };
+
 #ifdef GENERATOR_GUI
-        GUI gui{gen};
-        gui.init();
-        gui.run();
-#else
-        // argument check
-        if (!destOption.set || !xmlOption.set) {
-            throw std::runtime_error("Missing arguments. See usage.");
+        if (!noguiOption.set) {
+            GUI gui {gen};
+            gui.init();
+            gui.run();
         }
-        gen.generate();
+        else {
+            generate();
+        }
+#else
+        generate();
 #endif
 
     } catch (const std::exception &e) {
