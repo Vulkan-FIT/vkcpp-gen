@@ -255,11 +255,8 @@ std::string VariableData::declaration() const {
 
 std::string VariableData::toStringWithAssignment() const {
     std::string out = toString();
-    out += " = ";
     if (!_assignment.empty()) {
         out += _assignment;
-    } else {
-        out += "{}";
     }
     return out;
 }
@@ -332,8 +329,7 @@ std::string VariableData::toArgumentDefault(bool useOriginal) const {
 }
 
 std::string VariableData::identifierAsArgument() const {
-    std::string_view ogsuf = original.get(SUFFIX);
-    std::string_view suf = get(SUFFIX);
+    const std::string &suf = get(SUFFIX);
     std::string id = get(IDENTIFIER);
     if (specialType == TYPE_OPTIONAL) {
         std::string type = get(PREFIX);
@@ -341,13 +337,13 @@ std::string VariableData::identifierAsArgument() const {
         type += get(TYPE) + get(SUFFIX);
         return "static_cast<" + type + "*>(" + id + ")";
     }
-    if (std::count(ogsuf.begin(), ogsuf.end(), '*') > std::count(suf.begin(), suf.end(), '*')) {
-        return "&" + id;
-    }
+//    if (std::count(ogsuf.begin(), ogsuf.end(), '*') > std::count(suf.begin(), suf.end(), '*')) {
+//        return "&" + id;
+//    }
     if (ns == Namespace::RAII) {
         return "*" + id;
     }
-    return id;
+    return matchTypePointers(suf, original.get(SUFFIX)) + id;
 }
 
 XMLVariableParser::XMLVariableParser(tinyxml2::XMLElement *element, const Generator &gen) : VariableData(gen) {

@@ -123,6 +123,18 @@ static std::string toCppStyle(const std::string &str, bool firstCapital = false)
     return firstCapital? strFirstUpper(out) : strFirstLower(out);
 }
 
+static std::string matchTypePointers(const std::string &from, const std::string &to) {
+    int cfrom = std::count(from.begin(), from.end(), '*');
+    int cto = std::count(to.begin(), to.end(), '*');
+    if (cfrom > cto) {
+        return "*";
+    }
+    if (cfrom < cto) {
+        return "&";
+    }
+    return "";
+}
+
 class String : public std::string {
 
 public:
@@ -154,6 +166,104 @@ public:
         original = src;
         std::string::assign(toCppStyle(src, firstCapital));
     }
+};
+
+class Argument {
+public:
+    std::string type;
+    std::string id;
+    std::string assignment;
+
+    Argument(const std::string &type, const std::string &id, const std::string &assignment = "") :
+        type(type), id(id), assignment(assignment)
+    {
+
+    }
+
+    operator std::string() const noexcept {
+        return type + id + assignment;
+    }
+
+    bool empty() const {
+        return type.empty() && id.empty();
+    }
+
+};
+
+class InitializerBuilder {
+    std::string init;
+    std::string indent;
+
+public:
+    InitializerBuilder(const std::string &indent) : indent(indent) {}
+
+    void append(const std::string &id, const std::string &assignment) {
+        if (!init.empty()) {
+            init += indent + ", ";
+        }
+        init += id + "(" + assignment + ")\n";
+    }
+
+    void appendRaw(const std::string &str) {
+        init += str;
+    }
+
+    std::string string() const noexcept {
+        if (init.empty()) {
+            return "";
+        }
+        return "\n" + indent + ": " + init;
+    }
+
+};
+
+class ArgumentBuilder {
+
+    std::string str;
+    std::string init;
+    bool declaration;
+
+public:
+    std::vector<Argument> args;
+
+    ArgumentBuilder(bool declaration) noexcept : declaration(declaration) {}
+
+    void append(const std::string &type, const std::string &id, const std::string &assignment = "", const std::string &initId = "", bool ref = false) {
+        if (!str.empty()) {
+            str += ", ";
+        }
+        str += type + id;
+        if (declaration) {
+            str += assignment;
+        }
+        if (!initId.empty()) {
+            if (!init.empty()) {
+                init += ", ";
+            }
+            init += initId + "(" + (ref? "&" : "") + id + ")";
+        }
+        args.push_back(Argument(type, id, assignment));
+    }
+
+    void append(const Argument &arg, const std::string &initId = "", bool ref = false) {
+        append(arg.type, arg.id, arg.assignment, initId, ref);
+    }
+
+    operator std::string() const noexcept {
+        return str;
+    }
+
+    std::string string() const noexcept {
+        return str;
+    }
+
+    std::string initializer() const noexcept {
+        if (init.empty()) {
+            return "";
+        }
+        return " : " + init;
+    }
+
 };
 
 #endif // STRINGUTILS_HPP/

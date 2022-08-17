@@ -8,6 +8,17 @@ static const uint32_t fsSpirv[] = {
 #include "../../shaders/ps.frag.spv"
 };
 
+#include "../../fonts/poppins.cpp"
+
+Generator *GUI::gen;
+GUI::Platforms GUI::platforms;
+GUI::Extensions GUI::extensions;
+//std::vector<GUI::Extension *> GUI::otherExtensions;
+GUI::Types GUI::commands;
+GUI::Types GUI::structs;
+GUI::Types GUI::enums;
+bool GUI::Type::visualizeDisabled;
+
 namespace ImGui {
 bool CheckBoxTristate(const char *label, int *v_tristate) {
     bool ret;
@@ -737,6 +748,16 @@ void GUI::initImgui() {
             vkResetCommandPool(device, commandPool, 0);
         };
 
+
+    ImGuiIO& io = ImGui::GetIO();
+    font = io.Fonts->AddFontFromMemoryCompressedBase85TTF(Poppins_compressed_data_base85, 20.0);
+    if (!font) {
+        std::cerr << "font load error" << std::endl;
+    }
+    else {
+        io.Fonts->Build();
+    }
+
     immediate_submit(
         [&](VkCommandBuffer cmd) { ImGui_ImplVulkan_CreateFontsTexture(cmd); });
 
@@ -843,7 +864,7 @@ void GUI::initImguiStyle() {
     style.Colors[ImGuiCol_TitleBgCollapsed] =
         ImVec4(col_main.x, col_main.y, col_main.z, 0.35f);
     style.Colors[ImGuiCol_TitleBgActive] =
-        ImVec4(col_main.x, col_main.y, col_main.z, 0.78f);
+        ImVec4(col_main.x, col_main.y, col_main.z, 0.48f);
     style.Colors[ImGuiCol_MenuBarBg] =
         ImVec4(col_area.x, col_area.y, col_area.z, 0.57f);
     style.Colors[ImGuiCol_ScrollbarBg] =
@@ -869,9 +890,9 @@ void GUI::initImguiStyle() {
     style.Colors[ImGuiCol_Header] =
         ImVec4(col_main.x, col_main.y, col_main.z, 0.76f);
     style.Colors[ImGuiCol_HeaderHovered] =
-        ImVec4(col_main.x, col_main.y, col_main.z, 0.86f);
+        ImVec4(col_main.x, col_main.y, col_main.z, 0.7f);
     style.Colors[ImGuiCol_HeaderActive] =
-        ImVec4(col_main.x, col_main.y, col_main.z, 1.00f);
+        ImVec4(col_main.x, col_main.y, col_main.z, 0.90f);
     style.Colors[ImGuiCol_ResizeGrip] =
         ImVec4(col_main.x, col_main.y, col_main.z, 0.20f);
     style.Colors[ImGuiCol_ResizeGripHovered] =
@@ -888,6 +909,10 @@ void GUI::initImguiStyle() {
         ImVec4(col_main.x, col_main.y, col_main.z, 1.00f);
     style.Colors[ImGuiCol_TextSelectedBg] =
         ImVec4(col_main.x, col_main.y, col_main.z, 0.43f);
+
+    style.Colors[ImGuiCol_Header] =
+        ImVec4(col_main.x, col_main.y, col_main.z, 0.9f);
+    style.Colors[ImGuiCol_HeaderHovered] = ImVec4(0.2f, 0.2f, 0.2f, 0.9f);
 }
 
 void GUI::guiInputText(std::string &data) {
@@ -901,8 +926,7 @@ void GUI::guiInputText(std::string &data) {
     ImGui::PopItemWidth();
 }
 
-void GUI::guiMacroOption(MacroGUI &m) {
-    ImGui::PushID(id++);
+void GUI::guiMacroOption(Macro &m) {   
 
     ImGui::Text("%s", m.text.c_str());
     ImGui::SameLine();
@@ -916,7 +940,7 @@ void GUI::guiMacroOption(MacroGUI &m) {
 
     ImGui::Checkbox("#define ", &m.data->usesDefine);
     if (m.data->usesDefine) {
-        ImGui::PushID(id++);
+        ImGui::PushID(0);
         ImGui::SameLine();
         guiInputText(m.data->define);
         ImGui::PopID();
@@ -929,11 +953,10 @@ void GUI::guiMacroOption(MacroGUI &m) {
     ImGui::SameLine();
     guiInputText(m.data->value);
 
-    ImGui::PopID();
 }
 
 void GUI::guiBoolOption(BoolGUI &data) {
-    ImGui::PushID(id++);
+    //ImGui::PushID(0);
 
     ImGui::Text("%s", data.text.c_str());
     ImGui::SameLine();
@@ -946,7 +969,83 @@ void GUI::guiBoolOption(BoolGUI &data) {
     // std::cout << data.text << " " << data.data << " : " << (*data.data?
     // "true" : "false") << std::endl;
 
-    ImGui::PopID();
+    //ImGui::PopID();
+}
+
+void GUI::onLoad() {
+    auto &gEnums = gen->getEnums();
+    auto &gStructs = gen->getStructs();
+    auto &gCommands = gen->getCommands();
+    auto &gPlatforms = gen->getPlatforms();
+    auto &gExtensions = gen->getExtensions();
+
+    // otherExtensions.clear();
+    extensions.clear();
+    platforms.clear();
+    enums.clear();
+    structs.clear();
+    commands.clear();
+
+    const auto findPlatform = [&](const std::string &name) -> Platform * {
+        for (auto &p : platforms) {
+            if (p.name == name) {
+                return &p;
+            }
+        }
+        return nullptr;
+    };
+
+    platforms.reserve(gPlatforms.size());
+    for (auto &p : gPlatforms) {
+        platforms.emplace_back(p.first, p.second);
+    }
+
+    enums.reserve(gEnums.size());
+    for (auto &e : gEnums) {
+        enums.emplace_back(e.first, e.second);
+    }
+
+    structs.reserve(gStructs.size());
+    for (auto &e : gStructs) {
+        structs.emplace_back(e.first, e.second);
+    }
+
+    std::map<std::string, Type *> cmdmap;
+    commands.reserve(gCommands.size());
+    for (auto &e : gCommands) {
+        auto p = &commands.emplace_back(e.first, e.second);
+        cmdmap.emplace(e.first, p);
+    }
+
+    extensions.reserve(gExtensions.size());
+    for (auto &e : gExtensions) {
+        auto &ext = extensions.emplace_back(e.first, e.second);
+        ext.commands.reserve(ext.data->commands.size());
+        for (const auto &c : ext.data->commands) {
+            auto cmd = cmdmap.find(c->name.original);
+            if (cmd == cmdmap.end()) {
+                std::cerr << "Gui: can't find command: " << c->name.original
+                          << std::endl;
+            } else {
+                ext.commands.push_back(cmd->second);
+            }
+        }
+    }
+
+    for (auto &e : extensions) {
+        if (e->platform) {
+            auto p = findPlatform(e->platform->first);
+            if (p) {
+                p->extensions.push_back(&e);
+            }
+        }
+//        else {
+//            otherExtensions.push_back(&e);
+//        }
+    }
+
+    std::cout << "GUI loaded data." << std::endl;
+    //std::cout << "  " << commands.size() << " commands" << std::endl;
 }
 
 void GUI::init() {
@@ -969,6 +1068,8 @@ void GUI::init() {
 
     initImgui();
     initImguiStyle();
+
+    gen->bindGUI(onLoad);
 }
 
 void GUI::setupImguiFrame() {
@@ -993,9 +1094,8 @@ void GUI::HelpMarker(const char *desc) {
 }
 
 void GUI::updateImgui() {
-    Generator::Config &cfg = gen.getConfig();
+    Generator::Config &cfg = gen->getConfig();
 
-    id = 0;
     ImGui::NewFrame();
 
     bool mainw;
@@ -1006,13 +1106,23 @@ void GUI::updateImgui() {
     ImGui::Begin("Gen", &mainw,
                  ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
                      ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse);
+    if (showFps) {
+        int fps = 0;
+        float delta = ImGui::GetIO().DeltaTime;
+        if (delta != 0) {
+            fps = 1.0 / delta;
+        }
+        ImGui::Text("FPS %d, avg: %d", fps, (int)ImGui::GetIO().Framerate);
+    }
 
-    if (gen.isLoaded()) {
 
-        static std::string output{gen.getOutputFilePath()};
-        static bool outputPathBad = !gen.isOuputFilepathValid();
+    if (gen->isLoaded()) {
+
+        static std::string output{gen->getOutputFilePath()};
+        static bool outputPathBad = !gen->isOuputFilepathValid();        
+
+        int id = 0;
         bool outputBadFlag = outputPathBad;
-
         if (outputBadFlag) {
             ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
             ImGui::PushStyleVar(ImGuiStyleVar_Alpha,
@@ -1020,208 +1130,126 @@ void GUI::updateImgui() {
         }
         ImGui::Dummy(ImVec2(0.0f, 4.0f));
         if (ImGui::Button("Generate") && !outputBadFlag) {
-            gen.generate();
+            gen->generate();
         }
+        ImGui::SameLine();
         if (outputBadFlag) {
             ImGui::PopItemFlag();
             ImGui::PopStyleVar();
         }
 
-        ImGui::Dummy(ImVec2(0.0f, 4.0f));
-        ImGui::Text("Output: ");
+        // ImGui::Dummy(ImVec2(0.0f, 4.0f));
+        ImGui::Text("Output directory:");
         ImGui::SameLine();
         if (outputBadFlag) {
             ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 134, 0, 255));
         }
-        ImGui::PushID(0);
+        ImGui::PushID(id++);
         if (ImGui::InputText("", &output)) {
-            outputPathBad = !gen.isOuputFilepathValid();
+            gen->setOutputFilePath(output);
+            outputPathBad = !gen->isOuputFilepathValid();
         }
         ImGui::PopID();
         if (outputBadFlag) {
             ImGui::PopStyleColor();
         }
 
-        static auto &platforms = gen.getPlatforms();
-        static auto &extensions = gen.getExtensions();
-        ImGui::Dummy(ImVec2(0.0f, 20.0f));
+        ImGui::Dummy(ImVec2(0.0f, 10.0f));
 
-        if (ImGui::CollapsingHeader("Platforms")) {
-
-            int i = 0;
-            for (auto &p : platforms) {
-
-                ImGui::PushID(i);
-                int *v = &p.second.guiState;
-
-                if (ImGui::CheckBoxTristate("", v)) {
-                    if (*v == 0) {
-                        for (auto &e : extensions) {
-                            if (e.second.platform &&
-                                e.second.platform->first == p.first &&
-                                e.second.enabled) {
-                                e.second.whitelisted = false;
-                            }
-                        }
-                    } else {
-                        for (auto &e : extensions) {
-                            if (e.second.platform &&
-                                e.second.platform->first == p.first &&
-                                e.second.enabled) {
-                                e.second.whitelisted = true;
-                            }
-                        }
-                    }
-                }
-                ImGui::SameLine();
-
-                bool recalc = false;
-
-                if (ImGui::TreeNodeEx(p.first.c_str(),
-                                      ImGuiTreeNodeFlags_OpenOnArrow)) {
-
-                    int j = 0;
-                    for (auto &e : extensions) {
-                        if (e.second.platform &&
-                            e.second.platform->first == p.first) {
-                            std::string suf =
-                                e.second.enabled ? "" : " (disabled)";
-
-                            bool *v = &e.second.whitelisted;
-                            bool disabled = !*v;
-                            if (disabled) {
-                                ImGui::PushStyleVar(ImGuiStyleVar_Alpha,
-                                                    ImGui::GetStyle().Alpha *
-                                                        0.4f);
-                            }
-                            if (!e.second.enabled) {
-                                ImGui::PushItemFlag(ImGuiItemFlags_Disabled,
-                                                    true);
-                                ImGui::PushStyleColor(
-                                    ImGuiCol_Text, IM_COL32(180, 10, 10, 255));
-                            }
-                            ImGui::PushID(j);
-                            if (ImGui::Checkbox("", v)) {
-                                recalc = true;
-                            }
-                            ImGui::SameLine();
-                            ImGui::Text("%s%s", e.first.c_str(), suf.c_str());
-                            ImGui::PopID();
-                            if (disabled) {
-                                ImGui::PopStyleVar();
-                            }
-                            if (!e.second.enabled) {
-                                ImGui::PopItemFlag();
-                                ImGui::PopStyleColor();
-                            }
-                        }
-                        j++;
-                    }
-
-                    ImGui::TreePop();
-                }
-
-                if (recalc && !extensions.empty()) {
-                    for (auto &e : extensions) {
-                        if (e.second.platform &&
-                            e.second.platform->first == p.first &&
-                            e.second.enabled) {
-                            *v = e.second.whitelisted ? 1 : 0;
-                            break;
-                        }
-                    }
-                    for (auto &e : extensions) {
-                        if (e.second.platform &&
-                            e.second.platform->first == p.first &&
-                            e.second.enabled) {
-                            if (e.second.whitelisted) {
-                                if (*v == 0) {
-                                    *v = -1;
-                                    break;
-                                }
-                            } else {
-                                if (*v == 1) {
-                                    *v = -1;
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                }
-
-                ImGui::PopID();
-                i++;
-            }
-
-        }   
-
-        if (ImGui::CollapsingHeader("Other extensions")) {            
-            int i = 0;
-            for (auto &e : extensions) {
-                if (!e.second.platform) {
-                    std::string suf = e.second.enabled ? "" : " (disabled)";
-
-                    if (!e.second.enabled) {
-                        ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
-                    }
-                    ImGui::PushID(i);
-                    ImGui::Checkbox("", &e.second.whitelisted);
-                    ImGui::SameLine();
-                    ImGui::PopID();
-
-                    if (!e.second.enabled) {
-                        ImGui::PopItemFlag();
-                        ImGui::PushStyleColor(ImGuiCol_Text,
-                                              IM_COL32(180, 10, 10, 255));
-                    }
-                    ImGui::Text("%s%s", e.first.c_str(), suf.c_str());
-                    if (!e.second.enabled) {
-                        ImGui::PopStyleColor();
-                    }
-                    i++;
-                }
-            }            
+        if (ImGui::Button("Load config")) {
+            gen->loadConfigFile(configPath);
         }
+        ImGui::SameLine();
+        if (ImGui::Button("Save config")) {
+            gen->saveConfigFile(configPath);
+        }
+        ImGui::SameLine();
+        ImGui::PushID(id++);
+        if (ImGui::InputText("", &configPath)) {
 
-        if (ImGui::CollapsingHeader("Advanced")) {
+        }
+        ImGui::PopID();
 
-            ImGui::Text("Fileprotect");
-            ImGui::SameLine();
-            guiInputText(cfg.fileProtect);
+        ImGui::Dummy(ImVec2(0.0f, 10.0f));
 
-            static std::array<BoolGUI, 3> bools = {
-                BoolGUI{&cfg.gen.objectParents, "Parent object pointers"},
-                BoolGUI{&cfg.gen.structNoinit, "Struct noinit"},
-                BoolGUI{&cfg.gen.structProxy, "Struct proxy"}
+        if (ImGui::CollapsingHeader("Configuration")) {
+            ImGui::PushID(id++);
+
+//            ImGui::Text("Fileprotect");
+//            ImGui::SameLine();
+//            guiInputText(cfg.fileProtect);
+
+            ImGui::Text("Code generation");
+            static std::array<BoolGUI, 2> bools = {
+                BoolGUI{&cfg.gen.cppModules, "C++ Modules"},
+                BoolGUI{&cfg.gen.exceptions, "exeptions"}
             };
+            int i = 0;
             for (auto &b : bools) {
+                ImGui::PushID(i++);
                 guiBoolOption(b);
+                ImGui::PopID();
             }
+            ImGui::Text("  Vulkan namespace");
+            static std::array<BoolGUI, 4> vknsbools = {
+                BoolGUI{&cfg.gen.vulkanCommands, "commands"},
+                BoolGUI{&cfg.gen.dispatchParam, "dispatch paramenter"},
+                BoolGUI{&cfg.gen.allocatorParam, "allocator parameter"},
+                BoolGUI{&cfg.gen.smartHandles, "smart handles"}
+            };
+            for (auto &b : vknsbools) {
+                ImGui::PushID(i++);
+                guiBoolOption(b);
+                ImGui::PopID();
+            }
+
+            ImGui::Dummy(ImVec2(0.0f, 10.0f));
 
             if (ImGui::TreeNode("C++ macros")) {
-                static std::array<MacroGUI, 5> macros = {
-                    MacroGUI{&cfg.macro.mNamespace, "Namespace"},
-                    MacroGUI{&cfg.macro.mConstexpr, "Constexpr"},
-                    MacroGUI{&cfg.macro.mNoexcept, "Noexcept"},
-                    MacroGUI{&cfg.macro.mInline, "Inline"},
-                    MacroGUI{&cfg.macro.mExplicit, "Explicit"}
-                };
+                static std::array<Macro, 5> macros = {
+                    Macro{&cfg.macro.mNamespace, "Namespace"},
+                    Macro{&cfg.macro.mConstexpr, "Constexpr"},
+                    Macro{&cfg.macro.mNoexcept, "Noexcept"},
+                    Macro{&cfg.macro.mInline, "Inline"},
+                    Macro{&cfg.macro.mExplicit, "Explicit"}};
                 for (auto &m : macros) {
+                    ImGui::PushID(i++);
                     guiMacroOption(m);
+                    ImGui::PopID();
                 }
                 ImGui::TreePop();
             }
 
             if (ImGui::TreeNode("Debug")) {
                 static std::array<BoolGUI, 1> bools = {
-                    BoolGUI{&cfg.dbg.methodTags, "Show functions categories"}
-                };
+                    BoolGUI{&cfg.dbg.methodTags, "Show functions categories"}};
                 for (auto &b : bools) {
+                    ImGui::PushID(i++);
                     guiBoolOption(b);
+                    ImGui::PopID();
                 }
                 ImGui::TreePop();
             }
+            ImGui::PopID();
         }
+
+/*
+        ImGui::PushID(id++);
+        ImGui::Text("Filter");
+        ImGui::SameLine();
+        if (ImGui::InputText("", &filter)) {
+            // std::cout << "filter text: " << filter << std::endl;
+        }
+        ImGui::PopID();
+*/
+        Type::visualizeDisabled = false;
+        platforms.draw(id++);
+        extensions.draw(id++);
+        Type::visualizeDisabled = true;
+        enums.draw(id++);
+        structs.draw(id++);
+        commands.draw(id++);
+
     } else {
 
         static std::string regInputText;
@@ -1236,7 +1264,7 @@ void GUI::updateImgui() {
                                 ImGui::GetStyle().Alpha * 0.5f);
         }
         if (ImGui::Button("Load registry")) {
-            gen.load(regInputText);
+            gen->load(regInputText);
         }
 
         if (regButtonDisabled) {
@@ -1244,6 +1272,7 @@ void GUI::updateImgui() {
             ImGui::PopStyleVar();
         }
     }
+
     ImGui::End();
 }
 
@@ -1363,3 +1392,225 @@ void GUI::run() {
         drawFrame();
     }
 }
+
+template<typename T>
+bool GUI::drawContainerHeader(const char *name, bool node, SelectableData<T> *s) {
+    bool check = s->data->isEnabled();
+    if (ImGui::Checkbox("", &check)) {
+        s->data->setEnabled(check);
+    }
+    ImGui::SameLine();
+
+    ImGuiTreeNodeFlags flags =
+        ImGuiTreeNodeFlags_OpenOnDoubleClick |
+        ImGuiTreeNodeFlags_OpenOnArrow;
+    if (s->selected) {
+        flags |= ImGuiTreeNodeFlags_Selected;
+    }
+
+    bool open = drawContainerHeader(name, node, reinterpret_cast<Selectable*>(s));
+
+    if (ImGui::IsItemClicked()) {
+        if (ImGui::GetIO().KeyCtrl) {
+            s->selected = !s->selected;
+        }
+    }
+    return open;
+}
+
+bool GUI::drawContainerHeader(const char *name, bool node, Selectable *s) {
+//    static const auto setSelect = [](std::vector<T> &elements, bool enabled) {
+//       for (auto &p : elements) {
+//            if constexpr (std::is_pointer_v<T>) {
+//                p->selected = enabled;
+//            } else {
+//                p.selected = enabled;
+//            }
+//        }
+//    };
+
+//    static const auto setEnabled = [](std::vector<T> &elements, bool enabled, bool all) {
+//       for (auto &p : elements) {
+//            if constexpr (std::is_pointer_v<T>) {
+//                if (p->selected || all) {
+//                    p->data->enabled = enabled;
+//                }
+//            } else {
+//                if (p.selected || all) {
+//                    p.data->enabled = enabled;
+//                }
+//            }
+//        }
+//    };
+
+    bool open;
+    if (node) {
+        ImGuiTreeNodeFlags flags =
+        ImGuiTreeNodeFlags_OpenOnDoubleClick |
+        ImGuiTreeNodeFlags_OpenOnArrow;
+        if (s->selected) {
+            flags |= ImGuiTreeNodeFlags_Selected;
+        }
+        open = ImGui::TreeNodeEx(name, flags);
+    }
+    else {
+        open = ImGui::CollapsingHeader(name);
+    }
+
+
+    if (ImGui::BeginPopupContextItem()) {
+        ImGui::Text("-- %s --", name);
+        if (ImGui::MenuItem("Select all")) {
+            //setSelect(elements, true);
+            // s->setEnabled(true);
+        }
+        if (ImGui::MenuItem("Deselect all")) {
+            //setSelect(elements, false);
+        }
+        if (ImGui::MenuItem("Enable selected")) {
+            //setEnabled(elements, true, false);
+        }
+        if (ImGui::MenuItem("Disable selected")) {
+            //setEnabled(elements, false, false);
+        }
+        if (ImGui::MenuItem("Enable all")) {
+            s->setEnabled(true);
+            //setEnabled(elements, true, true);
+        }
+        if (ImGui::MenuItem("Disable all")) {
+            s->setEnabled(false);
+            //setEnabled(elements, false, true);
+        }
+        ImGui::EndPopup();
+    }
+    return open;
+}
+
+void GUI::setConfigPath(const std::string &path) {
+    configPath = path;
+}
+
+template<typename T>
+void GUI::Container<T>::draw(int id) {
+    ImGui::PushID(id);
+
+    auto &elements = *this;
+    bool open = true;
+    if (!name.empty()) {
+        open = drawContainerHeader(name.c_str(), isNode, this);
+    }
+    if (open) {
+        for (size_t i = 0; i < elements.size(); i++) {
+            if constexpr (std::is_pointer_v<T>) {
+                elements[i]->draw(i);
+            } else {
+                elements[i].draw(i);
+            }
+        }
+        if (isNode) {
+            ImGui::TreePop();
+        }
+    }
+    ImGui::PopID();
+}
+
+void GUI::Type::draw(int id) {
+    bool alpha = false;
+    std::string disabler;
+    if (visualizeDisabled) {
+        if (data->ext) {
+            if (!data->ext->isEnabled()) {
+                alpha = true;
+                disabler = data->ext->name;
+            }
+            else if (data->ext->platform) {
+                if (!data->ext->platform->second.isEnabled()) {
+                    alpha = true;
+                    disabler = data->ext->platform->second.name;
+                }
+            }
+        }
+    }
+
+    if (!disabler.empty()) {
+        ImGui::PushStyleVar(ImGuiStyleVar_Alpha,
+                            ImGui::GetStyle().Alpha * 0.5f);
+    }
+
+    std::string n = data->name.original;
+    ImGui::PushID(id);
+    ImGui::Dummy(ImVec2(5.0f, 0.0f));
+    ImGui::SameLine();
+    bool check = data->isEnabled();
+    if (ImGui::Checkbox("", &check)) {
+        data->setEnabled(check);
+    }
+    ImGui::SameLine();
+    if (hovered || selected) {
+        auto size = ImGui::CalcTextSize(n.c_str());
+        ImVec2 p = ImGui::GetCursorScreenPos();
+        auto clr = ImGui::ColorConvertFloat4ToU32(
+            ImGui::GetStyle()
+                .Colors[selected ? ImGuiCol_Header
+                                   : ImGuiCol_HeaderHovered]);
+        auto pad = ImGui::GetStyle().FramePadding;
+        ImGui::GetWindowDrawList()->AddRectFilled(
+            ImVec2(p.x, p.y),
+            ImVec2(p.x + size.x + pad.x * 2, p.y + size.y + pad.y * 2),
+            clr);
+    }
+    ImGui::Text("%s", n.c_str());
+    hovered = ImGui::IsItemHovered();
+    if (ImGui::IsItemClicked()) {
+        if (ImGui::GetIO().KeyCtrl) {
+            selected = !selected;
+        }
+    }
+
+    if (!data->dependencies.empty()) {
+        ImGui::SameLine();
+        ImGui::TextDisabled("(?)");
+        if (ImGui::IsItemHovered()) {
+            ImGui::BeginTooltip();
+            ImGui::PushTextWrapPos(ImGui::GetFontSize() * 100.0f);
+            std::string text;
+            if (!disabler.empty()) {
+                text += disabler + " is disabled\n\n";
+            }
+            text += "Requires:\n\n";
+            for (const auto &d : data->dependencies) {
+                text += d->name + "\n";
+            }
+            ImGui::TextUnformatted(text.c_str());
+            ImGui::PopTextWrapPos();
+            ImGui::EndTooltip();
+        }
+    }
+
+    if (!disabler.empty()) {
+        ImGui::PopStyleVar();
+    }
+    ImGui::PopID();
+}
+
+void GUI::Extension::draw(int id) {
+    if (!data->supported) {
+        return;
+    }
+    ImGui::PushID(id);
+    if (drawContainerHeader(name, true, this)) {
+        this->commands.draw(0);
+        ImGui::TreePop();
+    }
+    ImGui::PopID();
+}
+
+void GUI::Platform::draw(int id) {
+    ImGui::PushID(id);
+    if (drawContainerHeader(name, true, this)) {
+        this->extensions.draw(0);
+        ImGui::TreePop();
+    }
+    ImGui::PopID();
+}
+

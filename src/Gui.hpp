@@ -17,29 +17,146 @@
 
 class GUI {
 
-    struct MacroGUI {
+    struct Macro {
         Generator::Macro *data;
         std::string text;
 
-        MacroGUI(Generator::Macro *data, std::string text) : data(data), text(text) {
-        }
+        Macro(Generator::Macro *data, std::string text)
+            : data(data), text(text) {}
     };
 
     struct BoolGUI {
         bool *data;
         std::string text;
 
-        BoolGUI(bool *data, std::string text) : data(data), text(text) {
+        BoolGUI(bool *data, std::string text) : data(data), text(text) {}
+    };
+
+    struct Selectable {
+        bool selected = {};
+
+        virtual void setEnabled(bool) = 0;
+    };
+
+    template<typename T>
+    struct SelectableData : public Selectable {
+        T *data;
+
+        SelectableData(T &data) : data(&data) {}
+
+        virtual void setEnabled(bool value) override {
+            data->setEnabled(value);
+        };
+    };
+
+
+    template<typename T>
+    class Container : public std::vector<T>, public Selectable {
+    public:
+        std::string name;
+        bool isNode = {};
+
+        void draw(int id);
+
+        virtual void setEnabled(bool value) override {
+            for (auto &e : *this) {
+                if constexpr (std::is_pointer_v<T>) {
+                    //e->setEnabled(enabled);
+                    e->data->setEnabled(value);
+                } else {
+                    //e.setEnabled(enabled);
+                    e.data->setEnabled(value);
+                }
+            }
+        };
+    };
+
+    struct Type : public SelectableData<Generator::BaseType> {
+        static bool visualizeDisabled;
+        const char *name;
+        bool hovered = {};
+
+        Type(const std::string &name, Generator::BaseType &data)
+            : SelectableData<Generator::BaseType>(data), name(name.c_str()) {}
+
+        Generator::BaseType *operator->() { return data; }
+
+        void draw(int id);
+    };
+
+    struct Extension : public SelectableData<Generator::ExtensionData> {
+        const char *name;
+
+        Container<Type *> commands;
+
+        Extension(const std::string &name, Generator::ExtensionData &data)
+            : SelectableData<Generator::ExtensionData>(data), name(name.c_str())
+        {
+            commands.name = "Commands";
+            commands.isNode = true;
+        }
+
+        Generator::ExtensionData *operator->() { return data; }
+
+        void draw(int id);
+
+//        virtual void setEnabled(bool enabled) override {
+//            for (auto &c : commands) {
+//                c->setEnabled(enabled);
+//            }
+//        }
+    };
+
+    struct Platform : public SelectableData<Generator::PlatformData> {
+        const char *name;
+        Container<Extension *> extensions;
+
+        Platform(const std::string &name, Generator::PlatformData &data)
+            : SelectableData<Generator::PlatformData>(data), name(name.c_str()) {}
+
+        Generator::PlatformData *operator->() { return data; }
+
+        void draw(int id);
+
+        virtual void setEnabled(bool enabled) override {
+            for (auto &e : extensions) {
+                e->setEnabled(enabled);
+            }
         }
     };
 
-    class Window {
-        public:
-        std::function<void(Window*)> onClose;
-        std::function<void(Window*, int, int)> onSize;
-    };
+    static Generator *gen;
+    using Platforms = Container<Platform>;
+    using Extensions = Container<Extension>;
+    using Types = Container<Type>;
 
-    Generator &gen;
+    static Platforms platforms;
+    static Extensions extensions;
+//    static std::vector<Extension *> otherExtensions;
+    static Types commands;
+    static Types structs;
+    static Types enums;
+
+    static void onLoad();
+
+    static bool drawContainerHeader(const char *name, bool node = false, Selectable *s = nullptr);
+
+    template<typename T>
+    static bool drawContainerHeader(const char *name, bool node = false, SelectableData<T> *s = nullptr);
+
+    std::string configPath;
+
+
+
+    std::string filter;
+
+    ImFont* font;
+
+    class Window {
+    public:
+        std::function<void(Window *)> onClose;
+        std::function<void(Window *, int, int)> onSize;
+    };
 
     struct QueueFamilyIndices {
         std::optional<uint32_t> graphicsFamily;
@@ -104,7 +221,7 @@ class GUI {
     bool isDeviceSuitable(VkPhysicalDevice device) {
         QueueFamilyIndices indices = findQueueFamilies(device);
         return indices.isComplete();
-    };    
+    };
 
     SwapChainSupportDetails querySwapChainSupport(VkPhysicalDevice device,
                                                   VkSurfaceKHR surface);
@@ -191,12 +308,21 @@ class GUI {
 
     void guiInputText(std::string &data);
 
-    void guiMacroOption(MacroGUI &data);
+    void guiMacroOption(Macro &data);
 
     void guiBoolOption(BoolGUI &data);
 
   public:
-    GUI(Generator &gen) : gen(gen) { physicalDevice = VK_NULL_HANDLE; }
+    GUI(Generator &gen) {
+        this->gen = &gen;
+        physicalDevice = VK_NULL_HANDLE;
+
+        platforms.name = "Platforms";
+        extensions.name = "Extensions";
+        commands.name = "Commands";
+        structs.name = "Struct";
+        enums.name = "Enums";
+    }
 
     void init();
 
@@ -213,6 +339,10 @@ class GUI {
     void drawFrame();
 
     void run();
+
+    void setConfigPath(const std::string &path);
+
+    bool showFps = {};
 };
 
 #endif // GUI_HPP

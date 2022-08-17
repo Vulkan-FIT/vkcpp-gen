@@ -5,6 +5,7 @@
 #include "XMLVariableParser.hpp"
 #include "tinyxml2.h"
 #include <filesystem>
+#include <forward_list>
 #include <functional>
 #include <iostream>
 #include <list>
@@ -18,118 +19,12 @@
 
 static constexpr char const *RES_HEADER{
     R"(
-#if defined( _MSVC_LANG )
-#  define VULKAN_HPP_CPLUSPLUS _MSVC_LANG
-#else
-#  define VULKAN_HPP_CPLUSPLUS __cplusplus
-#endif
-
-#if 201703L < VULKAN_HPP_CPLUSPLUS
-#  define VULKAN_HPP_CPP_VERSION 20
-#elif 201402L < VULKAN_HPP_CPLUSPLUS
-#  define VULKAN_HPP_CPP_VERSION 17
-#elif 201103L < VULKAN_HPP_CPLUSPLUS
-#  define VULKAN_HPP_CPP_VERSION 14
-#elif 199711L < VULKAN_HPP_CPLUSPLUS
-#  define VULKAN_HPP_CPP_VERSION 11
-#else
-#  error "vulkan.hpp needs at least c++ standard version 11"
-#endif
-
-#include <vulkan/vulkan.h>
-
-#include <algorithm>
-#include <array>
-#include <bit>
-#include <cstddef>
-#include <cstdint>
-#include <cstring>
-#include <functional>
-#include <initializer_list>
-#include <sstream>
-#include <string>
-#include <system_error>
-#include <tuple>
-#include <type_traits>
-#include <vector>
-#if 17 <= VULKAN_HPP_CPP_VERSION
-#  include <string_view>
-#endif
-
-#if defined( VULKAN_HPP_DISABLE_ENHANCED_MODE )
-#  if !defined( VULKAN_HPP_NO_SMART_HANDLE )
-#    define VULKAN_HPP_NO_SMART_HANDLE
-#  endif
-#else
-#  include <memory>
-#  include <vector>
-#endif
-
-#if defined( VULKAN_HPP_NO_CONSTRUCTORS )
-#  if !defined( VULKAN_HPP_NO_STRUCT_CONSTRUCTORS )
-#    define VULKAN_HPP_NO_STRUCT_CONSTRUCTORS
-#  endif
-#  if !defined( VULKAN_HPP_NO_UNION_CONSTRUCTORS )
-#    define VULKAN_HPP_NO_UNION_CONSTRUCTORS
-#  endif
-#endif
-
-#if defined( VULKAN_HPP_NO_SETTERS )
-#  if !defined( VULKAN_HPP_NO_STRUCT_SETTERS )
-#    define VULKAN_HPP_NO_STRUCT_SETTERS
-#  endif
-#  if !defined( VULKAN_HPP_NO_UNION_SETTERS )
-#    define VULKAN_HPP_NO_UNION_SETTERS
-#  endif
-#endif
-
-#if !defined( VULKAN_HPP_ASSERT )
-#  include <cassert>
-#  define VULKAN_HPP_ASSERT assert
-#endif
-
 #if !defined( VULKAN_HPP_ASSERT_ON_RESULT )
 #  define VULKAN_HPP_ASSERT_ON_RESULT VULKAN_HPP_ASSERT
 #endif
 
 #if !defined( VULKAN_HPP_STATIC_ASSERT )
 #  define VULKAN_HPP_STATIC_ASSERT static_assert
-#endif
-
-#if !defined( VULKAN_HPP_ENABLE_DYNAMIC_LOADER_TOOL )
-#  define VULKAN_HPP_ENABLE_DYNAMIC_LOADER_TOOL 1
-#endif
-
-#if VULKAN_HPP_ENABLE_DYNAMIC_LOADER_TOOL == 1
-#  if defined( __unix__ ) || defined( __APPLE__ ) || defined( __QNXNTO__ ) || defined( __Fuchsia__ )
-#    include <dlfcn.h>
-#  elif defined( _WIN32 )
-typedef struct HINSTANCE__ * HINSTANCE;
-#    if defined( _WIN64 )
-typedef int64_t( __stdcall * FARPROC )();
-#    else
-typedef int( __stdcall * FARPROC )();
-#    endif
-extern "C" __declspec( dllimport ) HINSTANCE __stdcall LoadLibraryA( char const * lpLibFileName );
-extern "C" __declspec( dllimport ) int __stdcall FreeLibrary( HINSTANCE hLibModule );
-extern "C" __declspec( dllimport ) FARPROC __stdcall GetProcAddress( HINSTANCE hModule, const char * lpProcName );
-#  endif
-#endif
-
-#if !defined( __has_include )
-#  define __has_include( x ) false
-#endif
-
-#if ( 201711 <= __cpp_impl_three_way_comparison ) && __has_include( <compare> ) && !defined( VULKAN_HPP_NO_SPACESHIP_OPERATOR )
-#  define VULKAN_HPP_HAS_SPACESHIP_OPERATOR
-#endif
-#if defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )
-#  include <compare>
-#endif
-
-#if ( 201803 <= __cpp_lib_span )
-#  define VULKAN_HPP_SUPPORT_SPAN
-#  include <span>
 #endif
 
 static_assert(VK_HEADER_VERSION == {0}, "Wrong VK_HEADER_VERSION!");
@@ -242,9 +137,6 @@ static_assert(VK_HEADER_VERSION == {0}, "Wrong VK_HEADER_VERSION!");
 #  define VULKAN_HPP_NODISCARD
 #  define VULKAN_HPP_NODISCARD_WHEN_NO_EXCEPTIONS
 #endif
-
-#define VULKAN_HPP_STRINGIFY2( text ) #text
-#define VULKAN_HPP_STRINGIFY( text )  VULKAN_HPP_STRINGIFY2( text )
 )"};
 
 static constexpr char const *RES_ERRORS{R"(
@@ -929,43 +821,35 @@ static constexpr char const *RES_RAII{R"(
     }
 )"};
 
-//static constexpr char const *RES_FLAGS{R"()"};
+// static constexpr char const *RES_FLAGS{R"()"};
 
-template <typename T>
-class EnumFlag {
+template <typename T> class EnumFlag {
     using Type = typename std::underlying_type<T>::type;
     Type m_flags;
-public:
 
+  public:
     EnumFlag() = default;
 
-    EnumFlag(const T& flags)
-        : m_flags(static_cast<Type>(flags))
-    {}
+    EnumFlag(const T &flags) : m_flags(static_cast<Type>(flags)) {}
 
-    bool operator &(const T &rhs) const {
+    bool operator&(const T &rhs) const {
         return (m_flags & static_cast<Type>(rhs)) != 0;
     }
 
-    operator const T() const {
-        return m_flags;
-    }
+    operator const T() const { return m_flags; }
 
-    EnumFlag<T>& operator|=(const T &b) {
+    EnumFlag<T> &operator|=(const T &b) {
         m_flags |= static_cast<Type>(b);
         return *this;
     }
 
-    EnumFlag<T>& operator&=(const T &b) {
+    EnumFlag<T> &operator&=(const T &b) {
         m_flags &= static_cast<Type>(b);
         return *this;
     }
 
-    const T operator~() const {
-        return static_cast<T>(~m_flags);
-    }
+    const T operator~() const { return static_cast<T>(~m_flags); }
 };
-
 
 template <template <class...> class TContainer, class T, class A, class E>
 static bool isInContainter(const TContainer<T, A> &array, E entry) {
@@ -974,6 +858,13 @@ static bool isInContainter(const TContainer<T, A> &array, E entry) {
 }
 
 using namespace tinyxml2;
+
+static String convertName(const std::string &name, const std::string &cls) {
+    String out{name, false};
+    out = std::regex_replace(out, std::regex(cls, std::regex_constants::icase),
+                             "");
+    return out; // filtered prototype name
+}
 
 class Generator {
 
@@ -999,11 +890,16 @@ class Generator {
             Macro mDispatchType;
         } macro;
         struct {
-            bool objectParents;
+            bool cppModules;
             bool structNoinit;
-            bool structProxy;
+            bool vulkanCommands;
+            bool dispatchParam;
             bool dispatchLoaderStatic;
-            bool useStaticCommands;
+            bool useStaticCommands; // move
+            bool allocatorParam;
+            bool smartHandles;
+            bool exceptions;
+            bool resultValueType;
         } gen;
         struct {
             bool methodTags;
@@ -1012,18 +908,106 @@ class Generator {
         std::string loaderClassName;
     };
 
-    Config cfg;
-    bool loaded;
-    XMLDocument doc;
-    XMLElement *root;
+    struct ExtensionData;
 
-    std::string headerVersion;
+    struct BaseType {
+        String name = {""};
+        ExtensionData *ext = {};
+        std::unordered_set<BaseType *> dependencies;
+        std::unordered_set<BaseType *> subscribers;
+        bool forceRequired = {};
 
-    bool dispatchLoaderBaseGenerated;
+        void setUnsuppored() {
+            supported = false;
+        }
+
+        bool isEnabled() const {
+            return enabled && supported;
+        }
+
+        bool isSuppored() const {
+            return supported;
+        }
+
+        bool isRequired() const {
+            return !subscribers.empty() || forceRequired;
+        }
+
+        bool canGenerate() const {
+            return supported && (enabled || isRequired());
+        }
+
+        void setEnabled(bool value) {
+            if (enabled == value || !supported) {
+                return;
+            }
+            enabled = value;
+            if (enabled) {
+                // std::cout << "> enable: " << name << std::endl;
+                for (auto &d : dependencies) {
+                    if (!subscribers.contains(d)) {
+                        d->subscribe(this);
+                    }
+                }
+            }
+            else {
+                // std::cout << "> disable: " << name << std::endl;
+                for (auto &d : dependencies) {
+                    if (!subscribers.contains(d)) {
+                        d->unsubscribe(this);
+                    }
+                }
+            }
+        }
+
+        void subscribe(BaseType *s) {
+            if (!subscribers.contains(s)) {
+                bool empty = subscribers.empty();
+                subscribers.emplace(s);
+                // std::cout << "  subscribed to: " << name << std::endl;
+                if (empty) {
+                    setEnabled(true);
+                }
+            }
+        }
+
+        void unsubscribe(BaseType *s) {
+            auto it = subscribers.find(s);
+            if (it != subscribers.end()) {
+                subscribers.erase(it);
+                // std::cout << "  unsubscribed to: " << name << std::endl;
+                if (subscribers.empty()) {
+                    setEnabled(false);
+                }
+            }
+        }
+
+    protected:
+        bool enabled = false;
+        bool supported = true;
+    };    
 
     struct PlatformData {
+        std::string name;
         std::string_view protect;
-        int guiState;
+        bool enabled = {};
+
+        PlatformData(const std::string &name, std::string_view protect, bool enabled) :
+            name(name), protect(protect), enabled(enabled)
+        {
+        }
+
+        void setEnabled(bool value) {
+            enabled = value;
+        }
+
+        bool isEnabled() const {
+            return enabled;
+        }
+
+        bool isRequired() const {
+            return enabled;
+        }
     };
     using Platforms = std::map<std::string, PlatformData>;
     Platforms platforms; // maps platform name to protect (#if defined PROTECT)
@@ -1031,60 +1015,95 @@ class Generator {
     using Tags = std::unordered_set<std::string>;
     Tags tags; // list of tags from <tags>
 
+    struct CommandData;
+    struct StructData;
+
     struct ExtensionData {
+        std::string name;
+        std::string protect;
         Platforms::pointer platform;
-        bool enabled;
-        bool whitelisted;
+        bool supported = true;
+        bool enabled = {};
+
+        ExtensionData(const std::string &name, std::string protect, Platforms::pointer platform, bool supported, bool enabled) :
+            name(name), platform(platform), protect(protect), supported(supported), enabled(enabled)
+        {
+        }
+
+        std::vector<CommandData *> commands;
+        std::vector<BaseType *> types;
+
+        void setEnabled(bool value) {
+            enabled = value;
+        }
+
+        bool isEnabled() const {
+            return enabled;
+        }
+
+        bool isRequired() const {
+            return enabled;
+        }
+
     };
 
     using Extensions = std::map<std::string, ExtensionData>;
     Extensions extensions; // maps extension to protect as reference
-
-    using Namemap = std::map<std::string, Extensions::reference>;
-    Namemap namemap; // maps name to extension
 
     using GenFunction = std::function<void(XMLNode *)>;
     using OrderPair = std::pair<std::string, GenFunction>;
 
     using Variables = std::vector<std::shared_ptr<VariableData>>;
 
-    std::unordered_map<std::string, const char *> errorClasses;
-
-    std::unordered_map<Namespace, Macro*> namespaces;
+    std::unordered_map<Namespace, Macro *> namespaces;
 
     void bindVars(Variables &vars) const;
 
     enum class PFNReturnCategory {
         OTHER,
         VOID,
-        VK_RESULT //, VK_STRUCT
+        VK_RESULT
     };
 
     enum class ArraySizeArgument { INVALID, COUNT, SIZE, CONST_COUNT };
 
-    enum class MemberNameCategory { UNKNOWN, GET, ALLOCATE, ACQUIRE, CREATE, ENUMERATE, WRITE, DESTROY, FREE };
+    enum class MemberNameCategory {
+        UNKNOWN,
+        GET,
+        ALLOCATE,
+        ACQUIRE,
+        CREATE,
+        ENUMERATE,
+        WRITE,
+        DESTROY,
+        FREE
+    };
 
     enum class HandleCreationCategory { NONE, ALLOCATE, CREATE };
 
-    enum class CommandFlags : uint8_t { NONE, ALIAS = 1, INDIRECT = 2, RAII_ONLY = 4};
+    enum class CommandFlags : uint8_t {
+        NONE,
+        ALIAS = 1,
+        INDIRECT = 2,
+        RAII_ONLY = 4
+    };
 
     struct HandleData;
 
-    struct CommandData {
-        String name{""};      // identifier
-        std::string type;     // return type
-        Variables params;     // list of arguments
+    struct CommandData : public BaseType {
+        std::string type; // return type
+        Variables params; // list of arguments
         std::vector<std::string> successCodes;
-        MemberNameCategory nameCat;        
+        MemberNameCategory nameCat;
         PFNReturnCategory pfnReturn;
         EnumFlag<CommandFlags> flags{};
 
         void setFlagBit(CommandFlags bit, bool enabled) {
             if (enabled) {
                 flags |= bit;
-            }
-            else {
-                flags &= ~EnumFlag<CommandFlags>{bit};;
+            } else {
+                flags &= ~EnumFlag<CommandFlags>{bit};
+                ;
             }
         }
 
@@ -1093,43 +1112,33 @@ class Generator {
             return r;
         }
 
-        bool isIndirect() const {
-            bool r = flags & CommandFlags::INDIRECT;
-            return r;
-        }
-
-        bool isRaiiOnly() const {
-            bool r = flags & CommandFlags::RAII_ONLY;
-            return r;
-        }
-
         bool getsObject() const {
             switch (nameCat) {
-                case MemberNameCategory::ACQUIRE:
-                case MemberNameCategory::GET:
-                    return true;
-                default:
-                    return false;
+            case MemberNameCategory::ACQUIRE:
+            case MemberNameCategory::GET:
+                return true;
+            default:
+                return false;
             }
         }
 
         bool createsObject() const {
             switch (nameCat) {
-                case MemberNameCategory::ALLOCATE:
-                case MemberNameCategory::CREATE:
-                    return true;
-                default:
-                    return false;
+            case MemberNameCategory::ALLOCATE:
+            case MemberNameCategory::CREATE:
+                return true;
+            default:
+                return false;
             }
         }
 
         bool destroysObject() const {
             switch (nameCat) {
-                case MemberNameCategory::DESTROY:
-                case MemberNameCategory::FREE:
-                    return true;
-                default:
-                    return false;
+            case MemberNameCategory::DESTROY:
+            case MemberNameCategory::FREE:
+                return true;
+            default:
+                return false;
             }
         }
 
@@ -1138,13 +1147,11 @@ class Generator {
                 if (getsObject() || createsObject()) {
                     const auto &var = getLastPointerVar();
                     return var->original.type() != type;
-                }
-                else if (destroysObject()) {
+                } else if (destroysObject()) {
                     const auto &var = getLastHandleVar();
                     return var->original.type() != type;
                 }
-            }
-            catch (std::runtime_error) {
+            } catch (std::runtime_error) {
             }
             return true;
         }
@@ -1153,7 +1160,7 @@ class Generator {
             this->name.convert(name);
             pfnReturn = gen.evaluatePFNReturn(type);
             gen.evalCommand(*this);
-        }       
+        }
 
         bool containsPointerVariable() {
             for (auto it = params.rbegin(); it != params.rend(); it++) {
@@ -1186,7 +1193,7 @@ class Generator {
             throw std::runtime_error("can't get param (last pointer)");
         }
 
-         std::shared_ptr<VariableData> getLastHandleVar() const {
+        std::shared_ptr<VariableData> getLastHandleVar() const {
             for (auto it = params.rbegin(); it != params.rend(); it++) {
                 if (it->get()->isHandle()) {
                     return *it;
@@ -1194,154 +1201,90 @@ class Generator {
             }
             throw std::runtime_error("can't get param (last handle)");
         }
-
     };
-
-    std::vector<CommandData> commands;
-    std::vector<CommandData> staticCommands;
 
     // holds information about class member (function)
-    struct ClassCommandData : CommandData {
-        using Var = const std::shared_ptr<VariableData>;
+    struct ClassCommandData {
 
-        const Generator &gen;
-        HandleData *cls;
+        const Generator *gen = {};
+        const CommandData *src = {};
+        HandleData *cls = {};
+        String name = {""};
+        bool raiiOnly = {};
 
-        ClassCommandData(const ClassCommandData &o)
-            : gen(o.gen), cls(o.cls)
-        {
-            name = o.name;
-            type = o.type;
-            successCodes = o.successCodes;
-            nameCat = o.nameCat;
-            pfnReturn = o.pfnReturn;
-            flags = o.flags;
-
-            std::transform(
-                o.params.begin(), o.params.end(), std::back_inserter(params),
-                [](const std::shared_ptr<VariableData> &var) {
-                    return std::make_shared<VariableData>(*var.get());
-                });
-
-            gen.bindVars(params);
-        }
-
-        ClassCommandData(const Generator &gen, HandleData *cls,
+        ClassCommandData(const Generator *gen, HandleData *cls,
                          const CommandData &o)
-            : gen(gen), cls(cls) {
-
-            name = convertName(o.name.original, cls->name);
-            type = o.type;
-            successCodes = o.successCodes;
-            nameCat = o.nameCat;            
-            pfnReturn = o.pfnReturn;            
-            flags = o.flags;
-
-            std::transform(
-                o.params.begin(), o.params.end(), std::back_inserter(params),
-                [](const std::shared_ptr<VariableData> &var) {
-                    return std::make_shared<VariableData>(*var.get());
-                });
-
-            gen.bindVars(params);
+            : gen(gen), cls(cls), src(&o),
+              name(convertName(o.name.original, cls->name), false)
+        {
+            name.original = o.name.original;
         }
 
-        ClassCommandData &operator=(ClassCommandData o) {
-            *this = ClassCommandData(o.gen, o.cls, o);
-            return *this;
-        }
-
-        static String convertName(const std::string &name, const std::string &cls) {
-            String out {name, false};
-            out = std::regex_replace(out, std::regex(cls, std::regex_constants::icase), "");
-            return out; // filtered prototype name
-        }
+        ClassCommandData &operator=(ClassCommandData &o) noexcept = default;
 
         bool valid() const { return !name.empty(); }
-
-
-
-        Variables getFilteredProtoVars() const {
-            Variables out;
-            for (const auto &p : params) {
-                if (filterProto(p, p->original.type() == cls->name.original)) {
-                    out.push_back(p);
-                }
-            }
-            return out;
-        }        
-
-    protected:
-
-        static bool filterProto(Var &v, bool same) {
-            if (v->getIgnoreFlag()) {
-                return false;
-            }
-            return v->hasLengthVar() || !same;
-        }
-
-        static bool filterPass(Var &v, bool same) {
-            return !v->getIgnoreFlag();
-        }
-
-        static bool filterPFN(Var &v, bool same) {
-            return !v->getIgnorePFN();
-        }
-
     };
 
-    struct EnumValue {
-        String value;
-        const char *protect = {};
+    struct EnumValue : public BaseType {
         bool isAlias = {};
         bool supported = {};
 
-        EnumValue(const String &value, bool isAlias = false) : value(value), isAlias(isAlias) {
-
+        EnumValue(const String &name, bool isAlias = false, bool enabled = true) : isAlias(isAlias) {
+            this->name = name;
+            this->enabled = true;
         }
     };
 
-    struct EnumData {
-        String name;
-        // std::vector<EnumValue> extendValues;
+    struct EnumData : public BaseType {
         std::vector<String> aliases;
         std::vector<EnumValue> members;
+        std::string flagbits;
         bool isBitmask = {};
-        bool isFlag = {};
+        // bool isFlag = {};
 
-        EnumData(std::string name) : name(name, true) {}
+        EnumData(std::string name) { this->name = String(name, true); }
 
         bool containsValue(const std::string &value) const;
     };
 
-    std::string outputFuncs;    
+    Config cfg;
+    bool loaded;
+    XMLDocument doc;
+    XMLElement *root;
+
+    std::string headerVersion;
+
+    bool dispatchLoaderBaseGenerated;
+
+    std::vector<const EnumValue *> errorClasses;
+
+    std::map<std::string, CommandData> commands;
+    std::vector<CommandData*> staticCommands;
+
+    std::string outputFuncs;
     std::string outputFuncsRAII;
 
     std::string outputFilePath;
 
-    std::unordered_set<std::string> generatedStructs; // helper list
-
-    struct StructData {
+    struct StructData : BaseType {
         enum VkStructType { VK_STRUCT, VK_UNION } type;
-        XMLNode *node;
-        std::vector<std::string> aliases;
+        // XMLNode *node;
+        std::string structTypeValue;
+        std::vector<String> aliases;
+        Variables members;
+
+        std::string getType() const {
+            return type == StructData::VK_STRUCT ? "struct" : "union";
+        }
     };
 
-    std::unordered_map<std::string, StructData> structs;    
+    std::map<std::string, StructData> structs;
+    std::list<StructData *> structBuffer;
 
-    struct FlagData {
-        std::string name;
-        bool hasRequire;
-        bool alias;
-    };
+    bool isStructOrUnion(const std::string &name) const;
 
-    std::unordered_map<std::string, FlagData> flags;
     std::map<std::string, EnumData> enums;
-    std::unordered_map<std::string,
-                       std::vector<std::pair<std::string, const char *>>>
-        enumMembers;
-
-    std::map<std::string_view, std::string> defines;
+    std::map<std::string, EnumData *> enumMap;
 
     struct GenOutputClass {
         std::string sPublic;
@@ -1354,14 +1297,13 @@ class Generator {
         const Generator &gen;
         std::unordered_map<std::string, std::string> output;
 
-    public:
+      public:
         UnorderedOutput(const Generator &gen) : gen(gen) {}
 
         std::string get() const {
             std::string out;
             return out;
         }
-
     };
 
     template <class... Args>
@@ -1378,23 +1320,23 @@ class Generator {
     void parseTags(XMLNode *node);
 
     // tries to match str in extensions, if found returns pointer to protect,
-    // otherwise nullptr
-    ExtensionData *findExtensionProtect(const std::string &str);
+    // otherwise nullptr    
+//    ExtensionData *findExtensionProtect(const std::string &str);
 
-    bool idLookup(const std::string &name, std::string_view &protect) const;
+//    bool idLookup(const std::string &name, std::string_view &protect) const;
 
-    // #if defined encapsulation
-    void withProtect(std::string &output, const char *protect,
-                     std::function<void(std::string &)> function) const;
+//    // #if defined encapsulation
+//    void withProtect(std::string &output, const char *protect,
+//                     std::function<void(std::string &)> function) const;
 
-    // void genOptional(const std::string &name, std::function<void()> function);
+    // void genOptional(const std::string &name, std::function<void()>
+    // function);
 
-    std::string genOptional(const std::string &name,
+//    std::string genOptional(const std::string &name,
+//                            std::function<void(std::string &)> function) const;
+
+    std::string genOptional(const BaseType &type,
                             std::function<void(std::string &)> function) const;
-
-    bool isStructOrUnion(const std::string &name) const {
-        return structs.find(name) != structs.end();
-    }
 
     std::string strRemoveTag(std::string &str) const;
 
@@ -1404,9 +1346,8 @@ class Generator {
 
     std::string snakeToCamel(const std::string &str) const;
 
-    std::string enumConvertCamel(const std::string &enumName,
-                                 std::string value, bool isBitmask = false) const;
-
+    std::string enumConvertCamel(const std::string &enumName, std::string value,
+                                 bool isBitmask = false) const;
 
     std::string genNamespaceMacro(const Macro &m);
 
@@ -1416,40 +1357,12 @@ class Generator {
 
     std::string generateMainFile();
 
-    Variables parseStructMembers(XMLElement *node,
-                                                 std::string &structType,
-                                                 std::string &structTypeValue);
+    Variables parseStructMembers(XMLElement *node, std::string &structType,
+                                 std::string &structTypeValue);
 
-    struct GenStructTempData {
-        std::string name;
-        bool structOrUnion;
-        XMLElement *node;
-        std::vector<std::string> typeList;
-    };
+    void parseEnumExtend(XMLElement &node, ExtensionData *ext);
 
-    std::list<GenStructTempData> genStructStack;
-
-    std::string generateStructCode(std::string name, const std::string &structType,
-                            const std::string &structTypeValue,
-                            const Variables &members);
-
-    std::string generateUnionCode(std::string name,
-                           const Variables &members);
-
-    std::string generateStruct(std::string name, const std::string &structType,
-                        const std::string &structTypeValue,
-                        const Variables &members,
-                        const std::vector<std::string> &typeList,
-                        bool structOrUnion);
-
-    std::string parseStruct(XMLElement *node, std::string name, bool structOrUnion);
-
-    void parseEnumExtend(XMLElement &node, const char *protect);
-
-    std::string generateEnum(std::string name, XMLNode *node,
-                      const std::string &bitmask);
-
-    std::string generateEnum(const EnumData &data);
+    std::string generateEnum(const EnumData &data, const std::string &name);
 
     std::string generateEnums();
 
@@ -1463,64 +1376,204 @@ class Generator {
 
     std::string generateDispatchLoaderStatic();
 
-    struct MemberContext : ClassCommandData {
+    bool useDispatchLoader() const {
+        const auto &cfg = getConfig();
+        return cfg.gen.dispatchLoaderStatic && !cfg.gen.useStaticCommands;
+    }
+
+    std::string getDispatchArgument(bool assignment) const {
+        if (!cfg.gen.dispatchParam) {
+            return "";
+        }
+        std::string out =
+            format("::{NAMESPACE}::DispatchLoaderStatic const &d");
+        if (assignment) {
+            out += " " + cfg.macro.mDispatch.get();
+        }
+        return out;
+    }
+
+    std::string getDispatchType() const {
+        if (cfg.macro.mDispatchType.usesDefine) {
+            return cfg.macro.mDispatchType.define;
+        }
+        return format(cfg.macro.mDispatchType.value);
+    }
+
+    Argument getDispatchArgument() const {
+        if (!cfg.gen.dispatchParam) {
+            return Argument("", "");
+        }
+        std::string assignment = cfg.macro.mDispatch.get();
+        if (!assignment.empty()) {
+            assignment = " " + assignment;
+        }
+        auto type = format("::{NAMESPACE}::DispatchLoaderStatic const &");
+        return Argument(type, "d", assignment);
+    }
+
+    std::string getDispatchCall(const std::string &var = "d.") const {
+        if (cfg.gen.dispatchParam) {
+            return var;
+        }
+        return "::";
+    }
+
+    struct MemberContext : CommandData {
+        using Var = const std::shared_ptr<VariableData>;
+
+        const Generator &gen;
+        HandleData *cls;
         Namespace ns;
         std::string pfnSourceOverride;
         std::string pfnNameOverride;
         [[deprecated]] bool lastHandleVariant = {};
-        bool constructor = {};
+        bool raiiOnly = {};
         bool useThis = {};
         bool isStatic = {};
+        bool inUnique = {};
+        bool constructor = {};
+        bool generateInline = {};
+        bool disableSubstitution = {};
 
-        MemberContext(const ClassCommandData &m, Namespace ns, bool constructor = false) : ClassCommandData(m), ns(ns), constructor(constructor) {                       
+        MemberContext(const ClassCommandData &m, Namespace ns,
+                      bool constructor = false)
+            : gen(*m.gen), ns(ns), constructor(constructor),
+              CommandData(*m.src) {
+            name = m.name;
+            cls = m.cls;
+            raiiOnly = m.raiiOnly;
+
+            const auto &p = m.src->params;
+            params.clear();
+            params.reserve(p.size());
+            std::transform(p.begin(), p.end(), std::back_inserter(params),
+                           [](const std::shared_ptr<VariableData> &var) {
+                               return std::make_shared<VariableData>(
+                                   *var.get());
+                           });
+
+            gen.bindVars(params);
         }
 
-        std::string createProtoArguments(bool useOriginal = false) const {
-            return createArguments(filterProto, [&](Var &v){
-                return useOriginal? v->originalToString() : v->toString();
-            }, true);
+        MemberContext(const MemberContext &o) : gen(o.gen), CommandData(o) {
+            cls = o.cls;
+            ns = o.ns;
+            pfnSourceOverride = o.pfnSourceOverride;
+            pfnNameOverride = o.pfnNameOverride;
+            raiiOnly = o.raiiOnly;
+            constructor = o.constructor;
+            useThis = o.useThis;
+            isStatic = o.isStatic;
+            inUnique = o.inUnique;
+            generateInline = o.generateInline;
+            disableSubstitution = o.disableSubstitution;
+
+            const auto &p = o.params;
+            params.clear();
+            params.reserve(p.size());
+            std::transform(p.begin(), p.end(), std::back_inserter(params),
+                           [](const std::shared_ptr<VariableData> &var) {
+                               return std::make_shared<VariableData>(
+                                   *var.get());
+                           });
+            gen.bindVars(params);
+        }
+
+        bool isRaiiOnly() const { return raiiOnly; }
+
+        bool isIndirect() const { return cls->isSubclass; }
+
+        std::string createProtoArguments(bool useOriginal = false, bool declaration = false) const {
+            return createArguments(
+                filterProto,
+                [&](Var &v) {
+                    if (useOriginal) {
+                        return v->originalToString();
+                    }
+                    if (declaration) {
+                        return v->toStringWithAssignment();
+                    }
+                    return v->toString();
+                },
+                true);
         }
 
         std::string createPFNArguments(bool useOriginal = false) const {
-            return createArguments(filterPFN, [&](Var &v){
-                return v->toArgument(useOriginal);
-            });
+            return createArguments(
+                filterPFN, [&](Var &v) { return v->toArgument(useOriginal); });
         }
 
-        std::string createPassArguments() const {
-            return createArguments(filterPass, [&](Var &v){
-                return v->identifier();
-            });
+        std::string createPassArguments(bool hasAllocVar) const {
+            return createArguments(filterPass,
+                                   [&](Var &v) { return v->identifier(); },
+                                   false);
         }
 
-    private:
-        std::string createArguments(std::function<bool(Var&, bool)> filter,
-                                    std::function<std::string(Var&)> function, bool proto = false) const
-        {
+        Variables getFilteredProtoVars() const {
+            Variables out;
+            for (const auto &p : params) {
+                if (filterProto(p, p->original.type() == cls->name.original)) {
+                    out.push_back(p);
+                }
+            }
+            return out;
+        }
+
+      private:
+        static bool filterProto(Var &v, bool same) {
+            if (v->getIgnoreFlag()) {
+                return false;
+            }
+            return v->hasLengthVar() || !same;
+        }
+
+        static bool filterPass(Var &v, bool same) {
+            return !v->getIgnoreFlag();
+        }
+
+        static bool filterPFN(Var &v, bool same) { return !v->getIgnorePFN(); }
+
+        std::string createArguments(std::function<bool(Var &, bool)> filter,
+                                    std::function<std::string(Var &)> function,
+                                    bool proto = false) const {
             std::string out;
             for (const auto &p : params) {
-                bool sameType = p->original.type() == cls->name.original;
+                bool sameType = p->original.type() == cls->name.original && !p->original.type().empty();
 
-                if (ns == Namespace::RAII && cls->isSubclass() && !constructor && p->original.type() == cls->superclass.original) {
+                if (ns == Namespace::RAII && cls->isSubclass && !constructor &&
+                    p->original.type() == cls->superclass.original) {
                     continue;
                 }
 
                 if (!filter(p, sameType)) {
                     continue;
                 }
-                if (!proto && p->original.type() == "VkAllocationCallbacks") {
+                if (!disableSubstitution && !proto && p->type() == "AllocationCallbacks" &&
+                    !gen.getConfig().gen.allocatorParam) {
                     out += "nullptr";
-                }
-                else if (!p->hasLengthVar() && sameType) {
+                } else if (!p->hasLengthVar() && sameType) {
                     if (!useThis && p->original.isPointer()) {
                         out += "&";
-                    }
-                    else if (useThis) {
+                    } else if (useThis) {
                         out += "*";
                     }
-                    out += useThis? "this" : cls->vkhandle;
+                    out += useThis ? "this" : cls->vkhandle;
                 } else {
-                    out += function(p);
+                    bool match = false;
+                    if (inUnique && !proto && !disableSubstitution && !p->hasLengthVar()) {
+                        for (const auto &v : cls->uniqueVars) {
+                            if (p->type() == v.type()) {
+                                out += matchTypePointers(v.suffix(), p->original.suffix());
+                                out += v.identifier();
+                                match = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (!match) {
+                        out += function(p);
+                    }
                 }
                 out += ", ";
             }
@@ -1529,78 +1582,72 @@ class Generator {
         }
     };
 
-    struct HandleData {
-        String name;
+    struct HandleData : public BaseType {
+
         String superclass;
         std::string vkhandle;
         std::string ownerhandle;
-        std::string_view alias;
-        std::pair<const std::string_view, HandleData> *parent;
+        std::string alias;
+        HandleData *parent;
         HandleCreationCategory creationCat;
 
         std::optional<ClassCommandData> getAddrCmd;
         std::vector<ClassCommandData> members;
         std::vector<ClassCommandData> ctorCmds;
-        std::vector<CommandData*> dtorCmds;
+        std::vector<CommandData *> dtorCmds;
         std::vector<ClassCommandData> vectorCmds;
 
         std::vector<MemberContext> generated;
 
+        std::vector<VariableData> uniqueVars;
+        std::vector<VariableData> raiiVars;
+
         int effectiveMembers;
+        bool isSubclass;
         bool vectorVariant;
+
         // bool uniqueVariant;
 
-        HandleData(const std::string &name) : name(name, true), superclass("") {
+        HandleData(const std::string &name, bool isSubclass = false)
+            : superclass(""), isSubclass(isSubclass) {
+            this->name = String(name, true);
             vkhandle = "m_" + strFirstLower(this->name);
             parent = nullptr;
             effectiveMembers = 0;
             // uniqueVariant = false;
             creationCat = HandleCreationCategory::NONE;
+
+
         }
 
-        void calculate(const Generator &gen,
+        void clear() {            
+            generated.clear();
+            uniqueVars.clear();
+            raiiVars.clear();
+        }
+
+        void init(const Generator &gen,
                        const std::string &loaderClassName);
 
-//        int totalMembers() const;
+        void addCommand(const Generator &gen, const CommandData &cmd,
+                        bool raiiOnly = false);
 
-//        bool usesHandleVariant() const;
-
-        void addCommand(const Generator &gen, const CommandData &cmd);
-
-        bool isSubclass() const {
-            return name.original != "VkInstance" && name.original != "VkDevice";
-        }
-
-        bool hasPFNs() const {
-            return effectiveMembers > 0 && !isSubclass();
-        }
+        bool hasPFNs() const { return effectiveMembers > 0 && !isSubclass; }
 
         bool uniqueVariant() const {
             return creationCat != HandleCreationCategory::NONE;
         }
-
     };
 
-    using Handles = std::unordered_map<std::string_view, HandleData>;
+    using Handles = std::map<std::string, HandleData>;
     Handles handles;
     HandleData loader;
 
-    bool isHandle(const std::string_view &name) const {
-        return handles.find(name) != handles.end();
+    bool isHandle(const std::string &name) const {
+        return handles.find(name) != handles.end() || name == loader.name.original;
     }
 
-    HandleData& findHandle(const std::string_view &name) {
-        if (name == loader.name.original) {
-            return loader;
-        }
-        const auto &handle = handles.find(name);
-        if (handle == handles.end()) {            
-            throw std::runtime_error("Handle not found: " + std::string(name));
-        }
-        return handle->second;
-    }
-
-    const HandleData& findHandle(const std::string_view &name) const {
+    HandleData &findHandle(const std::string &name) {
         if (name == loader.name.original) {
             return loader;
         }
@@ -1611,11 +1658,52 @@ class Generator {
         return handle->second;
     }
 
+    const HandleData &findHandle(const std::string &name) const {
+        if (name == loader.name.original) {
+            return loader;
+        }
+        const auto &handle = handles.find(name);
+        if (handle == handles.end()) {
+            throw std::runtime_error("Handle not found: " + std::string(name));
+        }
+        return handle->second;
+    }
+
+    CommandData *findCommand(const std::string &name) {
+        for (auto &c : commands) {
+            if (c.second.name.original == name) {
+                return &c.second;
+            }
+        }
+        return nullptr;
+    }
+
+    BaseType *findType(const std::string &name) {
+        // TODO refactor
+        for (auto &c : structs) {
+            if (c.second.name.original == name) {
+                return &c.second;
+            }
+        }
+        for (auto &c : enumMap) {
+            if (c.second->name.original == name) {
+                return c.second;
+            }
+        }
+        for (auto &c : handles) {
+            if (c.second.name.original == name) {
+                return &c.second;
+            }
+        }
+        return nullptr;
+    }
+
     void parseTypes(XMLNode *node);
 
     void parseEnums(XMLNode *node);
 
-    std::string generateStructDecl(const std::string &name, const StructData &d);
+    std::string generateStructDecl(const std::string &name,
+                                   const StructData &d);
 
     std::string generateClassDecl(const HandleData &data, bool allowUnique);
 
@@ -1625,6 +1713,8 @@ class Generator {
     std::string generateHandles();
 
     std::string generateStructs();
+
+    std::string generateStruct(const StructData &data);
 
     std::string generateRAII();
 
@@ -1673,7 +1763,7 @@ class Generator {
         bindVars(m.params);
         m.setName(*this, name);
         return m;
-    }  
+    }
 
     void evalCommand(CommandData &ctx) const;
 
@@ -1701,10 +1791,12 @@ class Generator {
         VariableData resultVar;
         std::string returnType;
         std::string returnValue;
+        std::string initializer;
         bool specifierInline;
         bool specifierExplicit;
         bool specifierConst;
         bool disableCheck;
+        std::shared_ptr<VariableData> allocatorVar;
 
         std::string declareReturnVar(const std::string &assignment = "") {
             if (!resultVar.isInvalid()) {
@@ -1721,7 +1813,6 @@ class Generator {
             return out += ";\n";
         }
 
-
         virtual std::string generateMemberBody() = 0;
 
         std::string castTo(const std::string &type,
@@ -1733,11 +1824,7 @@ class Generator {
         }
 
         bool useDispatchLoader() const {
-            if (ctx.ns != Namespace::VK) {
-                return false;
-            }
-            const auto &cfg = ctx.gen.getConfig();
-            return cfg.gen.dispatchLoaderStatic && !cfg.gen.useStaticCommands;
+            return ctx.ns == Namespace::VK && ctx.gen.useDispatchLoader();
         }
 
         std::string generatePFNcall(bool immediateReturn = false) {
@@ -1745,19 +1832,13 @@ class Generator {
             if (call.empty()) {
                 if (ctx.ns == Namespace::RAII) {
                     call += "m_";
+                } else {
+                    call += ctx.gen.getDispatchCall();
                 }
-                else if (useDispatchLoader()) {
-                    call += "d.";
-                }
-                else {
-                    call += "::";
-                }
-
             }
             if (ctx.pfnNameOverride.empty()) {
                 call += ctx.name.original;
-            }
-            else {
+            } else {
                 call += ctx.pfnNameOverride;
             }
             call += "(" + ctx.createPFNArguments() + ")";
@@ -1797,9 +1878,9 @@ class Generator {
             }
 
             std::string out = "createResultValueType";
-//            if (returnType != "void" && returnType != "Result") {
-//                out += "<" + returnType + ">";
-//            }
+            //            if (returnType != "void" && returnType != "Result") {
+            //                out += "<" + returnType + ">";
+            //            }
             out += "(";
             if (resultVar.identifier() != identifier) {
                 out += resultVar.identifier() + ", ";
@@ -1810,11 +1891,13 @@ class Generator {
         }
 
         std::string generateCheck() {
-            if (ctx.pfnReturn != PFNReturnCategory::VK_RESULT || resultVar.isInvalid()) {
+            if (ctx.pfnReturn != PFNReturnCategory::VK_RESULT ||
+                resultVar.isInvalid()) {
                 return "";
             }
             const auto &macros = ctx.gen.getConfig().macro;
-            const auto &ns = ctx.ns == Namespace::VK? macros.mNamespace : macros.mNamespaceRAII;
+            const auto &ns = ctx.ns == Namespace::VK ? macros.mNamespace
+                                                     : macros.mNamespaceRAII;
             std::string message;
             if (ns.usesDefine) {
                 message = ns.define + "_STRING \"";
@@ -1830,22 +1913,31 @@ class Generator {
             if (ctx.successCodes.size() > 1) {
                 codes += ",\n                { ";
                 for (const auto &c : ctx.successCodes) {
-                    codes += "Result::" + ctx.gen.enumConvertCamel("Result", c) + ",\n                  ";
+                    codes +=
+                        "Result::" + ctx.gen.enumConvertCamel("Result", c) +
+                        ",\n                  ";
                 }
                 strStripSuffix(codes, ",\n                  ");
                 codes += "}";
             }
 
-            std::string output = ctx.gen.format(R"(
+            std::string output =
+                ctx.gen.format(R"(
     resultCheck({0},
                 {1}{2});
-)",                         resultVar.identifier(), message, codes);
+)",
+                               resultVar.identifier(), message, codes);
 
             return output;
         }
 
         bool usesResultValueType() const {
-            return !returnType.empty() && returnType != "Result" && ctx.pfnReturn == PFNReturnCategory::VK_RESULT;
+            const auto &cfg = ctx.gen.getConfig();
+            if (!cfg.gen.resultValueType) {
+                return false;
+            }
+            return !returnType.empty() && returnType != "Result" &&
+                   ctx.pfnReturn == PFNReturnCategory::VK_RESULT;
         }
 
         std::string generateReturnType() {
@@ -1900,6 +1992,9 @@ class Generator {
             }
 
             output += ctx.name + "(" + createProtoArguments(declaration) + ")";
+            if (ctx.constructor && !initializer.empty()) {
+                output += initializer;
+            }
             if (specifierConst && !ctx.isStatic) {
                 output += " const";
             }
@@ -1909,88 +2004,86 @@ class Generator {
         std::string getDbgtag();
 
         std::string generateDeclaration() {
-            return ctx.gen.genOptional(
-                ctx.name.original, [&](std::string &output) {
-                    std::string indent = ctx.isStatic? "  " : "    ";
-                    output += getProto(indent, true) + ";\n";
-                });
+            return ctx.gen.genOptional(ctx, [&](std::string &output) {
+                std::string indent = ctx.isStatic ? "  " : "    ";
+                output += getProto(indent, true) + ";\n";
+            });
         }
 
-        std::string generateDefinition() {
-            return ctx.gen.genOptional(
-                ctx.name.original, [&](std::string &output) {
-                    output += getProto("  ", false) + " {\n";
-                    if (ctx.ns == Namespace::RAII && ctx.isIndirect()) {
-                        if (ctx.cls->ownerhandle.empty()) {
-                            std::cerr << "Error: can't generate funcion: class has no owner" << std::endl;
-                        }
-                        else {
-                            String name = ctx.convertName(ctx.name.original, ctx.cls->superclass);
+        std::string generateDefinition(bool genInline) {
+            return ctx.gen.genOptional(ctx, [&](std::string &output) {
+                std::string indent = genInline ? "    " : "  ";
+                output += getProto(indent, genInline) + " {\n";
+                if (ctx.ns == Namespace::RAII && ctx.isIndirect() &&
+                    !ctx.constructor) {
+                    if (ctx.cls->ownerhandle.empty()) {
+                        std::cerr << "Error: can't generate funcion: class has "
+                                     "no owner ("
+                                  << ctx.cls->name << ", " << ctx.name << ")"
+                                  << std::endl;
+                    } else {
+                        String name =
+                            convertName(ctx.name.original, ctx.cls->superclass);
 
-                            std::string args = createPassArguments();
-                            output += "    ";
-                            if (returnType != "void") {
-                                output += "return ";
+                        std::string args = createPassArguments();
+                        output += "    ";
+                        if (generateReturnType() != "void") {
+                            output += "return ";
+                        }
+                        output += ctx.cls->ownerhandle + "->" + name + "(" +
+                                  args + ");\n";
+                    }
+                } else {
+                    for (const auto &p : ctx.params) {
+                        if (p->getIgnoreFlag()) {
+                            continue;
+                        }
+                        if (p->getSpecialType() ==
+                            VariableData::TYPE_ARRAY_PROXY) {
+                            if (p->isLenAttribIndirect()) {
+                                const auto &var = p->getLengthVar();
+                                std::string size = var->identifier() + "." +
+                                                   p->getLenAttribRhs();
+                                output += "    // if (" + p->identifier() +
+                                          ".size()" + " != " + size +
+                                          ") TODO\n";
                             }
-                            output += ctx.cls->ownerhandle + "->" + name + "(" + args + ");\n";
                         }
                     }
-                    else {
-                        for (const auto &p : ctx.params) {
-                            if (p->getIgnoreFlag()) {
-                                continue;
-                            }
-                            if (p->getSpecialType() == VariableData::TYPE_ARRAY_PROXY) {
-                                if (p->isLenAttribIndirect()) {
-                                    const auto &var = p->getLengthVar();
-                                    std::string size = var->identifier() + "." + p->getLenAttribRhs();
-                                    output += "    // if (" + p->identifier() + ".size()" + " != " + size + ") TODO\n";
-                                }
-                            }
 
-                        }
-
-                        output += generateMemberBody();
-                        if (!disableCheck && ctx.pfnReturn == PFNReturnCategory::VK_RESULT) {
-                            output += generateCheck();
-                        }
-                        if (!returnValue.empty()) {
-                            output += "    return " + returnValue + ";\n";
-                        }
+                    output += generateMemberBody();
+                    if (!disableCheck &&
+                        ctx.pfnReturn == PFNReturnCategory::VK_RESULT) {
+                        output += generateCheck();
                     }
-                    output += "  }\n";
-                });
+                     if (generateReturnType() != "void" && !returnValue.empty()) {
+                        output += "    return " + returnValue + ";\n";
+                    }
+                }
+                output += "  }\n";
+            });
         }
 
         std::string createProtoArguments(bool declaration = false) {
-            std::string args = ctx.createProtoArguments();
-            if (useDispatchLoader()) {
-                if (!args.empty()) {
-                    args += ", ";
-                }
-                args += ctx.gen.format("::{NAMESPACE}::DispatchLoaderStatic const &d");
-                if (declaration) {
-                    args += " " + ctx.gen.getConfig().macro.mDispatch.get();
-                }
-            }
+            std::string args = ctx.createProtoArguments(false, declaration);
             return args;
         }
 
         std::string createPassArguments() {
-            std::string args = ctx.createPassArguments();
-            if (useDispatchLoader()) {
-                if (!args.empty()) {
-                    args += ", ";
-                }
-                args += ctx.gen.format("d");
+            bool allocVar = true;
+            if (allocatorVar && allocatorVar->getIgnoreFlag()) {
+                allocVar = false;
             }
+            std::string args = ctx.createPassArguments(true);
             return args;
         }
 
-        std::string generateArrayCode(const ClassCommandData::Var &var, bool useOriginal = false) {          
+        std::string generateArrayCode(const MemberContext::Var &var,
+                                      bool useOriginal = false) {
             if (useOriginal) {
                 for (const auto &p : ctx.params) {
-                    if (p->isArray() || p->original.type() != ctx.cls->name.original) {
+                    if (p->isArray() ||
+                        p->original.type() != ctx.cls->name.original) {
                         p->original.set(1, p->get(1));
                     }
                 }
@@ -2003,7 +2096,7 @@ class Generator {
 
             std::string output;
 
-            const auto& lenVar = var->getLengthVar();
+            const auto &lenVar = var->getLengthVar();
             const std::string &id = var->identifier();
             if (ctx.pfnReturn == PFNReturnCategory::VK_RESULT) {
                 output += "    " + declareReturnVar();
@@ -2029,16 +2122,15 @@ class Generator {
       }
     } while (result == Result::eIncomplete);
 )",
-                                     callNullptr, call, size, id);
-                }
-                else {
+                                             callNullptr, call, size, id);
+                } else {
                     output += ctx.gen.format(R"(
     {0}
     {3}.resize({2});
     {1}
     //VULKAN_HPP_ASSERT({2} <= {3}.size());
 )",
-                                     callNullptr, call, size, id);
+                                             callNullptr, call, size, id);
                 }
                 output += generateCheck();
                 output += ctx.gen.format(R"(
@@ -2046,22 +2138,17 @@ class Generator {
       {1}.resize({0});
     }
 )",
-                                     size, id);
-            }
-            else {
+                                         size, id);
+            } else {
                 if (lenVar->getIgnoreFlag()) {
                     size = lenVar->getArrayVar()->identifier() + ".size()";
-                }
-                else if (var->isLenAttribIndirect()) {
+                } else if (var->isLenAttribIndirect()) {
                     if (lenVar->isPointer()) {
-                            size += "->";
-                    }
-                    else {
+                        size += "->";
+                    } else {
                         size += ".";
                     }
                     size += var->getLenAttribRhs();
-
-
                 }
                 output += "    " + var->declaration() + "(" + size + ");\n";
                 output += "    " + call + "\n";
@@ -2069,28 +2156,26 @@ class Generator {
             }
             if (!returnType.empty()) {
                 returnValue = generateReturnValue(id);
-            }
-            else {
-                std::string it = id;
-                strStripSuffix(it, "s");
+            } else {
+                std::string parent = strFirstLower(ctx.cls->superclass);
+                std::string iter = id;
+                strStripSuffix(iter, "s");
                 output += ctx.gen.format(R"(
     this->reserve({0});
-    for (auto const &{2} : {1}) {
-        // this->emplace_back( device, {2});
+    for (auto const &{1} : {2}) {
+      this->emplace_back({3}, {1});
     }
 )",
-                                     size, id, it);
-
+                            size, iter, id, parent);
             }
             return output;
-        }        
+        }
 
       public:
         std::string dbgtag;
 
         MemberResolverBase(MemberContext &refCtx)
-            : ctx(refCtx), resultVar(refCtx.gen, VariableData::TYPE_INVALID)
-        {
+            : ctx(refCtx), resultVar(refCtx.gen, VariableData::TYPE_INVALID) {
             returnType = strStripVk(std::string(ctx.type));
             dbgtag =
                 "default"; // sc: " + std::to_string(ctx.successCodes.size());
@@ -2098,13 +2183,32 @@ class Generator {
             specifierExplicit = false;
             specifierConst = true;
             disableCheck = true;
+
+            const auto &cfg = ctx.gen.getConfig();
+            if (cfg.gen.dispatchParam && ctx.ns == Namespace::VK) {
+                std::string type = ctx.gen.getDispatchType();
+                VariableData var(ctx.gen);
+                var.setFullType("", type, " const &");
+                var.setIdentifier("d");
+                var.setIgnorePFN(true);
+                std::string assignment = cfg.macro.mDispatch.get();
+                if (!assignment.empty()) {
+                    var.setAssignment(" " + assignment);
+                }
+                ctx.params.push_back(std::make_shared<VariableData>(var));
+            }
         }
 
         virtual ~MemberResolverBase() {}
 
         virtual void generate(std::string &decl, std::string &def) {
-            decl += generateDeclaration();
-            def += generateDefinition();
+            if (ctx.generateInline) {
+                decl += generateDefinition(true);
+            }
+            else {
+                decl += generateDeclaration();
+                def += generateDefinition(false);
+            }
             ctx.cls->generated.push_back(ctx);
         }
 
@@ -2113,7 +2217,7 @@ class Generator {
                 return std::regex_replace(str, std::regex("\\s+"), "");
             };
 
-            const auto getType = [&](const ClassCommandData::Var &var){
+            const auto getType = [&](const MemberContext::Var &var) {
                 std::string type = removeWhitespace(var->type());
                 std::string suf = removeWhitespace(var->suffix());
                 return type + " " + suf;
@@ -2135,47 +2239,48 @@ class Generator {
         }
     };
 
-    class MemberResolver : public MemberResolverBase {
+    class MemberResolver : public MemberResolverBase {        
 
       private:
         void transformMemberArguments() {
             auto &params = ctx.params;
 
-            const auto transformToProxy = [&](const std::shared_ptr<VariableData> &var) {
-                if (var->hasLengthVar()) {
+            const auto transformToProxy =
+                [&](const std::shared_ptr<VariableData> &var) {
+                    if (var->hasLengthVar()) {
 
-                    const auto &sizeVar = var->getLengthVar();
+                        const auto &sizeVar = var->getLengthVar();
 
-                    if (!sizeVar->hasArrayVar()) {
-                        sizeVar->bindArrayVar(var);
-                    }
-
-                    bool isPointer = sizeVar->original.isPointer();
-                    if (!var->isLenAttribIndirect()) {
-                        sizeVar->setIgnoreFlag(true);
-                    }
-
-                    if (var->original.type() == "void") {
-                        if (isPointer) {
-                            var->setFullType("", "uint8_t", "");
+                        if (!sizeVar->hasArrayVar()) {
+                            sizeVar->bindArrayVar(var);
                         }
-                        else {
-                            var->setFullType("", "DataType", "");
-                            var->setTemplate("DataType");
-                            sizeVar->setIgnoreFlag(false);
+
+                        bool isPointer = sizeVar->original.isPointer();
+                        if (!var->isLenAttribIndirect()) {
+                            sizeVar->setIgnoreFlag(true);
                         }
+
+                        if (var->original.type() == "void") {
+                            if (isPointer) {
+                                var->setFullType("", "uint8_t", "");
+                            } else {
+                                var->setFullType("", "DataType", "");
+                                var->setTemplate("DataType");
+                                sizeVar->setIgnoreFlag(false);
+                            }
+                        }
+
+                        var->convertToArrayProxy();
                     }
+                };
 
-                    var->convertToArrayProxy();
-                }
-            };
-
-            const auto convertName = [](const std::shared_ptr<VariableData> &var) {
-                const std::string &id = var->identifier();
-                if (id.size() >= 2 && id[0] == 'p' && std::isupper(id[1])) {
-                    var->setIdentifier(strFirstLower(id.substr(1)));
-                }
-            };
+            const auto convertName =
+                [](const std::shared_ptr<VariableData> &var) {
+                    const std::string &id = var->identifier();
+                    if (id.size() >= 2 && id[0] == 'p' && std::isupper(id[1])) {
+                        var->setIdentifier(strFirstLower(id.substr(1)));
+                    }
+                };
 
             for (const auto &p : params) {
                 transformToProxy(p);
@@ -2183,9 +2288,13 @@ class Generator {
 
             for (const auto &p : params) {
                 const std::string &type = p->original.type();
-                if (ctx.ns == Namespace::RAII && (ctx.nameCat == MemberNameCategory::CREATE || ctx.nameCat == MemberNameCategory::ALLOCATE || ctx.constructor)) {
+                if (ctx.ns == Namespace::RAII &&
+                    (ctx.nameCat == MemberNameCategory::CREATE ||
+                     ctx.nameCat == MemberNameCategory::ALLOCATE ||
+                     ctx.constructor)) {
                     if (ctx.gen.isHandle(type)) {
-                        std::string ns = ctx.gen.getConfig().macro.mNamespaceRAII.get();
+                        std::string ns =
+                            ctx.gen.getConfig().macro.mNamespaceRAII.get();
                         p->toRAII();
                         convertName(p);
                     }
@@ -2201,23 +2310,32 @@ class Generator {
                     convertName(p);
                 }
             }
-
         }
 
-        void finalizeArguments() {
-            try {
-                const auto &var = ctx.getLastVisibleVar();
-                if (var->original.type() == "VkAllocationCallbacks") {
-                    var->convertToOptional();
+        void finalizeArguments() {        
+            bool hasAssignment = true;
+            for (auto it = ctx.params.rbegin(); it != ctx.params.rend(); it++) {
+                if (it->get()->getIgnoreFlag()) {
+                    continue;
                 }
-            }
-            catch(std::runtime_error) {
-
+                if (hasAssignment && it->get()->assignment().empty()) {
+                    hasAssignment = false;
+                }
+                if (it->get()->type() == "AllocationCallbacks") {
+                    allocatorVar = *it;
+                    if (ctx.gen.getConfig().gen.allocatorParam) {
+                        allocatorVar->convertToOptional();
+                        if (hasAssignment) {
+                            allocatorVar->setAssignment(" = nullptr");
+                        }
+                    } else {
+                        allocatorVar->setIgnoreFlag(true);
+                    }
+                }
             }
         }
 
       protected:
-
         virtual std::string generateMemberBody() override {
             std::string output;
             bool immediate = ctx.pfnReturn != PFNReturnCategory::VK_RESULT &&
@@ -2230,7 +2348,6 @@ class Generator {
         }
 
       public:
-
         MemberResolver(MemberContext &refCtx) : MemberResolverBase(refCtx) {
 
             transformMemberArguments();
@@ -2247,13 +2364,11 @@ class Generator {
             finalizeArguments();
             MemberResolverBase::generate(decl, def);
         }
-
     };
 
     class MemberResolverDbg : public MemberResolver {
-    public:
-        MemberResolverDbg(MemberContext &refCtx)
-            : MemberResolver(refCtx) {
+      public:
+        MemberResolverDbg(MemberContext &refCtx) : MemberResolver(refCtx) {
             dbgtag = "disabled";
         }
 
@@ -2275,37 +2390,39 @@ class Generator {
         }
 
         virtual std::string generateMemberBody() override {
-            return comment.empty()? "" : "      // " + comment + "\n";
+            return comment.empty() ? "" : "      // " + comment + "\n";
         }
     };
 
     class MemberResolverPass : public MemberResolverBase {
 
-    public:
-        MemberResolverPass(MemberContext &refCtx) : MemberResolverBase(refCtx) {            
+      public:
+        MemberResolverPass(MemberContext &refCtx)
+            : MemberResolverBase(refCtx) {
+            ctx.disableSubstitution = true;
         }
 
         virtual std::string generateMemberBody() override {
             return "    " + generatePFNcall(true) + "\n";
         }
-
     };
 
     class MemberResolverVectorRAII : public MemberResolver {
-    protected:
+      protected:
         std::shared_ptr<VariableData> parent;
         std::shared_ptr<VariableData> last;
         bool ownerInParent;
 
-    public:
-        MemberResolverVectorRAII(MemberContext &refCtx, bool term = true) : MemberResolver(refCtx) {
+      public:
+        MemberResolverVectorRAII(MemberContext &refCtx, bool term = true)
+            : MemberResolver(refCtx) {
             if (term) {
                 last = *ctx.params.rbegin();
                 last->setIgnoreFlag(true);
                 last->setIgnorePFN(true);
                 if (last->hasLengthVar() && !last->isLenAttribIndirect()) {
                     last->getLengthVar()->setIgnorePFN(true);
-                }                
+                }
                 last->toRAII();
                 ctx.pfnReturn = PFNReturnCategory::VOID;
 
@@ -2327,13 +2444,12 @@ class Generator {
                 returnType = last->fullType();
             }
 
-            parent = *ctx.params.begin();            
+            parent = *ctx.params.begin();
             parent->toRAII();
             ownerInParent = false;
             if (parent->original.type() != ctx.cls->superclass.original) {
                 ownerInParent = true;
-            }
-            else {
+            } else {
                 parent->setIgnorePFN(true);
             }
 
@@ -2342,7 +2458,7 @@ class Generator {
             ctx.pfnSourceOverride = id;
             if (ownerInParent) {
                 ctx.pfnSourceOverride += ".get" + ctx.cls->superclass + "()";
-            }            
+            }
 
             ctx.params.rbegin()->get()->setIgnoreFlag(true);
 
@@ -2351,26 +2467,26 @@ class Generator {
 
         virtual std::string generateMemberBody() override {
             std::string args = createPassArguments();
-            return "    return " + last->namespaceString() + last->type() + "s(" + args + ");\n";
+            return "    return " + last->namespaceString() + last->type() +
+                   "s(" + args + ");\n";
         }
     };
 
     class MemberResolverCtor : public MemberResolverVectorRAII {
-    protected:
+      protected:
         String name;
 
-    public:
+      public:
         MemberResolverCtor(MemberContext &refCtx)
             : MemberResolverVectorRAII(refCtx, false), name("") {
 
-            name = ctx.convertName(ctx.name.original, ctx.cls->superclass);
+            name = convertName(ctx.name.original, ctx.cls->superclass);
             ctx.name = std::string(ctx.cls->name);
 
-            ctx.pfnNameOverride = name;            
+            ctx.pfnNameOverride = name;
             if (ownerInParent) {
                 ctx.pfnSourceOverride += "->";
-            }
-            else {
+            } else {
                 ctx.pfnSourceOverride += ".";
             }
 
@@ -2381,6 +2497,7 @@ class Generator {
             specifierConst = false;
 
             dbgtag = "constructor";
+            // disableCheck = false;
         }
 
         virtual std::string generateMemberBody() override {
@@ -2394,62 +2511,113 @@ class Generator {
 
             const std::string &args = ctx.createPFNArguments(true);
             const std::string &owner = ctx.cls->ownerhandle;
-            std::string id = parent->identifier();            
+            std::string id = parent->identifier();
+            std::string src = id;
+            if (ownerInParent) {
+                src += ".get" + ctx.cls->superclass + "()";
+            }
+
             if (!owner.empty()) {
                 output += "    " + owner + " = ";
-                if (ownerInParent) {
-                    output += id + ".get" + ctx.cls->superclass + "()";
+                if (!ownerInParent) {
+                    output += "&";
                 }
-                else {
-                    output += "&" + id;
-                }
+                output += src;
                 output += ";\n";
             }
 
             std::string call = generatePFNcall(false);
 
             output += "    " + call + "\n";
+            output += generateCheck();
 
-            if (ctx.cls->hasPFNs()) {
-                output += "    // loadPFNs(" + id + ");\n";
+            if (ctx.cls->hasPFNs()) {                
+                output += "    loadPFNs(";
+                if (ownerInParent) {
+                    output += "*";
+                }
+                output += src + ");\n";
             }
 
             return output;
         }
 
-        bool checkMethod() const {
-            try {                
-                const auto &handle =
-                    ctx.gen.findHandle(parent->original.type());
-                bool blacklisted = true;
-                ctx.gen.genOptional(name.original, [&](std::string &output) {
-                    blacklisted = false;
-                });
-                if (blacklisted) {                    
-                    std::cout << "checkMethod: " << name.original << " blacklisted" << std::endl;
-                    return false;
-                }
-                for (const auto &m : handle.members) {
-                    if (m.name.original == name.original) {
-                        return true;
-                    }
-                }
-                std::cout << "checkMethod: " << name.original << " not in " << handle.name << " members" << std::endl;
-            } catch (std::runtime_error e) {
-                std::cout << "checkMethod: " << e.what() << std::endl;
+        bool checkMethod() const {            
+            if (!ctx.gen.isHandle(parent->original.type())) {
+//                 std::cout << "checkMethod: " << name.original
+//                          << " not a handle (" << parent->original.type() << ")" << std::endl;
                 return false;
             }
+            bool blacklisted = true;
+            ctx.gen.genOptional(ctx,
+                                [&](std::string &output) { // REFACTOR
+                                    blacklisted = false;
+                                });
+            if (blacklisted) {
+//                    std::cout << "checkMethod: " << name.original
+//                              << " blacklisted" << std::endl;
+                return false;
+            }
+            const auto &handle =
+                    ctx.gen.findHandle(parent->original.type());
+            for (const auto &m : handle.members) {
+                if (m.name.original == name.original) {
+                    return true;
+                }
+            }
+//            std::cout << "checkMethod: " << name.original << " not in "
+//                      << handle.name << " members" << std::endl;
             return false;
         }
 
         std::string getName() const { return name; }
-    };   
+    };
+
+    class MemberResolverUniqueCtor : public MemberResolver {
+
+    public:
+        MemberResolverUniqueCtor(MemberContext &refCtx)
+            : MemberResolver(refCtx)
+        {
+            ctx.name = "Unique" + ctx.cls->name;
+
+            returnType = "";
+
+            specifierInline = false;
+            specifierExplicit = true;
+            specifierConst = false;
+
+            InitializerBuilder init("        ");
+            for (const auto &p : ctx.getFilteredProtoVars()) {
+                if (p->type() == ctx.cls->name) {
+                    init.append(ctx.cls->name, p->identifier());
+                    continue;
+                }
+                for (const auto &v : ctx.cls->uniqueVars) {
+                    if (p->type() == v.type()) {
+                        std::string m = matchTypePointers(p->suffix(), v.suffix());
+                        init.append(v.identifier(), m + p->identifier());
+                        break;
+                    }
+                }
+            }
+
+            initializer = init.string();
+
+            dbgtag = "constructor";
+        }
+
+        virtual std::string generateMemberBody() override {
+            return "";
+        }
+
+    };
 
     class MemberResolverVectorCtor : public MemberResolverCtor {
 
         std::shared_ptr<VariableData> last;
 
-    public:
+      public:
         MemberResolverVectorCtor(MemberContext &refCtx)
             : MemberResolverCtor(refCtx) {
 
@@ -2458,15 +2626,16 @@ class Generator {
             last = ctx.getLastPointerVar();
 
             if (last->hasLengthVar() && last->isArray()) {
-//                if (last.get()->original.type() == "void") {
-//                    if (last->isArrayIn()) {
-//                        last->getLengthVar()->setIgnoreFlag(false);
-//                    }
-//                }
+                //                if (last.get()->original.type() == "void") {
+                //                    if (last->isArrayIn()) {
+                //                        last->getLengthVar()->setIgnoreFlag(false);
+                //                    }
+                //                }
                 last->getLengthVar()->removeLastAsterisk();
                 last->convertToStdVector();
             } else {
-                std::cerr << "MemberResolverVectorCtor: can't create" << std::endl;
+                std::cerr << "MemberResolverVectorCtor: can't create"
+                          << std::endl;
             }
 
             last->setIgnoreFlag(true);
@@ -2475,11 +2644,10 @@ class Generator {
             specifierExplicit = false;
         }
 
-        virtual std::string generateMemberBody() override {            
+        virtual std::string generateMemberBody() override {
             std::string output = generateArrayCode(last, true);
             return output;
         }
-
     };
 
     class MemberResolverCreateHandle : public MemberResolver {
@@ -2491,8 +2659,8 @@ class Generator {
             returnVar = ctx.getLastPointerVar();
             returnVar->convertToReturn();
             returnType = returnVar->type();
-            //returnType = returnVar->original.type();
-            //returnVar->setType(returnType);
+            // returnType = returnVar->original.type();
+            // returnVar->setType(returnType);
 
             // ctx.name += "Handle";
             dbgtag = "create handle";
@@ -2506,7 +2674,8 @@ class Generator {
     {2}
     {3}
 )",
-                                  returnType, id, call, generateReturnValue(id));
+                                  returnType, id, call,
+                                  generateReturnValue(id));
         }
     };
 
@@ -2530,12 +2699,13 @@ class Generator {
             last->setConst(false);
             returnType = last->fullType();
 
-//            if (ctx.lastHandleVariant) {
-//                last->setType(last->original.type());
-//                last->setIgnorePFN(true);
-//            }
+            //            if (ctx.lastHandleVariant) {
+            //                last->setType(last->original.type());
+            //                last->setIgnorePFN(true);
+            //            }
             disableCheck = false;
-            dbgtag = ctx.nameCat == MemberNameCategory::ALLOCATE? "allocate" : "create";
+            dbgtag = ctx.nameCat == MemberNameCategory::ALLOCATE ? "allocate"
+                                                                 : "create";
             ctx.useThis = true;
         }
 
@@ -2551,9 +2721,9 @@ class Generator {
                         first->setIgnorePFN(true);
                     }
                     std::string args = createPassArguments();
-                    output += "    return " + last->fullType() + "(" + args + ");\n";
-                }
-                else {
+                    output +=
+                        "    return " + last->fullType() + "(" + args + ");\n";
+                } else {
                     const std::string &call = generatePFNcall();
                     std::string id = last->identifier();
                     output += "    " + last->fullType() + " " + id + ";\n";
@@ -2563,7 +2733,6 @@ class Generator {
             }
             return output;
         }
-
     };
 
     class MemberResolverCreateUnique : public MemberResolverCreate {
@@ -2575,20 +2744,21 @@ class Generator {
         MemberResolverCreateUnique(MemberContext &refCtx)
             : MemberResolverCreate(refCtx) {
 
-//            last = ctx.getLastPointerVar();
-//            last->convertToReturn();
-//            last->setIgnorePFN(true);
+            //            last = ctx.getLastPointerVar();
+            //            last->convertToReturn();
+            //            last->setIgnorePFN(true);
 
             returnType = "Unique" + last->type();
             // ctx.pfnReturn = PFNReturnCategory::VOID;
 
-//            if (ctx.params.begin()->get()->original.type() == ctx.cls->name.original) {
-//                ctx.params.begin()->get()->setIgnorePFN(true);
-//            }
+            //            if (ctx.params.begin()->get()->original.type() ==
+            //            ctx.cls->name.original) {
+            //                ctx.params.begin()->get()->setIgnorePFN(true);
+            //            }
 
             if (last->isHandle()) {
                 const auto &handle = ctx.gen.findHandle(last->original.type());
-                isSubclass = handle.isSubclass();
+                isSubclass = handle.isSubclass;
             }
             name = ctx.name;
             ctx.name += "Unique";
@@ -2596,123 +2766,138 @@ class Generator {
         }
 
         virtual std::string generateMemberBody() override {
-//            const std::string &id = last->identifier();
-//            const std::string &args = createPassArguments();
-//            const auto &handle = ctx.gen.findHandle(last->original.type());
-//            std::string call = name + "(" + args + ")";
-//            std::string ownerArgument;
+            //            const std::string &id = last->identifier();
+            //            const std::string &args = createPassArguments();
+            //            const auto &handle =
+            //            ctx.gen.findHandle(last->original.type()); std::string
+            //            call = name + "(" + args + ")"; std::string
+            //            ownerArgument;
             std::string args = last->identifier();
             if (isSubclass) {
                 args += ", *this";
+            }
+            if (ctx.gen.getConfig().gen.allocatorParam) {
+                args += ", allocator";
+            }
+            if (ctx.gen.getConfig().gen.dispatchParam) {
+                args += ", d";
             }
 
             std::string output = MemberResolverCreate::generateMemberBody();
             // output += "    // (" + args + ")\n";
             returnValue = generateReturnValue(returnType + "(" + args + ")");
-//            output += "    " + ctx.gen.format("{0} {1} = {2};\n", last->fullType(), id, call);
-//            output += "    " + ctx.gen.format("return {0}({1}{2});\n", returnType, id, ownerArgument);
+            //            output += "    " + ctx.gen.format("{0} {1} = {2};\n",
+            //            last->fullType(), id, call); output += "    " +
+            //            ctx.gen.format("return {0}({1}{2});\n", returnType,
+            //            id, ownerArgument);
             return output;
         }
     };
 
     class MemberResolverGet : public MemberResolver {
       protected:
-        std::shared_ptr<VariableData> last;        
-/*
-        std::string generateArray() {
-            std::shared_ptr<VariableData> lenVar = last->getLengthVar();            
+        std::shared_ptr<VariableData> last;
+        /*
+                std::string generateArray() {
+                    std::shared_ptr<VariableData> lenVar = last->getLengthVar();
 
-            std::string output;
-            std::string decl;
+                    std::string output;
+                    std::string decl;
 
-            std::string arrayDecl = last->toString();
-            std::string id = last->identifier();
-            if (ctx.lastHandleVariant) {
-                last->setType(last->original.type());
-                last->setIdentifier(last->identifier() + "Handles");
-                decl += "    " + last->toString() + ";\n";
+                    std::string arrayDecl = last->toString();
+                    std::string id = last->identifier();
+                    if (ctx.lastHandleVariant) {
+                        last->setType(last->original.type());
+                        last->setIdentifier(last->identifier() + "Handles");
+                        decl += "    " + last->toString() + ";\n";
+                    }
+                    else {
+                        decl += "    " + arrayDecl + ";\n";
+                    }
+                    if (ctx.pfnReturn == PFNReturnCategory::VK_RESULT) {
+                        decl += "    " + assignToResult("");
+                    }
+
+                    std::string call = generatePFNcall();
+                    std::string finish;
+                    if (ctx.lastHandleVariant) {
+                        finish += "    " + arrayDecl + ";\n";
+                    }
+                    finish += "    " + generateReturnValue(id) + "\n";
+
+                    if (lenVar->getIgnoreFlag()) {
+                        output += "    " + lenVar->type() + " " +
+        lenVar->identifier() +
+                                  ";\n";
+                    }
+
+                    output += decl;
+                    if (ctx.pfnReturn == PFNReturnCategory::VK_RESULT) {
+
+                        output += ctx.gen.format(R"(
+            do {
+              {0}
+              if (result == Result::eSuccess && {1}) {
+                {2}.resize({1});
+                {0}
+                //VULKAN_HPP_ASSERT({1} <= {2}.size());
+              }
+            } while (result == Result::eIncomplete);
+            if (result == Result::eSuccess && {1} < {2}.size()) {
+              {2}.resize({1});
             }
-            else {
-                decl += "    " + arrayDecl + ";\n";
-            }
-            if (ctx.pfnReturn == PFNReturnCategory::VK_RESULT) {
-                decl += "    " + assignToResult("");
-            }
+        )",
+                                                 call, lenVar->identifier(),
+        id);
 
-            std::string call = generatePFNcall();
-            std::string finish;
-            if (ctx.lastHandleVariant) {
-                finish += "    " + arrayDecl + ";\n";
-            }
-            finish += "    " + generateReturnValue(id) + "\n";
-
-            if (lenVar->getIgnoreFlag()) {
-                output += "    " + lenVar->type() + " " + lenVar->identifier() +
-                          ";\n";
-            }
-
-            output += decl;
-            if (ctx.pfnReturn == PFNReturnCategory::VK_RESULT) {
-
-                output += ctx.gen.format(R"(    
-    do {
-      {0}
-      if (result == Result::eSuccess && {1}) {
-        {2}.resize({1});
-        {0}
-        //VULKAN_HPP_ASSERT({1} <= {2}.size());
-      }
-    } while (result == Result::eIncomplete);
-    if (result == Result::eSuccess && {1} < {2}.size()) {
-      {2}.resize({1});
-    }    
-)",
-                                         call, lenVar->identifier(), id);
-
-            } else {
-                if (ctx.lastHandleVariant) {
-                    std::cerr << "Warning: unhandled situation in " << ctx.name << std::endl;
+                    } else {
+                        if (ctx.lastHandleVariant) {
+                            std::cerr << "Warning: unhandled situation in " <<
+        ctx.name << std::endl;
+                        }
+                        last->setAltPFN("nullptr");
+                        std::string firstcall = generatePFNcall();
+                        output += ctx.gen.format(R"(
+            {0}
+            {1}.resize({2});
+            {3}
+            // VULKAN_HPP_ASSERT({2} <= {1}.size());
+        )",
+                                                 firstcall, id,
+        lenVar->identifier(), call);
+                    }
+                    output += finish;
+                    return output;
                 }
-                last->setAltPFN("nullptr");
-                std::string firstcall = generatePFNcall();
-                output += ctx.gen.format(R"(
-    {0}
-    {1}.resize({2});
-    {3}
-    // VULKAN_HPP_ASSERT({2} <= {1}.size());
-)",
-                                         firstcall, id, lenVar->identifier(), call);
-            }
-            output += finish;
-            return output;
-        }
-        std::string generateArrayWithSize() {
-            std::string output;
-            if (ctx.lastHandleVariant) {
-                std::cerr << "Warning: unhandled situation in " << ctx.name << std::endl;
-                return "";
-            }
+                std::string generateArrayWithSize() {
+                    std::string output;
+                    if (ctx.lastHandleVariant) {
+                        std::cerr << "Warning: unhandled situation in " <<
+        ctx.name << std::endl; return "";
+                    }
 
-            std::string id = last->identifier();
-            std::string sizeid = last->getLengthVar()->identifier();
-            output += "    " + last->toString() + ";\n";
-            if (const auto str = last->getTemplate(); !str.empty()) {
-                output += "    " + id + ".resize(" + sizeid + " / sizeof(" + str + "));\n";
-            }
-            else {
-                output += "    " + id + ".resize(" + sizeid + ");\n";
-            }
-            output += "    " + generatePFNcall() + "\n";
-            output += "    " + generateReturnValue(id) + "\n";
+                    std::string id = last->identifier();
+                    std::string sizeid = last->getLengthVar()->identifier();
+                    output += "    " + last->toString() + ";\n";
+                    if (const auto str = last->getTemplate(); !str.empty()) {
+                        output += "    " + id + ".resize(" + sizeid + " /
+        sizeof(" + str + "));\n";
+                    }
+                    else {
+                        output += "    " + id + ".resize(" + sizeid + ");\n";
+                    }
+                    output += "    " + generatePFNcall() + "\n";
+                    output += "    " + generateReturnValue(id) + "\n";
 
-            return output;
-        }
-    */
+                    return output;
+                }
+            */
 
         std::string generateSingle() {
             std::string output;
             if (ctx.lastHandleVariant) {
-                std::cerr << "Warning: unhandled situation in " << ctx.name << std::endl;
+                std::cerr << "Warning: unhandled situation in " << ctx.name
+                          << std::endl;
                 return "// TODO";
             } else {
                 const std::string id = last->identifier();
@@ -2731,7 +2916,7 @@ class Generator {
                 if (last.get()->original.type() == "void") {
                     if (last->isArrayIn()) {
                         last->getLengthVar()->setIgnoreFlag(false);
-                    }                    
+                    }
                 }
 
                 last->getLengthVar()->removeLastAsterisk();
@@ -2742,6 +2927,7 @@ class Generator {
             }
 
             last->setIgnoreFlag(true);
+            last->setConst(false);
             returnType = last->fullType();
             dbgtag = "get";
         }
@@ -2749,14 +2935,15 @@ class Generator {
         virtual std::string generateMemberBody() override {
             if (last->isArray()) {
                 return generateArrayCode(last);
-//                if (last->hasLengthVar() && last->getLengthVar()->getIgnoreFlag()) {
-//                    return generateArray();
-//                }
-//                return generateArrayWithSize();
+                //                if (last->hasLengthVar() &&
+                //                last->getLengthVar()->getIgnoreFlag()) {
+                //                    return generateArray();
+                //                }
+                //                return generateArrayWithSize();
             }
             return generateSingle();
         }
-    };   
+    };
 
     class MemberResolverEnumerate : public MemberResolverGet {
       public:
@@ -2764,7 +2951,6 @@ class Generator {
             : MemberResolverGet(refCtx) {
             dbgtag = "enumerate";
         }
-
     };
 
     PFNReturnCategory evaluatePFNReturn(const std::string &type) const {
@@ -2805,27 +2991,38 @@ class Generator {
             out += str.substr(2);
         }
         return out;
-    }    
+    }
 
     template <typename T>
-    void createOverload(MemberContext &ctx, const std::string &name, std::vector<std::unique_ptr<MemberResolver>> &secondary);
+    void
+    createOverload(MemberContext &ctx, const std::string &name,
+                   std::vector<std::unique_ptr<MemberResolver>> &secondary);
 
-    void generateClassMember(MemberContext &ctx, GenOutputClass &out, std::string &funcs);
+    void generateClassMember(MemberContext &ctx, GenOutputClass &out,
+                             std::string &funcs);
 
-    void generateClassMembers(HandleData &data, GenOutputClass &out, std::string &funcs, Namespace ns);
+    void generateClassMembers(HandleData &data, GenOutputClass &out,
+                              std::string &funcs, Namespace ns);
 
-    void generateClassConstructors(const HandleData &data, GenOutputClass &out, std::string &funcs);
+    void generateClassConstructors(const HandleData &data, GenOutputClass &out,
+                                   std::string &funcs);
 
-    void generateClassConstructorsRAII(const HandleData &data, GenOutputClass &out, std::string &funcs);
+    void generateClassConstructorsRAII(const HandleData &data,
+                                       GenOutputClass &out, std::string &funcs);
 
-    std::string generateUniqueClass(const HandleData &data, std::string &funcs);
+    std::string generateUniqueClass(HandleData &data, std::string &funcs);
 
     String getHandleSuperclass(const HandleData &data);
 
-    std::string generateClass(const std::string &name, HandleData data, std::string &funcs);
-    std::string generateClassRAII(const std::string &name, HandleData data, std::string &funcs);
+    std::string generateClass(const std::string &name, HandleData data,
+                              std::string &funcs);
+
+    std::string generateClassRAII(const std::string &name, HandleData data,
+                                  std::string &funcs);
 
     void parseCommands(XMLNode *node);
+
+    void assignCommands();
 
     std::string generatePFNs(const HandleData &data, GenOutputClass &out);
 
@@ -2839,22 +3036,58 @@ class Generator {
 
     std::string endNamespace(Namespace ns = Namespace::VK) const;
 
+    void loadFinished();
+
+    template<typename T>
+    void configBuildList(const std::string &name, const std::map<std::string, T> &from, XMLElement *parent, const std::string &comment = "");
+
+    struct WhitelistBase {
+        std::regex rgx;
+        std::string name;
+        std::vector<std::string> filter;
+
+        bool build();
+
+        virtual bool stage();
+
+        virtual void apply() = 0;
+    };
+
+    template<typename T>
+    struct WhitelistBinding : public WhitelistBase {
+        std::map<std::string, T> *dst;
+        std::vector<std::pair<T*, bool>> buffer;
+
+        WhitelistBinding(std::map<std::string, T> *dst, std::string name)
+         : dst(dst)
+        {
+            this->name = name;
+        }
+
+        virtual bool stage() override;
+
+        virtual void apply() noexcept override;
+    };
+
   public:
     Generator();
 
     void resetConfig();
+
+    void bindGUI(const std::function<void(void)> &onLoad);
 
     bool isLoaded() const { return root != nullptr; }
 
     void setOutputFilePath(const std::string &path);
 
     bool isOuputFilepathValid() const {
-        return !std::filesystem::is_directory(outputFilePath);
+        return std::filesystem::is_directory(outputFilePath);
     }
 
     std::string getOutputFilePath() const { return outputFilePath; }
 
     void load(const std::string &xmlPath);
+
     void unload();
 
     void generate();
@@ -2863,12 +3096,25 @@ class Generator {
 
     Extensions &getExtensions() { return extensions; };
 
+    std::map<std::string, CommandData> &getCommands() { return commands; }
+
+    std::map<std::string, StructData> &getStructs() { return structs; }
+
+    std::map<std::string, EnumData> &getEnums() { return enums; }
+
     Config &getConfig() { return cfg; }
+
     const Config &getConfig() const { return cfg; }
 
     bool isInNamespace(const std::string &str) const;
 
     std::string getNamespace(Namespace ns, bool colons = true) const;
+
+    std::function<void(void)> onLoadCallback;
+
+    void saveConfigFile(const std::string &filename);
+
+    void loadConfigFile(const std::string &filename);
 };
 
 #endif // GENERATOR_HPP

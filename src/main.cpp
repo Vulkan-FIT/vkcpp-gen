@@ -49,8 +49,10 @@ int main(int argc, char **argv) {
         ArgOption helpOption{"-h", "--help"};
         ArgOption xmlOption{"-r", "--reg", true};
         ArgOption destOption{"-d", "--dest", true};
+        ArgOption configOption{"-c", "--config", true};
         ArgOption noguiOption{"", "--nogui"};
-        ArgParser p({&helpOption, &xmlOption, &destOption, &noguiOption});
+        ArgOption guifpsOption{"", "--fps"};
+        ArgParser p({&helpOption, &xmlOption, &destOption, &configOption, &noguiOption, &guifpsOption});
 
         p.parse(argc, argv);
         // help option block
@@ -78,8 +80,14 @@ int main(int argc, char **argv) {
 
 #ifdef GENERATOR_GUI
         if (!noguiOption.set) {
-            GUI gui {gen};
+            GUI gui{gen};
             gui.init();
+            if (guifpsOption.set) {
+               gui.showFps = true;
+            }
+            if (configOption.set) {
+                gui.setConfigPath(configOption.value);
+            }
             gui.run();
         }
         else {
