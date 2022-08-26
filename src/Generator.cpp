@@ -1575,7 +1575,7 @@ std::string Generator::generateRAII() {
 
     output += genNamespaceMacro(cfg.macro.mNamespaceRAII);
     output += beginNamespace(Namespace::RAII);
-    output += "  using namespace " + cfg.macro.mNamespace.get() + ";\n";
+    output += "  using namespace " + cfg.macro.mNamespace->get() + ";\n";
     output += format(RES_RAII);
 
     // outputRAII += "  class " + loader.name + ";\n";
@@ -2882,7 +2882,7 @@ std::string Generator::genMacro(const Macro &m) {
 }
 
 void Generator::initLoaderName() {
-    loader.name.convert("Vk" + cfg.loaderClassName, true);
+    loader.name.convert("VkLibraryLoader", true);
 }
 
 std::string Generator::beginNamespace(Namespace ns) const {
@@ -2907,58 +2907,13 @@ Generator::Generator() : loader(HandleData{""}) {
     unload();
     resetConfig();
 
-    namespaces.insert_or_assign(Namespace::VK, &cfg.macro.mNamespace);
-    namespaces.insert_or_assign(Namespace::RAII, &cfg.macro.mNamespaceRAII);
+    namespaces.insert_or_assign(Namespace::VK, &cfg.macro.mNamespace.data);
+    namespaces.insert_or_assign(Namespace::RAII, &cfg.macro.mNamespaceRAII.data);
     namespaces.insert_or_assign(Namespace::STD, &cfg.macro.mNamespaceSTD);
 }
 
 void Generator::resetConfig() {
-    cfg.gen.cppModules = false;
-    cfg.gen.structNoinit = false;    
-    cfg.gen.vulkanCommands = true;
-    cfg.gen.dispatchParam = true;
-    cfg.gen.dispatchLoaderStatic = true;
-    cfg.gen.useStaticCommands = false;
-    cfg.gen.allocatorParam = false;
-    cfg.gen.smartHandles = true;
-    cfg.gen.exceptions = true;
-    cfg.gen.resultValueType = false;
-
-    cfg.dbg.methodTags = false;
-
-    cfg.loaderClassName = "LibraryLoader";
-
-    const auto setMacro = [](Macro &m, std::string define, std::string value,
-                             bool uses) {
-        m.define = define;
-        m.value = value;
-        m.usesDefine = uses;
-    };
-
-    setMacro(cfg.macro.mNamespace, "VULKAN_HPP_NAMESPACE", "vk20", true);
-    setMacro(cfg.macro.mNamespaceRAII, "VULKAN_HPP_NAMESPACE_RAII", "vk20r",
-             true);
-    setMacro(cfg.macro.mConstexpr, "VULKAN_HPP_CONSTEXPR", "constexpr", true);
-    setMacro(cfg.macro.mInline, "VULKAN_HPP_INLINE", "inline", true);
-    setMacro(cfg.macro.mNoexcept, "VULKAN_HPP_NOEXCEPT", "noexcept", true);
-    setMacro(cfg.macro.mExplicit, "VULKAN_HPP_TYPESAFE_EXPLICIT", "explicit",
-             true);
-    setMacro(cfg.macro.mDispatch, "VULKAN_HPP_DEFAULT_DISPATCHER_ASSIGNMENT",
-             "", true);
-    setMacro(cfg.macro.mDispatchType, "VULKAN_HPP_DEFAULT_DISPATCHER_TYPE", "DispatchLoaderStatic",
-             true);
-
-    // don't change
-    setMacro(cfg.macro.mNamespaceSTD, "", "std", false);
-
-    // temporary override
-    cfg.dbg.methodTags = true;
-
-    cfg.macro.mNamespace.usesDefine = false;
-    cfg.macro.mConstexpr.usesDefine = false;
-    cfg.macro.mInline.usesDefine = false;
-    cfg.macro.mNoexcept.usesDefine = false;
-    cfg.macro.mExplicit.usesDefine = false;
+    cfg = Config();
 }
 
 void Generator::bindGUI(const std::function<void()> &onLoad) {
@@ -2973,10 +2928,7 @@ void Generator::setOutputFilePath(const std::string &path) {
     outputFilePath = path;
     if (isOuputFilepathValid()) {
         std::string filename = std::filesystem::path(path).filename().string();
-        filename = camelToSnake(filename);
-        cfg.fileProtect = std::regex_replace(filename, std::regex("\\."), "_");
-    } else {
-        cfg.fileProtect = "";
+        filename = camelToSnake(filename);        
     }
 }
 
@@ -3116,10 +3068,6 @@ void Generator::generate() {
 
     std::cout << "generating" << std::endl;
 
-    if (cfg.loaderClassName.empty()) {
-        throw std::runtime_error{"Loader class name is empty"};
-    }
-
     std::string p = outputFilePath;
     std::replace(p.begin(), p.end(), '\\', '/');
     if (!p.ends_with('/')) {
@@ -3179,6 +3127,43 @@ std::string Generator::getNamespace(Namespace ns, bool colons) const {
     }
 }
 
+template<size_t I, typename... T>
+void Generator::saveConfigParam(XMLElement *parent, const std::tuple<T...> &t) {
+    const auto &data = std::get<I>(t);
+    // export
+    if (data.isDifferent()) {
+        XMLElement *elem = parent->GetDocument()->NewElement("");
+        elem->SetAttribute("name", data.name.c_str());
+        data.xmlExport(elem);
+        parent->InsertEndChild(elem);
+    }
+    // unroll
+    if constexpr (I+1 != sizeof...(T)) {
+        saveConfigParam<I+1>(parent, t);
+    }
+}
+
+template<size_t I, typename... T>
+void Generator::loadConfigParam(XMLElement *parent, const std::tuple<T...> &t) {
+    auto &data = std::get<I>(t);
+    // import
+    bool imported = false;
+    for (XMLElement &elem : Elements(parent)) {
+        const char* name = elem.Attribute("name");
+        if (name && std::string_view{name} == data.name) {
+            imported = data.xmlImport(&elem);
+        }
+    }
+    if (!imported) {
+        data.reset();
+    }
+
+    // unroll
+    if constexpr (I+1 != sizeof...(T)) {
+        loadConfigParam<I+1>(parent, t);
+    }
+}
+
 void Generator::saveConfigFile(const std::string &filename) {
     if (!loaded) {
         return;
@@ -3186,7 +3171,7 @@ void Generator::saveConfigFile(const std::string &filename) {
     XMLDocument doc;
 
     XMLElement* root = doc.NewElement("config");
-    root->SetAttribute("version", headerVersion.c_str());
+    root->SetAttribute("vk_version", headerVersion.c_str());
 
     XMLElement *whitelist = doc.NewElement("whitelist");
 
@@ -3199,6 +3184,10 @@ void Generator::saveConfigFile(const std::string &filename) {
     root->InsertEndChild(whitelist);
     doc.InsertFirstChild(root);
 
+    XMLElement *conf = doc.NewElement("configuration");
+    saveConfigParam(conf, cfg.reflect());
+
+    root->InsertEndChild(conf);
 
     XMLError e = doc.SaveFile(filename.c_str());
     if (e == XMLError::XML_SUCCESS) {
@@ -3229,11 +3218,11 @@ void Generator::loadConfigFile(const std::string &filename) {
         return;
     }
 
-    auto bEnums = WhitelistBinding{&enums, "<>"};
+    auto bEnums = WhitelistBinding{&enums, "enums"};
     auto bPlats = WhitelistBinding{&platforms, "platforms"};
-    auto bExts = WhitelistBinding{&extensions, "extensions"};
+    auto bExts  = WhitelistBinding{&extensions, "extensions"};
     auto bTypes = WhitelistBinding{&structs, "types"};
-    auto bCmds = WhitelistBinding{&commands, "commands"};
+    auto bCmds  = WhitelistBinding{&commands, "commands"};
     auto bindings = {
         reinterpret_cast<WhitelistBase*>(&bPlats),
         reinterpret_cast<WhitelistBase*>(&bExts),
@@ -3250,6 +3239,7 @@ void Generator::loadConfigFile(const std::string &filename) {
                 if (b->name != n.Value()) {
                     continue;
                 }
+                accepted = true;
                 const char *text = n.ToElement()->GetText();
                 if (!text) {
                     continue;
@@ -3257,41 +3247,34 @@ void Generator::loadConfigFile(const std::string &filename) {
                 for (auto t : split(text, "\n")) {
                     t = regex_replace(t, std::regex("(^\\s*)|(\\s*$)"), "");
                     if (!t.empty()) {
-                        b->filter.push_back(t);
+                        b->filter.insert(t);
                     }
                 }
-                accepted = true;
             }
             if (!accepted) {
                 std::cerr << "[Config load] Warning: unknown element: " << n.Value() << std::endl;
             }
         }
 
-        bEnums.filter.reserve(bTypes.filter.size());
         for (const auto &f : bTypes.filter) {
-            bEnums.filter.push_back(f);
-        }
-
-        for (auto &b : bindings) {
-            if (!b->build()) {
-                return;
+            if (enums.find(f) != enums.end()) {
+                bEnums.filter.insert(f);
+                bTypes.filter.erase(f);
             }
         }
-        // bEnums.rgx = bTypes.rgx;
 
         std::cout << "[Config load] whitelist built" << std::endl;
-
-        for (auto &b : bindings) {
-            if (!b->stage()) {
-                return;
-            }
-        }
 
         for (auto &b : bindings) {
             b->apply();
         }
 
         std::cout << "[Config load] whitelist applied" << std::endl;
+    }
+
+    XMLElement *conf = root->FirstChildElement("configuration");
+    if (conf) {
+        loadConfigParam(conf, cfg.reflect());
     }
 
     std::cerr << "[Config load] Loaded: " << filename << std::endl;
@@ -3379,7 +3362,7 @@ void Generator::HandleData::init(const Generator &gen,
     }
     if (cfg.gen.dispatchParam) {
         VariableData var(gen);
-        var.setFullType("const ", cfg.macro.mDispatchType.get(), " *");
+        var.setFullType("const ", cfg.macro.mDispatchType->get(), " *");
         var.setIdentifier("m_dispatch");
         uniqueVars.push_back(var);
     }
@@ -3458,48 +3441,67 @@ void Generator::configBuildList(const std::string &name, const std::map<std::str
 }
 
 template<typename T>
-bool Generator::WhitelistBinding<T>::stage() {
-    buffer.clear();
-    buffer.reserve(dst->size());
+void Generator::WhitelistBinding<T>::apply() noexcept {
     for (auto &e : *dst) {
         bool match = false;
-        if (!filter.empty()) {
-            try {
-                match = std::regex_search(e.first, rgx);
-            }
-            catch (const std::regex_error& e) {
-                std::cerr << "[Config load] Error: regex_search " << e.what() << std::endl;
-                return false;
-            }
+        auto it = filter.find(e.first);
+        if (it != filter.end()) {
+            match = true;
+            filter.erase(it);
         }
-        buffer.emplace_back(&e.second, match);
+        e.second.setEnabled(match);
     }
-    return true;
-}
-
-template<typename T>
-void Generator::WhitelistBinding<T>::apply() noexcept {
-    for (auto &b : buffer) {
-        b.first->setEnabled(b.second);
+    for (auto &f : filter) {
+        std::cerr << "[Config load] Not found: " << f << " (" << name << ")" << std::endl;
     }
 }
 
-bool Generator::WhitelistBase::build() {
-    std::string r = "";
-    for (const auto &s : filter) {
-        r += "(" + s + ")|";
-    }
-    strStripSuffix(r, "|");
-    try {
-        rgx = std::regex(r, std::regex::icase);
-    }
-    catch (const std::regex_error& e) {
-        std::cerr << "[Config load] Error: regex " << e.what() << std::endl;
+template<>
+void Generator::ConfigWrapper<Generator::Macro>::xmlExport(XMLElement *elem) const {
+    std::cout << "export macro:" << name << std::endl;
+    elem->SetName("macro");
+    elem->SetAttribute("define", data.define.c_str());
+}
+
+template<>
+void Generator::ConfigWrapper<bool>::xmlExport(XMLElement *elem) const {
+    std::cout << "export: " << name << std::endl;
+    elem->SetName("bool");
+    elem->SetAttribute("value", data? "true" : "false");
+}
+
+template<>
+bool Generator::ConfigWrapper<Generator::Macro>::xmlImport(XMLElement *elem) {
+    std::cout << "import macro:" << name << std::endl;
+    if (std::string_view{elem->Value()} != "macro") {
+        std::cerr << "[config import] node value mismatch" << std::endl;
         return false;
     }
+    elem->SetAttribute("define", data.define.c_str());
     return true;
 }
 
-bool Generator::WhitelistBase::stage() {
+template<>
+bool Generator::ConfigWrapper<bool>::xmlImport(XMLElement *elem) {
+    std::cout << "import: " << name << std::endl;
+    if (std::string_view{elem->Value()} != "bool") {
+        std::cerr << "[config import] node mismatch" << std::endl;
+        return false;
+    }
+
+    const char* v = elem->Attribute("value");
+    if (v) {
+        if (std::string_view{v} == "true") {
+            data = true;
+        }
+        else if (std::string_view{v} == "false") {
+            data = false;
+        }
+        else {
+            std::cerr << "[config import] unknown value" << std::endl;
+            return false;
+        }
+    }
     return true;
 }
+

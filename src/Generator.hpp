@@ -874,38 +874,108 @@ class Generator {
         std::string define;
         bool usesDefine;
 
+        Macro(const std::string &value, const std::string &define, bool usesDefine)
+            : value(value), define(define), usesDefine(usesDefine)
+        {
+        }
+
         std::string get() const { return usesDefine ? define : value; }
+
+        auto operator<=>(Macro const & ) const = default;
+    };
+
+    template <typename T>
+    struct ConfigWrapper {
+        std::string name;
+        T data;
+        T _default;
+
+        ConfigWrapper(std::string name, T&& data) : name(name), data(data), _default(data)
+        {
+        }
+
+        operator T&() {
+            return data;
+        }
+
+        operator const T&() const {
+            return data;
+        }
+
+        T* operator->() {
+            return &data;
+        }
+
+        const T* operator->() const {
+            return &data;
+        }
+
+        void xmlExport(XMLElement *elem) const;
+
+        bool xmlImport(XMLElement *elem);
+
+        bool isDifferent() const {
+            return data != _default;
+        }
+
+        void reset() {
+            data = _default;
+        }
+
     };
 
     struct Config {
         struct {
-            Macro mNamespace;
-            Macro mNamespaceRAII;
-            Macro mNamespaceSTD;
-            Macro mConstexpr;
-            Macro mInline;
-            Macro mNoexcept;
-            Macro mExplicit;
-            Macro mDispatch;
-            Macro mDispatchType;
+            ConfigWrapper<Macro> mNamespace{"m_namespace", {"VULKAN_HPP_NAMESPACE", "vk20", true}};
+            ConfigWrapper<Macro> mNamespaceRAII{"m_namespace_raii", {"VULKAN_HPP_NAMESPACE_RAII", "vk20r", true}};
+            Macro mNamespaceSTD{"", "std", false};
+            ConfigWrapper<Macro> mConstexpr{"m_constexpr", {"VULKAN_HPP_CONSTEXPR", "constexpr", true}};
+            ConfigWrapper<Macro> mInline{"m_inline", {"VULKAN_HPP_INLINE", "inline", true}};
+            ConfigWrapper<Macro> mNoexcept{"m_noexcept", {"VULKAN_HPP_NOEXCEPT", "noexcept", true}};
+            ConfigWrapper<Macro> mExplicit{"m_explicit", {"VULKAN_HPP_TYPESAFE_EXPLICIT", "explicit", true}};
+            ConfigWrapper<Macro> mDispatch{"m_dispatch_assignment", {"VULKAN_HPP_DEFAULT_DISPATCHER_ASSIGNMENT", "", true}};
+            ConfigWrapper<Macro> mDispatchType{"m_dispatch_type", {"VULKAN_HPP_DEFAULT_DISPATCHER_TYPE", "DispatchLoaderStatic", true}};
         } macro;
         struct {
-            bool cppModules;
-            bool structNoinit;
-            bool vulkanCommands;
-            bool dispatchParam;
-            bool dispatchLoaderStatic;
-            bool useStaticCommands; // move
-            bool allocatorParam;
-            bool smartHandles;
-            bool exceptions;
-            bool resultValueType;
+            ConfigWrapper<bool> cppModules{"modules", false};
+            bool structNoinit{false};
+            ConfigWrapper<bool> vulkanCommands{"vk_commands", {true}};
+            ConfigWrapper<bool> dispatchParam{"dispatch_param", {true}};
+            ConfigWrapper<bool> dispatchLoaderStatic{"dispatch_loader_static", {true}};
+            ConfigWrapper<bool> useStaticCommands{"static_link_commands", {false}}; // move
+            ConfigWrapper<bool> allocatorParam{"allocator_param", {false}};
+            ConfigWrapper<bool> smartHandles{"smart_handles", {true}};
+            ConfigWrapper<bool> exceptions{"exceptions", {true}};
+            ConfigWrapper<bool> resultValueType{"use_result_value_type", {false}};
         } gen;
         struct {
-            bool methodTags;
+            ConfigWrapper<bool> methodTags{"dbg_command_tags", {false}};
         } dbg;
-        std::string fileProtect;
-        std::string loaderClassName;
+
+        Config() = default;
+
+        auto reflect() {
+            return std::tie(
+                macro.mNamespace,
+                macro.mNamespaceRAII,
+                macro.mConstexpr,
+                macro.mInline,
+                macro.mNoexcept,
+                macro.mExplicit,
+                macro.mDispatch,
+                macro.mDispatchType,
+                gen.cppModules,
+                gen.vulkanCommands,
+                gen.dispatchParam,
+                gen.dispatchLoaderStatic,
+                gen.useStaticCommands,
+                gen.allocatorParam,
+                gen.smartHandles,
+                gen.exceptions,
+                gen.resultValueType,
+                dbg.methodTags
+            );
+        }
     };
 
     struct ExtensionData;
@@ -1388,23 +1458,23 @@ class Generator {
         std::string out =
             format("::{NAMESPACE}::DispatchLoaderStatic const &d");
         if (assignment) {
-            out += " " + cfg.macro.mDispatch.get();
+            out += " " + cfg.macro.mDispatch->get();
         }
         return out;
     }
 
     std::string getDispatchType() const {
-        if (cfg.macro.mDispatchType.usesDefine) {
-            return cfg.macro.mDispatchType.define;
+        if (cfg.macro.mDispatchType->usesDefine) {
+            return cfg.macro.mDispatchType->define;
         }
-        return format(cfg.macro.mDispatchType.value);
+        return format(cfg.macro.mDispatchType->value);
     }
 
     Argument getDispatchArgument() const {
         if (!cfg.gen.dispatchParam) {
             return Argument("", "");
         }
-        std::string assignment = cfg.macro.mDispatch.get();
+        std::string assignment = cfg.macro.mDispatch->get();
         if (!assignment.empty()) {
             assignment = " " + assignment;
         }
@@ -1899,10 +1969,10 @@ class Generator {
             const auto &ns = ctx.ns == Namespace::VK ? macros.mNamespace
                                                      : macros.mNamespaceRAII;
             std::string message;
-            if (ns.usesDefine) {
-                message = ns.define + "_STRING \"";
+            if (ns->usesDefine) {
+                message = ns->define + "_STRING \"";
             } else {
-                message = "\"" + ns.value;
+                message = "\"" + ns->value;
             }
             if (!ctx.cls->name.empty()) {
                 message += "::" + ctx.cls->name;
@@ -1951,10 +2021,10 @@ class Generator {
             std::string output;
             const auto &cfg = ctx.gen.getConfig();
             if (specifierInline && !decl) {
-                output += cfg.macro.mInline.get() + " ";
+                output += cfg.macro.mInline->get() + " ";
             }
             if (specifierExplicit && decl) {
-                output += cfg.macro.mExplicit.get() + " ";
+                output += cfg.macro.mExplicit->get() + " ";
             }
             return output;
         }
@@ -2191,7 +2261,7 @@ class Generator {
                 var.setFullType("", type, " const &");
                 var.setIdentifier("d");
                 var.setIgnorePFN(true);
-                std::string assignment = cfg.macro.mDispatch.get();
+                std::string assignment = cfg.macro.mDispatch->get();
                 if (!assignment.empty()) {
                     var.setAssignment(" " + assignment);
                 }
@@ -2294,7 +2364,7 @@ class Generator {
                      ctx.constructor)) {
                     if (ctx.gen.isHandle(type)) {
                         std::string ns =
-                            ctx.gen.getConfig().macro.mNamespaceRAII.get();
+                            ctx.gen.getConfig().macro.mNamespaceRAII->get();
                         p->toRAII();
                         convertName(p);
                     }
@@ -3041,30 +3111,22 @@ class Generator {
     template<typename T>
     void configBuildList(const std::string &name, const std::map<std::string, T> &from, XMLElement *parent, const std::string &comment = "");
 
-    struct WhitelistBase {
-        std::regex rgx;
+    struct WhitelistBase {        
         std::string name;
-        std::vector<std::string> filter;
-
-        bool build();
-
-        virtual bool stage();
+        std::unordered_set<std::string> filter;
 
         virtual void apply() = 0;
     };
 
     template<typename T>
     struct WhitelistBinding : public WhitelistBase {
-        std::map<std::string, T> *dst;
-        std::vector<std::pair<T*, bool>> buffer;
+        std::map<std::string, T> *dst;        
 
         WhitelistBinding(std::map<std::string, T> *dst, std::string name)
          : dst(dst)
         {
             this->name = name;
         }
-
-        virtual bool stage() override;
 
         virtual void apply() noexcept override;
     };
@@ -3113,6 +3175,12 @@ class Generator {
     std::function<void(void)> onLoadCallback;
 
     void saveConfigFile(const std::string &filename);
+
+    template<size_t I = 0, typename... Tp>
+    void saveConfigParam(XMLElement *parent, const std::tuple<Tp...>& t);
+
+    template<size_t I = 0, typename... Tp>
+    void loadConfigParam(XMLElement *parent, const std::tuple<Tp...>& t);
 
     void loadConfigFile(const std::string &filename);
 };

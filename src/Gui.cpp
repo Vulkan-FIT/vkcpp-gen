@@ -39,6 +39,9 @@ bool CheckBoxTristate(const char *label, int *v_tristate) {
 }
 }; // namespace ImGui
 
+
+//void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {}
+
 GUI::QueueFamilyIndices GUI::findQueueFamilies(VkPhysicalDevice device) {
     QueueFamilyIndices indices;
 
@@ -207,7 +210,7 @@ void GUI::createWindow() {
     }
     glfwSetWindowSizeLimits(glfwWindow, mode->width / 8, mode->height / 8,
                             GLFW_DONT_CARE, GLFW_DONT_CARE);
-    glfwSetWindowUserPointer(glfwWindow, &window);
+    glfwSetWindowUserPointer(glfwWindow, reinterpret_cast<Window*>(this));
 
 #define genericCallback(functionName)                                          \
     [](GLFWwindow *window, auto... args) {                                     \
@@ -217,7 +220,7 @@ void GUI::createWindow() {
             pointer->functionName(pointer, args...);                           \
     }
 
-    window.onSize = [&](auto self, int width, int height) {
+    onSize = [&](auto self, int width, int height) {
         this->width = width;
         this->height = height;
         recreateSwapChain();
@@ -225,6 +228,12 @@ void GUI::createWindow() {
     };
 
     glfwSetWindowSizeCallback(glfwWindow, genericCallback(onSize));
+
+    glfwSetKeyCallback(glfwWindow, [](GLFWwindow *window, int key, int scancode, int action, int mods){
+//        std::cout << "key event: " << key << ", " << scancode << ", " << action << ", " << mods << std::endl;
+        auto w = reinterpret_cast<Window *>(glfwGetWindowUserPointer(window));
+        w->onKey(window, key, scancode, action, mods);
+    });
 }
 
 void GUI::createInstance() {
@@ -1181,8 +1190,8 @@ void GUI::updateImgui() {
 
             ImGui::Text("Code generation");
             static std::array<BoolGUI, 2> bools = {
-                BoolGUI{&cfg.gen.cppModules, "C++ Modules"},
-                BoolGUI{&cfg.gen.exceptions, "exeptions"}
+                BoolGUI{&cfg.gen.cppModules.data, "C++ Modules"},
+                BoolGUI{&cfg.gen.exceptions.data, "exeptions"}
             };
             int i = 0;
             for (auto &b : bools) {
@@ -1192,10 +1201,10 @@ void GUI::updateImgui() {
             }
             ImGui::Text("  Vulkan namespace");
             static std::array<BoolGUI, 4> vknsbools = {
-                BoolGUI{&cfg.gen.vulkanCommands, "commands"},
-                BoolGUI{&cfg.gen.dispatchParam, "dispatch paramenter"},
-                BoolGUI{&cfg.gen.allocatorParam, "allocator parameter"},
-                BoolGUI{&cfg.gen.smartHandles, "smart handles"}
+                BoolGUI{&cfg.gen.vulkanCommands.data, "commands"},
+                BoolGUI{&cfg.gen.dispatchParam.data, "dispatch paramenter"},
+                BoolGUI{&cfg.gen.allocatorParam.data, "allocator parameter"},
+                BoolGUI{&cfg.gen.smartHandles.data, "smart handles"}
             };
             for (auto &b : vknsbools) {
                 ImGui::PushID(i++);
@@ -1207,11 +1216,11 @@ void GUI::updateImgui() {
 
             if (ImGui::TreeNode("C++ macros")) {
                 static std::array<Macro, 5> macros = {
-                    Macro{&cfg.macro.mNamespace, "Namespace"},
-                    Macro{&cfg.macro.mConstexpr, "Constexpr"},
-                    Macro{&cfg.macro.mNoexcept, "Noexcept"},
-                    Macro{&cfg.macro.mInline, "Inline"},
-                    Macro{&cfg.macro.mExplicit, "Explicit"}};
+                    Macro{&cfg.macro.mNamespace.data, "Namespace"},
+                    Macro{&cfg.macro.mConstexpr.data, "Constexpr"},
+                    Macro{&cfg.macro.mNoexcept.data, "Noexcept"},
+                    Macro{&cfg.macro.mInline.data, "Inline"},
+                    Macro{&cfg.macro.mExplicit.data, "Explicit"}};
                 for (auto &m : macros) {
                     ImGui::PushID(i++);
                     guiMacroOption(m);
@@ -1222,7 +1231,7 @@ void GUI::updateImgui() {
 
             if (ImGui::TreeNode("Debug")) {
                 static std::array<BoolGUI, 1> bools = {
-                    BoolGUI{&cfg.dbg.methodTags, "Show functions categories"}};
+                    BoolGUI{&cfg.dbg.methodTags.data, "Show function categories"}};
                 for (auto &b : bools) {
                     ImGui::PushID(i++);
                     guiBoolOption(b);
@@ -1386,10 +1395,18 @@ void GUI::drawFrame() {
 }
 
 void GUI::run() {
+    double target = 1.0 / 60.0;
+    double next = 0.0;
 
     while (!glfwWindowShouldClose(glfwWindow)) {
+        ImGuiIO& io = ImGui::GetIO();
+        std::cout << "keys: " << io.InputQueueCharacters.size() << std::endl;
         glfwWaitEvents();
-        drawFrame();
+        if (glfwGetTime() >= next) {
+            std::cout << "draw " << glfwGetTime()  << std::endl;
+            drawFrame();
+            next += target;
+        }
     }
 }
 

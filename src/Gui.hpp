@@ -15,7 +15,18 @@
 
 #include "Generator.hpp"
 
-class GUI {
+class Window {
+public:
+    std::function<void(Window *)> onClose;
+    std::function<void(Window *, int, int)> onSize;
+
+    void onKey(GLFWwindow *window, int key, int scancode, int action, int mods) {
+        std::cout << "key event: " << key << ", " << scancode << ", " << action << ", " << mods << std::endl;
+        glfwPostEmptyEvent();
+    }
+};
+
+class GUI : public Window {
 
     struct Macro {
         Generator::Macro *data;
@@ -146,17 +157,9 @@ class GUI {
 
     std::string configPath;
 
-
-
     std::string filter;
 
-    ImFont* font;
-
-    class Window {
-    public:
-        std::function<void(Window *)> onClose;
-        std::function<void(Window *, int, int)> onSize;
-    };
+    ImFont* font;   
 
     struct QueueFamilyIndices {
         std::optional<uint32_t> graphicsFamily;
@@ -176,8 +179,7 @@ class GUI {
 
     int id;
     int width, height;
-    GLFWwindow *glfwWindow;
-    Window window;
+    GLFWwindow *glfwWindow;    
     VkInstance instance;
     VkSurfaceKHR surface;
     VkPhysicalDevice physicalDevice;
