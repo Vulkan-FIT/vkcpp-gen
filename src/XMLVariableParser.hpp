@@ -32,16 +32,10 @@ SOFTWARE.
 #include <memory>
 #include <stdexcept>
 
+#include "Enums.h"
 #include "StringUtils.hpp"
 
 class Generator;
-
-enum class Namespace {
-    NONE,
-    VK,
-    RAII,
-    STD
-};
 
 enum State { // State used for indexing and FSM
     PREFIX = 0,
@@ -91,6 +85,11 @@ struct VariableFields : public std::array<std::string, 4> {
         return s.find("const") != std::string::npos;
     }
 
+    bool isConstSuffix() const {
+        std::string s = get(SUFFIX);
+        return s.find("const") != std::string::npos;
+    }
+
 };
 
 // holds variable information broken into 4 sections
@@ -103,8 +102,16 @@ struct VariableData : public VariableFields {
         TYPE_RETURN,
         TYPE_REFERENCE,
         TYPE_ARRAY_PROXY,
+        TYPE_ARRAY_PROXY_NO_TEMPORARIES,
         TYPE_VECTOR,
+        TYPE_ARRAY,
         TYPE_OPTIONAL
+    };
+
+    enum ArraySize {
+        NONE,
+        DIM_1D,
+        DIM_2D
     };
 
     enum class Flags : int {
@@ -136,6 +143,8 @@ struct VariableData : public VariableFields {
 
     std::string getLenAttrib() const { return lenAttribStr; }
 
+    std::string getAltlenAttrib() const { return altlenAttribStr; }
+
     std::string getLenAttribIdentifier() const;
 
     std::string getLenAttribRhs() const;
@@ -145,9 +154,15 @@ struct VariableData : public VariableFields {
     bool isLenAttribIndirect() const;
 
     // arrayLength flag getter
-    bool hasArrayLength() const { return arrayLengthFound; }
+    bool hasArrayLength() const {
+    //return arrayLengthFound;
+        return arrayAttrib != ArraySize::NONE;
+    }
     // arrayLength getter
-    const std::string &arrayLength() const { return arrayLengthStr; }
+    const std::string &arrayLength(int index = 0) const {
+    //return arrayLengthStr;
+        return arraySizes[index];
+    }
 
     bool isDefault() const { return specialType == TYPE_DEFAULT; }
 
@@ -181,11 +196,14 @@ struct VariableData : public VariableFields {
 
     bool hasLengthVar() const { return lenghtVar.get() != nullptr; }
 
-    bool hasArrayVar() const { return arrayVar.get() != nullptr; }
+    // bool hasArrayVar() const { return arrayVar.get() != nullptr; }
 
     const std::shared_ptr<VariableData>& getLengthVar() const;
 
-    const std::shared_ptr<VariableData>& getArrayVar() const;
+    const std::vector<std::shared_ptr<VariableData>>& getArrayVars() const;
+    std::vector<std::shared_ptr<VariableData>>& getArrayVars() {
+        return arrayVars;
+    };
 
     // void convertToTemplate();
 
@@ -212,6 +230,8 @@ struct VariableData : public VariableFields {
 
     std::string toArgument(bool useOriginal = false) const;
 
+    std::string toStructArgumentWithAssignment() const;
+
     // full type getter
     std::string fullType() const;
 
@@ -223,9 +243,13 @@ struct VariableData : public VariableFields {
     // getter for all fields combined
     std::string toString() const;
 
+    std::string toStructString() const;
+
     std::string declaration() const;
 
     std::string toStringWithAssignment() const;
+
+    std::string toStructStringWithAssignment() const;
 
     // getter for all fields combined for C version
     std::string originalToString() const;
@@ -242,7 +266,9 @@ struct VariableData : public VariableFields {
 
     std::string getTemplate() const;
 
-    // static void updateNamespace(Namespace key, const std::string &value);
+    std::string toArrayProxySize() const;
+    std::string toArrayProxyData() const;
+    std::pair<std::string, std::string> toArrayProxyRhs() const;    
 
   protected:
     const Generator &gen;
@@ -253,16 +279,19 @@ struct VariableData : public VariableFields {
     Namespace ns;
     bool ignoreFlag;
     bool ignorePFN;
-    bool arrayLengthFound;
+    //bool arrayLengthFound;
     bool nullTerminated;
-    std::string arrayLengthStr;
+    //std::string arrayLengthStr;
+    ArraySize arrayAttrib{};
+    std::string arraySizes[2];
     std::string lenAttribStr;
+    std::string altlenAttribStr;
     std::string _assignment;
     // std::string optionalNamespace;
     std::string optionalTemplate;
 
     std::shared_ptr<VariableData> lenghtVar;
-    std::shared_ptr<VariableData> arrayVar;
+    std::vector<std::shared_ptr<VariableData>> arrayVars;
 
     // static std::unordered_map<Namespace, std::string> namespaces;
 

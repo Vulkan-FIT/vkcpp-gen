@@ -25,9 +25,33 @@ SOFTWARE.
 #define XMLUTILS_HPP
 
 #include "tinyxml2.h"
+#include <stdexcept>
 #include <string>
 #include <type_traits>
 #include <vector>
+#include <optional>
+
+class AttributeNotFoundException: public std::runtime_error {
+ public:
+  AttributeNotFoundException() : runtime_error("missing XML attribute") {}
+  AttributeNotFoundException(const std::string &msg) : runtime_error(msg.c_str()) {}
+};
+
+inline std::string_view getRequiredAttrib(const tinyxml2::XMLElement *e, const std::string_view &attribute) {
+    const char *attrib = e->Attribute(attribute.data());
+    if (!attrib) {
+        throw new AttributeNotFoundException{"missing XML attribute: " + std::string{attribute}};
+    }
+    return attrib;
+}
+
+inline std::optional<std::string_view> getAttrib(const tinyxml2::XMLElement *e, const std::string_view &attribute) {
+    const char *attrib = e->Attribute(attribute.data());
+    if (!attrib) {
+        return std::optional<std::string_view>();
+    }
+    return attrib;
+}
 
 // Class for XMLNode and XMLElement iteration
 template <class Base> class NodeContainer {

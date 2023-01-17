@@ -14,814 +14,16 @@
 #include <regex>
 #include <stdexcept>
 #include <string>
+#include <set>
+#include <string_view>
 #include <unordered_set>
 #include <vector>
 
-static constexpr char const *RES_HEADER{
-    R"(
-#if !defined( VULKAN_HPP_ASSERT_ON_RESULT )
-#  define VULKAN_HPP_ASSERT_ON_RESULT VULKAN_HPP_ASSERT
-#endif
-
-#if !defined( VULKAN_HPP_STATIC_ASSERT )
-#  define VULKAN_HPP_STATIC_ASSERT static_assert
-#endif
-
-static_assert(VK_HEADER_VERSION == {0}, "Wrong VK_HEADER_VERSION!");
-
-// 32-bit vulkan is not typesafe for handles, so don't allow copy constructors on this platform by default.
-// To enable this feature on 32-bit platforms please define VULKAN_HPP_TYPESAFE_CONVERSION
-#if ( VK_USE_64_BIT_PTR_DEFINES == 1 )
-#  if !defined( VULKAN_HPP_TYPESAFE_CONVERSION )
-#    define VULKAN_HPP_TYPESAFE_CONVERSION
-#  endif
-#endif
-
-// <tuple> includes <sys/sysmacros.h> through some other header
-// this results in major(x) being resolved to gnu_dev_major(x)
-// which is an expression in a constructor initializer list.
-#if defined( major )
-#  undef major
-#endif
-#if defined( minor )
-#  undef minor
-#endif
-
-// Windows defines MemoryBarrier which is deprecated and collides
-// with the VULKAN_HPP_NAMESPACE::MemoryBarrier struct.
-#if defined( MemoryBarrier )
-#  undef MemoryBarrier
-#endif
-
-#if !defined( VULKAN_HPP_HAS_UNRESTRICTED_UNIONS )
-#  if defined( __clang__ )
-#    if __has_feature( cxx_unrestricted_unions )
-#      define VULKAN_HPP_HAS_UNRESTRICTED_UNIONS
-#    endif
-#  elif defined( __GNUC__ )
-#    define GCC_VERSION ( __GNUC__ * 10000 + __GNUC_MINOR__ * 100 + __GNUC_PATCHLEVEL__ )
-#    if 40600 <= GCC_VERSION
-#      define VULKAN_HPP_HAS_UNRESTRICTED_UNIONS
-#    endif
-#  elif defined( _MSC_VER )
-#    if 1900 <= _MSC_VER
-#      define VULKAN_HPP_HAS_UNRESTRICTED_UNIONS
-#    endif
-#  endif
-#endif
-
-#if !defined( VULKAN_HPP_INLINE )
-#  if defined( __clang__ )
-#    if __has_attribute( always_inline )
-#      define VULKAN_HPP_INLINE __attribute__( ( always_inline ) ) __inline__
-#    else
-#      define VULKAN_HPP_INLINE inline
-#    endif
-#  elif defined( __GNUC__ )
-#    define VULKAN_HPP_INLINE __attribute__( ( always_inline ) ) __inline__
-#  elif defined( _MSC_VER )
-#    define VULKAN_HPP_INLINE inline
-#  else
-#    define VULKAN_HPP_INLINE inline
-#  endif
-#endif
-
-#if defined( VULKAN_HPP_TYPESAFE_CONVERSION )
-#  define VULKAN_HPP_TYPESAFE_EXPLICIT
-#else
-#  define VULKAN_HPP_TYPESAFE_EXPLICIT explicit
-#endif
-
-#if defined( __cpp_constexpr )
-#  define VULKAN_HPP_CONSTEXPR constexpr
-#  if __cpp_constexpr >= 201304
-#    define VULKAN_HPP_CONSTEXPR_14 constexpr
-#  else
-#    define VULKAN_HPP_CONSTEXPR_14
-#  endif
-#  define VULKAN_HPP_CONST_OR_CONSTEXPR constexpr
-#else
-#  define VULKAN_HPP_CONSTEXPR
-#  define VULKAN_HPP_CONSTEXPR_14
-#  define VULKAN_HPP_CONST_OR_CONSTEXPR const
-#endif
-
-#if !defined( VULKAN_HPP_NOEXCEPT )
-#  if defined( _MSC_VER ) && ( _MSC_VER <= 1800 )
-#    define VULKAN_HPP_NOEXCEPT
-#  else
-#    define VULKAN_HPP_NOEXCEPT     noexcept
-#    define VULKAN_HPP_HAS_NOEXCEPT 1
-#    if defined( VULKAN_HPP_NO_EXCEPTIONS )
-#      define VULKAN_HPP_NOEXCEPT_WHEN_NO_EXCEPTIONS noexcept
-#    else
-#      define VULKAN_HPP_NOEXCEPT_WHEN_NO_EXCEPTIONS
-#    endif
-#  endif
-#endif
-
-#if 14 <= VULKAN_HPP_CPP_VERSION
-#  define VULKAN_HPP_DEPRECATED( msg ) [[deprecated( msg )]]
-#else
-#  define VULKAN_HPP_DEPRECATED( msg )
-#endif
-
-#if ( 17 <= VULKAN_HPP_CPP_VERSION ) && !defined( VULKAN_HPP_NO_NODISCARD_WARNINGS )
-#  define VULKAN_HPP_NODISCARD [[nodiscard]]
-#  if defined( VULKAN_HPP_NO_EXCEPTIONS )
-#    define VULKAN_HPP_NODISCARD_WHEN_NO_EXCEPTIONS [[nodiscard]]
-#  else
-#    define VULKAN_HPP_NODISCARD_WHEN_NO_EXCEPTIONS
-#  endif
-#else
-#  define VULKAN_HPP_NODISCARD
-#  define VULKAN_HPP_NODISCARD_WHEN_NO_EXCEPTIONS
-#endif
-)"};
-
-static constexpr char const *RES_ERRORS{R"(
-  class ErrorCategoryImpl : public std::error_category
-  {
-  public:
-    virtual const char * name() const VULKAN_HPP_NOEXCEPT override
-    {
-      return VULKAN_HPP_NAMESPACE_STRING "::Result";
-    }
-    virtual std::string message( int ev ) const override
-    {
-      return to_string( static_cast<Result>( ev ) );
-    }
-  };
-
-  class Error
-  {
-  public:
-    Error() VULKAN_HPP_NOEXCEPT                = default;
-    Error( const Error & ) VULKAN_HPP_NOEXCEPT = default;
-    virtual ~Error() VULKAN_HPP_NOEXCEPT       = default;
-
-    virtual const char * what() const VULKAN_HPP_NOEXCEPT = 0;
-  };
-
-  class LogicError
-    : public Error
-    , public std::logic_error
-  {
-  public:
-    explicit LogicError( const std::string & what ) : Error(), std::logic_error( what ) {}
-    explicit LogicError( char const * what ) : Error(), std::logic_error( what ) {}
-
-    virtual const char * what() const VULKAN_HPP_NOEXCEPT
-    {
-      return std::logic_error::what();
-    }
-  };
-
-  class SystemError
-    : public Error
-    , public std::system_error
-  {
-  public:
-    SystemError( std::error_code ec ) : Error(), std::system_error( ec ) {}
-    SystemError( std::error_code ec, std::string const & what ) : Error(), std::system_error( ec, what ) {}
-    SystemError( std::error_code ec, char const * what ) : Error(), std::system_error( ec, what ) {}
-    SystemError( int ev, std::error_category const & ecat ) : Error(), std::system_error( ev, ecat ) {}
-    SystemError( int ev, std::error_category const & ecat, std::string const & what ) : Error(), std::system_error( ev, ecat, what ) {}
-    SystemError( int ev, std::error_category const & ecat, char const * what ) : Error(), std::system_error( ev, ecat, what ) {}
-
-    virtual const char * what() const VULKAN_HPP_NOEXCEPT
-    {
-      return std::system_error::what();
-    }
-  };
-
-  VULKAN_HPP_INLINE const std::error_category & errorCategory() VULKAN_HPP_NOEXCEPT
-  {
-    static ErrorCategoryImpl instance;
-    return instance;
-  }
-
-  VULKAN_HPP_INLINE std::error_code make_error_code( Result e ) VULKAN_HPP_NOEXCEPT
-  {
-    return std::error_code( static_cast<int>( e ), errorCategory() );
-  }
-
-  VULKAN_HPP_INLINE std::error_condition make_error_condition( Result e ) VULKAN_HPP_NOEXCEPT
-  {
-    return std::error_condition( static_cast<int>( e ), errorCategory() );
-  }
-)"};
-
-static constexpr char const *RES_RESULT_VALUE{R"(
-  template <typename T>
-  void ignore( T const & ) VULKAN_HPP_NOEXCEPT
-  {
-  }
-
-  template <typename T>
-  struct ResultValue
-  {
-#ifdef VULKAN_HPP_HAS_NOEXCEPT
-    ResultValue( Result r, T & v ) VULKAN_HPP_NOEXCEPT( VULKAN_HPP_NOEXCEPT( T( v ) ) )
-#else
-    ResultValue( Result r, T & v )
-#endif
-      : result( r ), value( v )
-    {
-    }
-
-#ifdef VULKAN_HPP_HAS_NOEXCEPT
-    ResultValue( Result r, T && v ) VULKAN_HPP_NOEXCEPT( VULKAN_HPP_NOEXCEPT( T( std::move( v ) ) ) )
-#else
-    ResultValue( Result r, T && v )
-#endif
-      : result( r ), value( std::move( v ) )
-    {
-    }
-
-    Result result;
-    T      value;
-
-    operator std::tuple<Result &, T &>() VULKAN_HPP_NOEXCEPT
-    {
-      return std::tuple<Result &, T &>( result, value );
-    }
-  };
-/*
-#if !defined( VULKAN_HPP_NO_SMART_HANDLE )
-  template <typename Type, typename Dispatch>
-  struct ResultValue<UniqueHandle<Type, Dispatch>>
-  {
-#  ifdef VULKAN_HPP_HAS_NOEXCEPT
-    ResultValue( Result r, UniqueHandle<Type, Dispatch> && v ) VULKAN_HPP_NOEXCEPT
-#  else
-    ResultValue( Result r, UniqueHandle<Type, Dispatch> && v )
-#  endif
-      : result( r )
-      , value( std::move( v ) )
-    {
-    }
-
-    std::tuple<Result, UniqueHandle<Type, Dispatch>> asTuple()
-    {
-      return std::make_tuple( result, std::move( value ) );
-    }
-
-    Result                       result;
-    UniqueHandle<Type, Dispatch> value;
-  };
-
-  template <typename Type, typename Dispatch>
-  struct ResultValue<std::vector<UniqueHandle<Type, Dispatch>>>
-  {
-#  ifdef VULKAN_HPP_HAS_NOEXCEPT
-    ResultValue( Result r, std::vector<UniqueHandle<Type, Dispatch>> && v ) VULKAN_HPP_NOEXCEPT
-#  else
-    ResultValue( Result r, std::vector<UniqueHandle<Type, Dispatch>> && v )
-#  endif
-      : result( r )
-      , value( std::move( v ) )
-    {
-    }
-
-    std::tuple<Result, std::vector<UniqueHandle<Type, Dispatch>>> asTuple()
-    {
-      return std::make_tuple( result, std::move( value ) );
-    }
-
-    Result                                    result;
-    std::vector<UniqueHandle<Type, Dispatch>> value;
-  };
-#endif
-*/
-  template <typename T>
-  struct ResultValueType
-  {
-#ifdef VULKAN_HPP_NO_EXCEPTIONS
-    typedef ResultValue<T> type;
-#else
-    typedef T    type;
-#endif
-  };
-
-  template <>
-  struct ResultValueType<void>
-  {
-#ifdef VULKAN_HPP_NO_EXCEPTIONS
-    typedef Result type;
-#else
-    typedef void type;
-#endif
-  };
-
-  VULKAN_HPP_INLINE typename ResultValueType<void>::type createResultValueType( Result result )
-  {
-#ifdef VULKAN_HPP_NO_EXCEPTIONS
-    return result;
-#else
-    ignore( result );
-#endif
-  }
-
-  template <typename T>
-  VULKAN_HPP_INLINE typename ResultValueType<T>::type createResultValueType( Result result, T & data )
-  {
-#ifdef VULKAN_HPP_NO_EXCEPTIONS
-    return ResultValue<T>( result, data );
-#else
-    ignore( result );
-    return data;
-#endif
-  }
-
-  template <typename T>
-  VULKAN_HPP_INLINE typename ResultValueType<T>::type createResultValueType( Result result, T && data )
-  {
-#ifdef VULKAN_HPP_NO_EXCEPTIONS
-    return ResultValue<T>( result, std::move( data ) );
-#else
-    ignore( result );
-    return std::move( data );
-#endif
-  }
-
-  VULKAN_HPP_INLINE void resultCheck( Result result, char const * message )
-  {
-#ifdef VULKAN_HPP_NO_EXCEPTIONS
-    ignore( result );  // just in case VULKAN_HPP_ASSERT_ON_RESULT is empty
-    ignore( message );
-    VULKAN_HPP_ASSERT_ON_RESULT( result == Result::eSuccess );
-#else
-    if ( result != Result::eSuccess )
-    {
-      throwResultException( result, message );
-    }
-#endif
-  }
-
-  VULKAN_HPP_INLINE void resultCheck( Result result, char const * message, std::initializer_list<Result> successCodes )
-  {
-#ifdef VULKAN_HPP_NO_EXCEPTIONS
-    ignore( result );  // just in case VULKAN_HPP_ASSERT_ON_RESULT is empty
-    ignore( message );
-    ignore( successCodes );  // just in case VULKAN_HPP_ASSERT_ON_RESULT is empty
-    VULKAN_HPP_ASSERT_ON_RESULT( std::find( successCodes.begin(), successCodes.end(), result ) != successCodes.end() );
-#else
-    if ( std::find( successCodes.begin(), successCodes.end(), result ) == successCodes.end() )
-    {
-      throwResultException( result, message );
-    }
-#endif
-  }
-)"};
-
-static constexpr char const *RES_ARRAY_PROXY{R"(
-  template <typename T>
-  class ArrayProxy
-  {
-  public:
-    VULKAN_HPP_CONSTEXPR ArrayProxy() VULKAN_HPP_NOEXCEPT
-      : m_count( 0 )
-      , m_ptr( nullptr )
-    {}
-
-    VULKAN_HPP_CONSTEXPR ArrayProxy( std::nullptr_t ) VULKAN_HPP_NOEXCEPT
-      : m_count( 0 )
-      , m_ptr( nullptr )
-    {}
-
-    ArrayProxy( T & value ) VULKAN_HPP_NOEXCEPT
-      : m_count( 1 )
-      , m_ptr( &value )
-    {}
-
-    template <typename B = T, typename std::enable_if<std::is_const<B>::value, int>::type = 0>
-    ArrayProxy( typename std::remove_const<T>::type & value ) VULKAN_HPP_NOEXCEPT
-      : m_count( 1 )
-      , m_ptr( &value )
-    {}
-
-    ArrayProxy( uint32_t count, T * ptr ) VULKAN_HPP_NOEXCEPT
-      : m_count( count )
-      , m_ptr( ptr )
-    {}
-
-    template <typename B = T, typename std::enable_if<std::is_const<B>::value, int>::type = 0>
-    ArrayProxy( uint32_t count, typename std::remove_const<T>::type * ptr ) VULKAN_HPP_NOEXCEPT
-      : m_count( count )
-      , m_ptr( ptr )
-    {}
-
-#  if __GNUC__ >= 9
-#    pragma GCC diagnostic push
-#    pragma GCC diagnostic ignored "-Winit-list-lifetime"
-#  endif
-
-    ArrayProxy( std::initializer_list<T> const & list ) VULKAN_HPP_NOEXCEPT
-      : m_count( static_cast<uint32_t>( list.size() ) )
-      , m_ptr( list.begin() )
-    {}
-
-    template <typename B = T, typename std::enable_if<std::is_const<B>::value, int>::type = 0>
-    ArrayProxy( std::initializer_list<typename std::remove_const<T>::type> const & list ) VULKAN_HPP_NOEXCEPT
-      : m_count( static_cast<uint32_t>( list.size() ) )
-      , m_ptr( list.begin() )
-    {}
-
-    ArrayProxy( std::initializer_list<T> & list ) VULKAN_HPP_NOEXCEPT
-      : m_count( static_cast<uint32_t>( list.size() ) )
-      , m_ptr( list.begin() )
-    {}
-
-    template <typename B = T, typename std::enable_if<std::is_const<B>::value, int>::type = 0>
-    ArrayProxy( std::initializer_list<typename std::remove_const<T>::type> & list ) VULKAN_HPP_NOEXCEPT
-      : m_count( static_cast<uint32_t>( list.size() ) )
-      , m_ptr( list.begin() )
-    {}
-
-#  if __GNUC__ >= 9
-#    pragma GCC diagnostic pop
-#  endif
-
-    // Any type with a .data() return type implicitly convertible to T*, and a .size() return type implicitly
-    // convertible to size_t. The const version can capture temporaries, with lifetime ending at end of statement.
-    template <typename V,
-              typename std::enable_if<
-                std::is_convertible<decltype( std::declval<V>().data() ), T *>::value &&
-                std::is_convertible<decltype( std::declval<V>().size() ), std::size_t>::value>::type * = nullptr>
-    ArrayProxy( V const & v ) VULKAN_HPP_NOEXCEPT
-      : m_count( static_cast<uint32_t>( v.size() ) )
-      , m_ptr( v.data() )
-    {}
-
-    template <typename V,
-              typename std::enable_if<
-                std::is_convertible<decltype( std::declval<V>().data() ), T *>::value &&
-                std::is_convertible<decltype( std::declval<V>().size() ), std::size_t>::value>::type * = nullptr>
-    ArrayProxy( V & v ) VULKAN_HPP_NOEXCEPT
-      : m_count( static_cast<uint32_t>( v.size() ) )
-      , m_ptr( v.data() )
-    {}
-
-    const T * begin() const VULKAN_HPP_NOEXCEPT
-    {
-      return m_ptr;
-    }
-
-    const T * end() const VULKAN_HPP_NOEXCEPT
-    {
-      return m_ptr + m_count;
-    }
-
-    const T & front() const VULKAN_HPP_NOEXCEPT
-    {
-      VULKAN_HPP_ASSERT( m_count && m_ptr );
-      return *m_ptr;
-    }
-
-    const T & back() const VULKAN_HPP_NOEXCEPT
-    {
-      VULKAN_HPP_ASSERT( m_count && m_ptr );
-      return *( m_ptr + m_count - 1 );
-    }
-
-    bool empty() const VULKAN_HPP_NOEXCEPT
-    {
-      return ( m_count == 0 );
-    }
-
-    uint32_t size() const VULKAN_HPP_NOEXCEPT
-    {
-      return m_count;
-    }
-
-    T * data() const VULKAN_HPP_NOEXCEPT
-    {
-      return m_ptr;
-    }
-
-  private:
-    uint32_t m_count;
-    T *      m_ptr;
-  };
-
-  template <typename T>
-  class ArrayProxyNoTemporaries
-  {
-  public:
-    VULKAN_HPP_CONSTEXPR ArrayProxyNoTemporaries() VULKAN_HPP_NOEXCEPT
-      : m_count( 0 )
-      , m_ptr( nullptr )
-    {}
-
-    VULKAN_HPP_CONSTEXPR ArrayProxyNoTemporaries( std::nullptr_t ) VULKAN_HPP_NOEXCEPT
-      : m_count( 0 )
-      , m_ptr( nullptr )
-    {}
-
-    ArrayProxyNoTemporaries( T & value ) VULKAN_HPP_NOEXCEPT
-      : m_count( 1 )
-      , m_ptr( &value )
-    {}
-
-    template <typename V>
-    ArrayProxyNoTemporaries( V && value ) = delete;
-
-    template <typename B = T, typename std::enable_if<std::is_const<B>::value, int>::type = 0>
-    ArrayProxyNoTemporaries( typename std::remove_const<T>::type & value ) VULKAN_HPP_NOEXCEPT
-      : m_count( 1 )
-      , m_ptr( &value )
-    {}
-
-    template <typename B = T, typename std::enable_if<std::is_const<B>::value, int>::type = 0>
-    ArrayProxyNoTemporaries( typename std::remove_const<T>::type && value ) = delete;
-
-    ArrayProxyNoTemporaries( uint32_t count, T * ptr ) VULKAN_HPP_NOEXCEPT
-      : m_count( count )
-      , m_ptr( ptr )
-    {}
-
-    template <typename B = T, typename std::enable_if<std::is_const<B>::value, int>::type = 0>
-    ArrayProxyNoTemporaries( uint32_t count, typename std::remove_const<T>::type * ptr ) VULKAN_HPP_NOEXCEPT
-      : m_count( count )
-      , m_ptr( ptr )
-    {}
-
-    ArrayProxyNoTemporaries( std::initializer_list<T> const & list ) VULKAN_HPP_NOEXCEPT
-      : m_count( static_cast<uint32_t>( list.size() ) )
-      , m_ptr( list.begin() )
-    {}
-
-    ArrayProxyNoTemporaries( std::initializer_list<T> const && list ) = delete;
-
-    template <typename B = T, typename std::enable_if<std::is_const<B>::value, int>::type = 0>
-    ArrayProxyNoTemporaries( std::initializer_list<typename std::remove_const<T>::type> const & list )
-      VULKAN_HPP_NOEXCEPT
-      : m_count( static_cast<uint32_t>( list.size() ) )
-      , m_ptr( list.begin() )
-    {}
-
-    template <typename B = T, typename std::enable_if<std::is_const<B>::value, int>::type = 0>
-    ArrayProxyNoTemporaries( std::initializer_list<typename std::remove_const<T>::type> const && list ) = delete;
-
-    ArrayProxyNoTemporaries( std::initializer_list<T> & list ) VULKAN_HPP_NOEXCEPT
-      : m_count( static_cast<uint32_t>( list.size() ) )
-      , m_ptr( list.begin() )
-    {}
-
-    ArrayProxyNoTemporaries( std::initializer_list<T> && list ) = delete;
-
-    template <typename B = T, typename std::enable_if<std::is_const<B>::value, int>::type = 0>
-    ArrayProxyNoTemporaries( std::initializer_list<typename std::remove_const<T>::type> & list ) VULKAN_HPP_NOEXCEPT
-      : m_count( static_cast<uint32_t>( list.size() ) )
-      , m_ptr( list.begin() )
-    {}
-
-    template <typename B = T, typename std::enable_if<std::is_const<B>::value, int>::type = 0>
-    ArrayProxyNoTemporaries( std::initializer_list<typename std::remove_const<T>::type> && list ) = delete;
-
-    // Any type with a .data() return type implicitly convertible to T*, and a // .size() return type implicitly
-    // convertible to size_t.
-    template <typename V,
-              typename std::enable_if<
-                std::is_convertible<decltype( std::declval<V>().data() ), T *>::value &&
-                std::is_convertible<decltype( std::declval<V>().size() ), std::size_t>::value>::type * = nullptr>
-    ArrayProxyNoTemporaries( V & v ) VULKAN_HPP_NOEXCEPT
-      : m_count( static_cast<uint32_t>( v.size() ) )
-      , m_ptr( v.data() )
-    {}
-
-    const T * begin() const VULKAN_HPP_NOEXCEPT
-    {
-      return m_ptr;
-    }
-
-    const T * end() const VULKAN_HPP_NOEXCEPT
-    {
-      return m_ptr + m_count;
-    }
-
-    const T & front() const VULKAN_HPP_NOEXCEPT
-    {
-      VULKAN_HPP_ASSERT( m_count && m_ptr );
-      return *m_ptr;
-    }
-
-    const T & back() const VULKAN_HPP_NOEXCEPT
-    {
-      VULKAN_HPP_ASSERT( m_count && m_ptr );
-      return *( m_ptr + m_count - 1 );
-    }
-
-    bool empty() const VULKAN_HPP_NOEXCEPT
-    {
-      return ( m_count == 0 );
-    }
-
-    uint32_t size() const VULKAN_HPP_NOEXCEPT
-    {
-      return m_count;
-    }
-
-    T * data() const VULKAN_HPP_NOEXCEPT
-    {
-      return m_ptr;
-    }
-
-  private:
-    uint32_t m_count;
-    T *      m_ptr;
-  };
-)"};
-
-static constexpr char const *RES_BASE_TYPES{R"(
-  //==================
-  //=== BASE TYPEs ===
-  //==================
-
-  using Bool32          = uint32_t;
-  using DeviceAddress   = uint64_t;
-  using DeviceSize      = uint64_t;
-  using RemoteAddressNV = void *;
-  using SampleMask      = uint32_t;
-)"};
-
-static constexpr char const *RES_FLAGS{R"(
-template <typename FlagBitsType>
-struct FlagTraits
-{
-    enum
-    {
-        allFlags = 0
-    };
-};
-
-template <typename BitType>
-class Flags {
-public:
-    using MaskType = typename std::underlying_type<BitType>::type;
-
-    // constructors
-    VULKAN_HPP_CONSTEXPR Flags() VULKAN_HPP_NOEXCEPT : m_mask( 0 ) {}
-
-    VULKAN_HPP_CONSTEXPR Flags( BitType bit ) VULKAN_HPP_NOEXCEPT : m_mask( static_cast<MaskType>( bit ) ) {}
-
-    VULKAN_HPP_CONSTEXPR Flags( Flags<BitType> const & rhs ) VULKAN_HPP_NOEXCEPT = default;
-
-    VULKAN_HPP_CONSTEXPR explicit Flags( MaskType flags ) VULKAN_HPP_NOEXCEPT : m_mask( flags ) {}
-
-    // relational operators
-#if defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )
-    auto operator<=>( Flags<BitType> const & ) const = default;
-#else
-    VULKAN_HPP_CONSTEXPR bool operator<( Flags<BitType> const & rhs ) const VULKAN_HPP_NOEXCEPT
-    {
-      return m_mask < rhs.m_mask;
-    }
-
-    VULKAN_HPP_CONSTEXPR bool operator<=( Flags<BitType> const & rhs ) const VULKAN_HPP_NOEXCEPT
-    {
-      return m_mask <= rhs.m_mask;
-    }
-
-    VULKAN_HPP_CONSTEXPR bool operator>( Flags<BitType> const & rhs ) const VULKAN_HPP_NOEXCEPT
-    {
-      return m_mask > rhs.m_mask;
-    }
-
-    VULKAN_HPP_CONSTEXPR bool operator>=( Flags<BitType> const & rhs ) const VULKAN_HPP_NOEXCEPT
-    {
-      return m_mask >= rhs.m_mask;
-    }
-
-    VULKAN_HPP_CONSTEXPR bool operator==( Flags<BitType> const & rhs ) const VULKAN_HPP_NOEXCEPT
-    {
-      return m_mask == rhs.m_mask;
-    }
-
-    VULKAN_HPP_CONSTEXPR bool operator!=( Flags<BitType> const & rhs ) const VULKAN_HPP_NOEXCEPT
-    {
-      return m_mask != rhs.m_mask;
-    }
-#endif
-
-    // logical operator
-    VULKAN_HPP_CONSTEXPR bool operator!() const VULKAN_HPP_NOEXCEPT
-    {
-      return !m_mask;
-    }
-
-    // bitwise operators
-    VULKAN_HPP_CONSTEXPR Flags<BitType> operator&( Flags<BitType> const & rhs ) const VULKAN_HPP_NOEXCEPT
-    {
-      return Flags<BitType>( m_mask & rhs.m_mask );
-    }
-
-    VULKAN_HPP_CONSTEXPR Flags<BitType> operator|( Flags<BitType> const & rhs ) const VULKAN_HPP_NOEXCEPT
-    {
-      return Flags<BitType>( m_mask | rhs.m_mask );
-    }
-
-    VULKAN_HPP_CONSTEXPR Flags<BitType> operator^( Flags<BitType> const & rhs ) const VULKAN_HPP_NOEXCEPT
-    {
-      return Flags<BitType>( m_mask ^ rhs.m_mask );
-    }
-
-    VULKAN_HPP_CONSTEXPR Flags<BitType> operator~() const VULKAN_HPP_NOEXCEPT
-    {
-      return Flags<BitType>( m_mask ^ FlagTraits<BitType>::allFlags );
-    }
-
-    // assignment operators
-    VULKAN_HPP_CONSTEXPR_14 Flags<BitType> & operator=( Flags<BitType> const & rhs ) VULKAN_HPP_NOEXCEPT = default;
-
-    VULKAN_HPP_CONSTEXPR_14 Flags<BitType> & operator|=( Flags<BitType> const & rhs ) VULKAN_HPP_NOEXCEPT
-    {
-      m_mask |= rhs.m_mask;
-      return *this;
-    }
-
-    VULKAN_HPP_CONSTEXPR_14 Flags<BitType> & operator&=( Flags<BitType> const & rhs ) VULKAN_HPP_NOEXCEPT
-    {
-      m_mask &= rhs.m_mask;
-      return *this;
-    }
-
-    VULKAN_HPP_CONSTEXPR_14 Flags<BitType> & operator^=( Flags<BitType> const & rhs ) VULKAN_HPP_NOEXCEPT
-    {
-      m_mask ^= rhs.m_mask;
-      return *this;
-    }
-
-    // cast operators
-    explicit VULKAN_HPP_CONSTEXPR operator bool() const VULKAN_HPP_NOEXCEPT
-    {
-      return !!m_mask;
-    }
-
-    explicit VULKAN_HPP_CONSTEXPR operator MaskType() const VULKAN_HPP_NOEXCEPT
-    {
-      return m_mask;
-    }
-
-#if defined( VULKAN_HPP_FLAGS_MASK_TYPE_AS_PUBLIC )
-public:
-#else
-private:
-#endif
-    MaskType m_mask;
-};
-)"};
-
-static constexpr char const *RES_OPTIONAL{R"(
-  template <typename RefType>
-  class Optional {
-  public:
-    Optional( RefType & reference ) {NOEXCEPT}
-    {
-      m_ptr = &reference;
-    }
-    Optional( RefType * ptr ) {NOEXCEPT}
-    {
-      m_ptr = ptr;
-    }
-    Optional( std::nullptr_t ) {NOEXCEPT}
-    {
-      m_ptr = nullptr;
-    }
-
-    operator RefType *() const {NOEXCEPT}
-    {
-      return m_ptr;
-    }
-    RefType const * operator->() const {NOEXCEPT}
-    {
-      return m_ptr;
-    }
-    explicit operator bool() const {NOEXCEPT}
-    {
-      return !!m_ptr;
-    }
-
-  private:
-    RefType * m_ptr;
-  };
-)"};
-
-static constexpr char const *RES_RAII{R"(
-    template <class T, class U = T>
-    VULKAN_HPP_CONSTEXPR_14 {INLINE} T exchange( T & obj, U && newValue ) {
-#  if ( 14 <= VULKAN_HPP_CPP_VERSION )
-      return std::exchange<T>( obj, std::forward<U>( newValue ) );
-#  else
-      T oldValue = std::move( obj );
-      obj        = std::forward<U>( newValue );
-      return oldValue;
-#  endif
-    }
-)"};
-
-// static constexpr char const *RES_FLAGS{R"()"};
+template<typename T>
+struct is_reference_wrapper : std::false_type {};
+
+template<typename T>
+struct is_reference_wrapper<std::reference_wrapper<T>> : std::true_type {};
 
 template <typename T> class EnumFlag {
     using Type = typename std::underlying_type<T>::type;
@@ -852,7 +54,7 @@ template <typename T> class EnumFlag {
 };
 
 template <template <class...> class TContainer, class T, class A, class E>
-static bool isInContainter(const TContainer<T, A> &array, E entry) {
+static bool isInContainter(const TContainer<T, A> &array, const E& entry) {
     return std::find(std::begin(array), std::end(array), entry) !=
            std::end(array);
 }
@@ -870,12 +72,12 @@ class Generator {
 
   public:
     struct Macro {
-        std::string value;
         std::string define;
+        std::string value;
         bool usesDefine;
 
-        Macro(const std::string &value, const std::string &define, bool usesDefine)
-            : value(value), define(define), usesDefine(usesDefine)
+        Macro(const std::string &define, const std::string &value, bool usesDefine)
+            : define(define), value(value), usesDefine(usesDefine)
         {
         }
 
@@ -912,71 +114,155 @@ class Generator {
 
         void xmlExport(XMLElement *elem) const;
 
-        bool xmlImport(XMLElement *elem);
+        bool xmlImport(XMLElement *elem) const;
 
         bool isDifferent() const {
             return data != _default;
         }
 
-        void reset() {
-            data = _default;
+        void reset() const {
+            const_cast<ConfigWrapper*>(this)->data = _default;
+            //data = _default;
         }
 
     };
 
-    struct Config {
-        struct {
-            ConfigWrapper<Macro> mNamespace{"m_namespace", {"VULKAN_HPP_NAMESPACE", "vk20", true}};
-            ConfigWrapper<Macro> mNamespaceRAII{"m_namespace_raii", {"VULKAN_HPP_NAMESPACE_RAII", "vk20r", true}};
-            Macro mNamespaceSTD{"", "std", false};
-            ConfigWrapper<Macro> mConstexpr{"m_constexpr", {"VULKAN_HPP_CONSTEXPR", "constexpr", true}};
-            ConfigWrapper<Macro> mInline{"m_inline", {"VULKAN_HPP_INLINE", "inline", true}};
-            ConfigWrapper<Macro> mNoexcept{"m_noexcept", {"VULKAN_HPP_NOEXCEPT", "noexcept", true}};
-            ConfigWrapper<Macro> mExplicit{"m_explicit", {"VULKAN_HPP_TYPESAFE_EXPLICIT", "explicit", true}};
-            ConfigWrapper<Macro> mDispatch{"m_dispatch_assignment", {"VULKAN_HPP_DEFAULT_DISPATCHER_ASSIGNMENT", "", true}};
-            ConfigWrapper<Macro> mDispatchType{"m_dispatch_type", {"VULKAN_HPP_DEFAULT_DISPATCHER_TYPE", "DispatchLoaderStatic", true}};
-        } macro;
-        struct {
-            ConfigWrapper<bool> cppModules{"modules", false};
-            bool structNoinit{false};
-            ConfigWrapper<bool> vulkanCommands{"vk_commands", {true}};
-            ConfigWrapper<bool> dispatchParam{"dispatch_param", {true}};
-            ConfigWrapper<bool> dispatchLoaderStatic{"dispatch_loader_static", {true}};
-            ConfigWrapper<bool> useStaticCommands{"static_link_commands", {false}}; // move
-            ConfigWrapper<bool> allocatorParam{"allocator_param", {false}};
-            ConfigWrapper<bool> smartHandles{"smart_handles", {true}};
-            ConfigWrapper<bool> exceptions{"exceptions", {true}};
-            ConfigWrapper<bool> resultValueType{"use_result_value_type", {false}};
-        } gen;
+    struct ConfigGroup {
+        std::string name;
+    };
+
+    struct ConfigGroupMacro : public ConfigGroup {
+        ConfigGroupMacro() : ConfigGroup{"macro"} {}
+
+        Macro mNamespaceSTD{"", "std", false};
+        ConfigWrapper<Macro> mNamespace{"m_namespace", {"VULKAN_HPP_NAMESPACE", "vk20", true}};
+        ConfigWrapper<Macro> mNamespaceRAII{"m_namespace_raii", {"VULKAN_HPP_NAMESPACE_RAII", "vk20r", true}};
+        ConfigWrapper<Macro> mConstexpr{"m_constexpr", {"VULKAN_HPP_CONSTEXPR", "constexpr", true}};
+        ConfigWrapper<Macro> mConstexpr14{"m_constexpr14", {"VULKAN_HPP_CONSTEXPR_14", "constexpr", true}};
+        ConfigWrapper<Macro> mInline{"m_inline", {"VULKAN_HPP_INLINE", "inline", true}};
+        ConfigWrapper<Macro> mNoexcept{"m_noexcept", {"VULKAN_HPP_NOEXCEPT", "noexcept", true}};
+        ConfigWrapper<Macro> mExplicit{"m_explicit", {"VULKAN_HPP_TYPESAFE_EXPLICIT", "explicit", true}};
+        ConfigWrapper<Macro> mDispatch{"m_dispatch_assignment", {"VULKAN_HPP_DEFAULT_DISPATCHER_ASSIGNMENT", "", true}};
+        ConfigWrapper<Macro> mDispatchType{"m_dispatch_type", {"VULKAN_HPP_DEFAULT_DISPATCHER_TYPE", "DispatchLoaderStatic", true}};
+
+        auto reflect() const {
+            return std::tie(
+                mNamespace,
+                mNamespaceRAII,
+                mConstexpr,
+                mConstexpr14,
+                mInline,
+                mNoexcept,
+                mExplicit,
+                mDispatch,
+                mDispatchType
+            );
+        }
+    };
+
+    struct ConfigGroupGen : public ConfigGroup {
+        ConfigGroupGen() : ConfigGroup{"gen"} {}
+
+        ConfigWrapper<bool> cppModules{"modules", false};
+        bool structNoinit{false};
+        ConfigWrapper<bool> vulkanCommands{"vk_commands", {true}};
+        ConfigWrapper<bool> vulkanEnums{"vk_enums", {true}};
+        ConfigWrapper<bool> vulkanStructs{"vk_structs", {true}};
+        ConfigWrapper<bool> vulkanHandles{"vk_handles", {true}};
+
+        ConfigWrapper<bool> vulkanCommandsRAII{"vk_raii_commands", {true}};
+        ConfigWrapper<bool> dispatchParam{"dispatch_param", {true}};
+        ConfigWrapper<bool> dispatchTemplate{"dispatch_template", {true}};
+        ConfigWrapper<bool> dispatchLoaderStatic{"dispatch_loader_static", {true}};
+        ConfigWrapper<bool> useStaticCommands{"static_link_commands", {false}}; // move
+        ConfigWrapper<bool> allocatorParam{"allocator_param", {false}};
+        ConfigWrapper<bool> smartHandles{"smart_handles", {true}};
+        ConfigWrapper<bool> exceptions{"exceptions", {true}};
+        ConfigWrapper<bool> resultValueType{"use_result_value_type", {false}};
+        ConfigWrapper<bool> inlineCommands{"inline_commands", {true}};
+        ConfigWrapper<bool> orderCommands{"order_command_pointers", {false}};
+        ConfigWrapper<bool> structConstructor{"struct_constructor", {true}};
+        ConfigWrapper<bool> structSetters{"struct_setters", {true}};
+        ConfigWrapper<bool> structSettersProxy{"struct_setters_proxy", {true}};
+        ConfigWrapper<bool> structReflect{"struct_reflect", {true}};
+
+        auto reflect() const {
+            return std::tie(
+                cppModules,
+                vulkanEnums,
+                vulkanStructs,
+                vulkanHandles,
+                vulkanCommands,
+                vulkanCommandsRAII,
+                dispatchParam,
+                dispatchTemplate,
+                dispatchLoaderStatic,
+                useStaticCommands,
+                allocatorParam,
+                smartHandles,
+                exceptions,
+                resultValueType,
+                inlineCommands,
+                orderCommands,
+                structConstructor,
+                structSetters,
+                structSettersProxy,
+                structReflect
+            );
+        }
+    };
+
+
+    struct Config {                
+        ConfigGroupMacro macro {};
+        ConfigGroupGen gen {};
         struct {
             ConfigWrapper<bool> methodTags{"dbg_command_tags", {false}};
         } dbg;
 
         Config() = default;
 
-        auto reflect() {
+        auto reflect() const {
             return std::tie(
-                macro.mNamespace,
-                macro.mNamespaceRAII,
-                macro.mConstexpr,
-                macro.mInline,
-                macro.mNoexcept,
-                macro.mExplicit,
-                macro.mDispatch,
-                macro.mDispatchType,
-                gen.cppModules,
-                gen.vulkanCommands,
-                gen.dispatchParam,
-                gen.dispatchLoaderStatic,
-                gen.useStaticCommands,
-                gen.allocatorParam,
-                gen.smartHandles,
-                gen.exceptions,
-                gen.resultValueType,
+                macro,
+                gen,
                 dbg.methodTags
             );
         }
+
+    };    
+
+    enum class PFNReturnCategory {
+        OTHER,
+        VOID,
+        VK_RESULT
     };
+
+    enum class ArraySizeArgument { INVALID, COUNT, SIZE, CONST_COUNT };
+
+    enum class MemberNameCategory {
+        UNKNOWN,
+        GET,
+        ALLOCATE,
+        ACQUIRE,
+        CREATE,
+        ENUMERATE,
+        WRITE,
+        DESTROY,
+        FREE
+    };
+
+    enum class HandleCreationCategory { NONE, ALLOCATE, CREATE };
+
+    enum class CommandFlags : uint8_t {
+        NONE,
+        ALIAS = 1,
+        INDIRECT = 2,
+        RAII_ONLY = 4
+    };
+
+    struct HandleData;
+
 
     struct ExtensionData;
 
@@ -986,6 +272,13 @@ class Generator {
         std::unordered_set<BaseType *> dependencies;
         std::unordered_set<BaseType *> subscribers;
         bool forceRequired = {};
+
+        std::string_view getProtect() const {
+            if (ext) {
+                return ext->protect;
+            }
+            return "";
+        }
 
         void setUnsuppored() {
             supported = false;
@@ -1055,110 +348,38 @@ class Generator {
     protected:
         bool enabled = false;
         bool supported = true;
-    };    
+    };
 
-    struct PlatformData {
-        std::string name;
+    struct PlatformData : public BaseType {
+        // std::string name;
         std::string_view protect;
-        bool enabled = {};
+        //bool enabled = {};
 
         PlatformData(const std::string &name, std::string_view protect, bool enabled) :
-            name(name), protect(protect), enabled(enabled)
+            protect(protect)
         {
+            BaseType::name.reset(name);
+            BaseType::enabled = enabled;
         }
 
-        void setEnabled(bool value) {
-            enabled = value;
-        }
+//        void setEnabled(bool value) {
+//            enabled = value;
+//        }
 
-        bool isEnabled() const {
-            return enabled;
-        }
+//        bool isEnabled() const {
+//            return enabled;
+//        }
 
-        bool isRequired() const {
-            return enabled;
-        }
+//        bool isRequired() const {
+//            return enabled;
+//        }
     };
-    using Platforms = std::map<std::string, PlatformData>;
-    Platforms platforms; // maps platform name to protect (#if defined PROTECT)
-
-    using Tags = std::unordered_set<std::string>;
-    Tags tags; // list of tags from <tags>
-
-    struct CommandData;
-    struct StructData;
-
-    struct ExtensionData {
-        std::string name;
-        std::string protect;
-        Platforms::pointer platform;
-        bool supported = true;
-        bool enabled = {};
-
-        ExtensionData(const std::string &name, std::string protect, Platforms::pointer platform, bool supported, bool enabled) :
-            name(name), platform(platform), protect(protect), supported(supported), enabled(enabled)
-        {
-        }
-
-        std::vector<CommandData *> commands;
-        std::vector<BaseType *> types;
-
-        void setEnabled(bool value) {
-            enabled = value;
-        }
-
-        bool isEnabled() const {
-            return enabled;
-        }
-
-        bool isRequired() const {
-            return enabled;
-        }
-
-    };
-
-    using Extensions = std::map<std::string, ExtensionData>;
-    Extensions extensions; // maps extension to protect as reference
 
     using GenFunction = std::function<void(XMLNode *)>;
     using OrderPair = std::pair<std::string, GenFunction>;
 
     using Variables = std::vector<std::shared_ptr<VariableData>>;
-
-    std::unordered_map<Namespace, Macro *> namespaces;
-
     void bindVars(Variables &vars) const;
-
-    enum class PFNReturnCategory {
-        OTHER,
-        VOID,
-        VK_RESULT
-    };
-
-    enum class ArraySizeArgument { INVALID, COUNT, SIZE, CONST_COUNT };
-
-    enum class MemberNameCategory {
-        UNKNOWN,
-        GET,
-        ALLOCATE,
-        ACQUIRE,
-        CREATE,
-        ENUMERATE,
-        WRITE,
-        DESTROY,
-        FREE
-    };
-
-    enum class HandleCreationCategory { NONE, ALLOCATE, CREATE };
-
-    enum class CommandFlags : uint8_t {
-        NONE,
-        ALIAS = 1,
-        INDIRECT = 2,
-        RAII_ONLY = 4
-    };
-
-    struct HandleData;
 
     struct CommandData : public BaseType {
         std::string type; // return type
@@ -1308,53 +529,123 @@ class Generator {
     struct EnumData : public BaseType {
         std::vector<String> aliases;
         std::vector<EnumValue> members;
-        std::string flagbits;
+        // std::string flagbits;
         bool isBitmask = {};
-        // bool isFlag = {};
 
         EnumData(std::string name) { this->name = String(name, true); }
 
         bool containsValue(const std::string &value) const;
-    };
+    };    
+\
+    template<typename T>
+    struct Container {
+        static_assert(std::is_base_of<BaseType, T>::value, "T must derive from BaseType");
 
-    Config cfg;
-    bool loaded;
-    XMLDocument doc;
-    XMLElement *root;
+        std::vector<T> items;
+        std::unordered_map<std::string, T&> map;
 
-    std::string headerVersion;
-
-    bool dispatchLoaderBaseGenerated;
-
-    std::vector<const EnumValue *> errorClasses;
-
-    std::map<std::string, CommandData> commands;
-    std::vector<CommandData*> staticCommands;
-
-    std::string outputFuncs;
-    std::string outputFuncsRAII;
-
-    std::string outputFilePath;
-
-    struct StructData : BaseType {
-        enum VkStructType { VK_STRUCT, VK_UNION } type;
-        // XMLNode *node;
-        std::string structTypeValue;
-        std::vector<String> aliases;
-        Variables members;
-
-        std::string getType() const {
-            return type == StructData::VK_STRUCT ? "struct" : "union";
+        bool contains(const std::string &name) const {
+            for (const auto &i : items) {
+                if (i.name.original == name) {
+                    return true;
+                }
+            }
+            return false;
         }
+
+//        typename std::vector<T>::iterator find(const std::string &name, bool dbg = false) {
+//            return find(std::string_view{name}, dbg);
+//        }
+
+        typename std::vector<T>::iterator find(const std::string_view &name, bool dbg = false) {
+            typename std::vector<T>::iterator it;
+            for (it = items.begin(); it != items.end(); ++it) {
+                if (it->name.original == name) {
+                    break;
+                }
+            }
+            if (dbg) {
+                std::cout << "#error: " << name << " not found" << std::endl;
+                for (it = items.begin(); it != items.end(); ++it) {
+                    std::cout << "  " << it->name.original << " == " << name << std::endl;
+                }
+            }
+            return it;
+        }
+
+        typename std::vector<T>::iterator end() {
+            return items.end();
+        }
+
+        typename std::vector<T>::iterator begin() {
+            return items.begin();
+        }
+
+        typename std::vector<T>::const_iterator end() const {
+            return items.cend();
+        }
+
+        typename std::vector<T>::const_iterator begin() const {
+            return items.cbegin();
+        }
+
+        void add(const T& item, bool dbg = false) {
+            items.push_back(item);
+            T& ref = *items.rbegin();
+            if (dbg) {
+                std::cout << "  added: " << item.name << "(" << item.name.original << ") ptr: " << &ref << std::endl;
+                // std::cout << "> " << ref.name.original << std::endl;
+            }
+            // map.emplace(item)
+            // return ref;
+        }
+
+        void clear() {
+            items.clear();
+        }
+
+        size_t size() const {
+            return items.size();
+        }
+
     };
 
-    std::map<std::string, StructData> structs;
-    std::list<StructData *> structBuffer;
 
-    bool isStructOrUnion(const std::string &name) const;
+    struct StructData;
 
-    std::map<std::string, EnumData> enums;
-    std::map<std::string, EnumData *> enumMap;
+    struct ExtensionData : public BaseType {
+        // std::string name;
+        std::string protect;
+        PlatformData *platform;
+        std::vector<CommandData *> commands;
+        std::vector<BaseType *> types;
+//        bool supported = true;
+//        bool enabled = {};
+
+        ExtensionData(const std::string &name, PlatformData *platform, bool supported, bool enabled) :
+            platform(platform)
+        {
+            BaseType::name.reset(name);
+            BaseType::enabled = enabled;
+            BaseType::supported = supported;
+            if (platform) {
+                protect = platform->protect;
+            }
+        }
+
+//        void setEnabled(bool value) {
+//            enabled = value;
+//        }
+
+//        bool isEnabled() const {
+//            return enabled;
+//        }
+
+//        bool isRequired() const {
+//            return enabled;
+//        }
+
+    };
 
     struct GenOutputClass {
         std::string sPublic;
@@ -1364,17 +655,83 @@ class Generator {
     };
 
     class UnorderedOutput {
-        const Generator &gen;
-        std::unordered_map<std::string, std::string> output;
+        const Generator &g;
+        std::map<std::string, std::string> segments;
 
       public:
-        UnorderedOutput(const Generator &gen) : gen(gen) {}
+        UnorderedOutput(const Generator &gen) : g(gen) {}
 
         std::string get() const {
             std::string out;
+            for (const auto &k : segments) {
+                // std::cout << ">> uo[" << k.first << "]" << std::endl;
+                out += g.genWithProtect(k.second, k.first);
+            }
             return out;
         }
+
+        void clear() {
+            segments.clear();
+        }
+
+        void add(const BaseType &type, std::function<void(std::string &)> function, bool bypass = false) {
+            auto [code, protect] = g.genCodeAndProtect(type, function, bypass);
+            segments[protect] += code;
+        }
+
+        void addString(const std::string &code) {
+            segments[""] += code;
+        }
     };
+
+    Config cfg;
+    bool verbose;
+    XMLDocument doc;
+    XMLElement *root;
+    std::string registryPath;
+
+    std::string outputFilePath;
+    UnorderedOutput outputFuncs;
+    UnorderedOutput outputFuncsRAII;
+
+    std::string headerVersion;
+
+    bool dispatchLoaderBaseGenerated;
+
+    std::vector<const EnumValue *> errorClasses;
+
+    using Commands = Container<CommandData>;
+    using Platforms = Container<PlatformData>;
+    using Extensions = Container<ExtensionData>;
+    using Tags = std::unordered_set<std::string>;
+
+    Platforms platforms; // maps platform name to protect (#if defined PROTECT)
+    Extensions extensions;
+    Tags tags; // list of tags from <tags>
+    std::unordered_map<Namespace, Macro *> namespaces;
+
+    Commands commands;
+    std::vector<std::reference_wrapper<CommandData>> staticCommands;
+    std::vector<std::reference_wrapper<CommandData>> orderedCommands;
+
+    struct StructData : BaseType {
+        enum VkStructType { VK_STRUCT, VK_UNION } type;
+        // XMLNode *node;
+        std::string structTypeValue;
+        std::vector<String> aliases;
+        Variables members;
+        bool returnedonly = false;
+
+        std::string getType() const {
+            return type == StructData::VK_STRUCT ? "struct" : "union";
+        }
+    };
+
+    Container<StructData> structs;
+
+    bool isStructOrUnion(const std::string &name) const;
+
+    Container<EnumData> enums;
 
     template <class... Args>
     std::string format(const std::string &format, const Args... args) const;
@@ -1389,24 +746,13 @@ class Generator {
 
     void parseTags(XMLNode *node);
 
-    // tries to match str in extensions, if found returns pointer to protect,
-    // otherwise nullptr    
-//    ExtensionData *findExtensionProtect(const std::string &str);
+    std::string genWithProtect(const std::string &code, const std::string &protect) const;
 
-//    bool idLookup(const std::string &name, std::string_view &protect) const;
-
-//    // #if defined encapsulation
-//    void withProtect(std::string &output, const char *protect,
-//                     std::function<void(std::string &)> function) const;
-
-    // void genOptional(const std::string &name, std::function<void()>
-    // function);
-
-//    std::string genOptional(const std::string &name,
-//                            std::function<void(std::string &)> function) const;
+    std::pair<std::string, std::string> genCodeAndProtect(const BaseType &type,
+                                                          std::function<void(std::string &)> function, bool bypass = false) const;
 
     std::string genOptional(const BaseType &type,
-                            std::function<void(std::string &)> function) const;
+                            std::function<void(std::string &)> function, bool bypass = false) const;
 
     std::string strRemoveTag(std::string &str) const;
 
@@ -1423,16 +769,25 @@ class Generator {
 
     std::string generateHeader();
 
+    struct GenOutput {
+        std::string enums;
+        std::string handles;
+        std::string structs;
+        std::string raii;
+    };
+
     void generateFiles(std::filesystem::path path);
 
-    std::string generateMainFile();
+    std::string generateMainFile(GenOutput&);
+
+    std::string generateModuleImpl();
 
     Variables parseStructMembers(XMLElement *node, std::string &structType,
                                  std::string &structTypeValue);
 
     void parseEnumExtend(XMLElement &node, ExtensionData *ext);
 
-    std::string generateEnum(const EnumData &data, const std::string &name);
+    std::string generateEnum(const EnumData &data);
 
     std::string generateEnums();
 
@@ -1464,6 +819,9 @@ class Generator {
     }
 
     std::string getDispatchType() const {
+        if (cfg.gen.dispatchTemplate) {
+            return "Dispatch";
+        }
         if (cfg.macro.mDispatchType->usesDefine) {
             return cfg.macro.mDispatchType->define;
         }
@@ -1496,8 +854,7 @@ class Generator {
         HandleData *cls;
         Namespace ns;
         std::string pfnSourceOverride;
-        std::string pfnNameOverride;
-        [[deprecated]] bool lastHandleVariant = {};
+        std::string pfnNameOverride;        
         bool raiiOnly = {};
         bool useThis = {};
         bool isStatic = {};
@@ -1505,25 +862,28 @@ class Generator {
         bool constructor = {};
         bool generateInline = {};
         bool disableSubstitution = {};
+        bool disableDispatch = {};
 
         MemberContext(const ClassCommandData &m, Namespace ns,
                       bool constructor = false)
             : gen(*m.gen), ns(ns), constructor(constructor),
-              CommandData(*m.src) {
+              CommandData(*m.src)
+        {
             name = m.name;
             cls = m.cls;
             raiiOnly = m.raiiOnly;
 
-            const auto &p = m.src->params;
-            params.clear();
-            params.reserve(p.size());
-            std::transform(p.begin(), p.end(), std::back_inserter(params),
-                           [](const std::shared_ptr<VariableData> &var) {
-                               return std::make_shared<VariableData>(
-                                   *var.get());
-                           });
+            initParams(m.src->params);
+        }
 
-            gen.bindVars(params);
+        MemberContext(Generator &gen, HandleData *cls, const StructData &s, Namespace ns,
+                      bool constructor = false)
+            : gen(gen), ns(ns), constructor(constructor)
+        {
+            *reinterpret_cast<BaseType*>(this) = s;            
+            this->cls = cls;
+            // name = s.name;
+            initParams(s.members);
         }
 
         MemberContext(const MemberContext &o) : gen(o.gen), CommandData(o) {
@@ -1538,6 +898,7 @@ class Generator {
             inUnique = o.inUnique;
             generateInline = o.generateInline;
             disableSubstitution = o.disableSubstitution;
+            disableDispatch = o.disableDispatch;
 
             const auto &p = o.params;
             params.clear();
@@ -1591,6 +952,18 @@ class Generator {
         }
 
       private:
+        void initParams(const Variables &p) {
+            params.clear();
+            params.reserve(p.size());
+            std::transform(p.begin(), p.end(), std::back_inserter(params),
+                           [](const std::shared_ptr<VariableData> &var) {
+                               return std::make_shared<VariableData>(
+                                   *var.get());
+                           });
+
+            gen.bindVars(params);
+        }
+
         static bool filterProto(Var &v, bool same) {
             if (v->getIgnoreFlag()) {
                 return false;
@@ -1663,6 +1036,7 @@ class Generator {
 
         std::optional<ClassCommandData> getAddrCmd;
         std::vector<ClassCommandData> members;
+        std::vector<ClassCommandData*> filteredMembers;
         std::vector<ClassCommandData> ctorCmds;
         std::vector<CommandData *> dtorCmds;
         std::vector<ClassCommandData> vectorCmds;
@@ -1676,18 +1050,13 @@ class Generator {
         bool isSubclass;
         bool vectorVariant;
 
-        // bool uniqueVariant;
-
         HandleData(const std::string &name, bool isSubclass = false)
             : superclass(""), isSubclass(isSubclass) {
             this->name = String(name, true);
             vkhandle = "m_" + strFirstLower(this->name);
             parent = nullptr;
             effectiveMembers = 0;
-            // uniqueVariant = false;
             creationCat = HandleCreationCategory::NONE;
-
-
         }
 
         void clear() {            
@@ -1737,29 +1106,28 @@ class Generator {
             throw std::runtime_error("Handle not found: " + std::string(name));
         }
         return handle->second;
-    }
-
-    CommandData *findCommand(const std::string &name) {
-        for (auto &c : commands) {
-            if (c.second.name.original == name) {
-                return &c.second;
-            }
-        }
-        return nullptr;
-    }
+    }    
 
     BaseType *findType(const std::string &name) {
         // TODO refactor
-        for (auto &c : structs) {
-            if (c.second.name.original == name) {
-                return &c.second;
-            }
+        auto s = structs.find(name);
+        if (s != structs.end()) {
+            return s.base();
         }
-        for (auto &c : enumMap) {
-            if (c.second->name.original == name) {
-                return c.second;
-            }
+//        for (auto &c : structs) {
+//            if (c.second.name.original == name) {
+//                return &c.second;
+//            }
+//        }
+        auto e = enums.find(name);
+        if (e != enums.end()) {
+            return e.base();
         }
+//        for (auto &c : enumMap) {
+//            if (c.second->name.original == name) {
+//                return c.second;
+//            }
+//        }
         for (auto &c : handles) {
             if (c.second.name.original == name) {
                 return &c.second;
@@ -1772,8 +1140,7 @@ class Generator {
 
     void parseEnums(XMLNode *node);
 
-    std::string generateStructDecl(const std::string &name,
-                                   const StructData &d);
+    std::string generateStructDecl(const StructData &d);
 
     std::string generateClassDecl(const HandleData &data, bool allowUnique);
 
@@ -1865,8 +1232,11 @@ class Generator {
         bool specifierInline;
         bool specifierExplicit;
         bool specifierConst;
-        bool disableCheck;
+        bool specifierConstexpr;
+        bool specifierConstexpr14;
+        bool disableCheck;        
         std::shared_ptr<VariableData> allocatorVar;
+        std::vector<std::string> usedTemplates;
 
         std::string declareReturnVar(const std::string &assignment = "") {
             if (!resultVar.isInvalid()) {
@@ -2017,14 +1387,27 @@ class Generator {
             return returnType;
         }
 
+        std::string generateNodiscard() {
+            if (!returnType.empty() && returnType != "void") {
+                return "VULKAN_HPP_NODISCARD ";
+            }
+            return "";
+        }
+
         std::string getSpecifiers(bool decl) {
             std::string output;
             const auto &cfg = ctx.gen.getConfig();
-            if (specifierInline && !decl) {
+            if (cfg.gen.inlineCommands && specifierInline && !decl) {
                 output += cfg.macro.mInline->get() + " ";
             }
             if (specifierExplicit && decl) {
                 output += cfg.macro.mExplicit->get() + " ";
+            }
+            if (specifierConstexpr) {
+                output += cfg.macro.mConstexpr->get() + " ";
+            }
+            else if (specifierConstexpr14) {
+                output += cfg.macro.mConstexpr14->get() + " ";
             }
             return output;
         }
@@ -2040,7 +1423,11 @@ class Generator {
             for (const auto &p : ctx.params) {
                 const std::string &str = p->getTemplate();
                 if (!str.empty()) {
-                    temp += "typename " + str + ", ";
+                    temp += "typename " + str;
+                    if (declaration && str == "Dispatch") {
+                        temp += " = VULKAN_HPP_DEFAULT_DISPATCHER_TYPE";
+                    }
+                    temp += ", ";
                 }
             }
             strStripSuffix(temp, ", ");
@@ -2051,6 +1438,9 @@ class Generator {
             std::string spec = getSpecifiers(declaration);
             std::string ret = generateReturnType();
             output += indent;
+            if (!declaration) {
+                output += generateNodiscard();
+            }
             if (!spec.empty()) {
                 output += spec;
             }
@@ -2059,13 +1449,13 @@ class Generator {
             }
             if (!declaration && !ctx.isStatic) {
                 output += ctx.cls->name + "::";
-            }
+            }  
 
             output += ctx.name + "(" + createProtoArguments(declaration) + ")";
             if (ctx.constructor && !initializer.empty()) {
                 output += initializer;
             }
-            if (specifierConst && !ctx.isStatic) {
+            if (specifierConst && !ctx.isStatic && !ctx.constructor) {
                 output += " const";
             }
             return output;
@@ -2073,83 +1463,23 @@ class Generator {
 
         std::string getDbgtag();
 
-        std::string generateDeclaration() {
-            return ctx.gen.genOptional(ctx, [&](std::string &output) {
-                std::string indent = ctx.isStatic ? "  " : "    ";
-                output += getProto(indent, true) + ";\n";
-            });
-        }
-
-        std::string generateDefinition(bool genInline) {
-            return ctx.gen.genOptional(ctx, [&](std::string &output) {
-                std::string indent = genInline ? "    " : "  ";
-                output += getProto(indent, genInline) + " {\n";
-                if (ctx.ns == Namespace::RAII && ctx.isIndirect() &&
-                    !ctx.constructor) {
-                    if (ctx.cls->ownerhandle.empty()) {
-                        std::cerr << "Error: can't generate funcion: class has "
-                                     "no owner ("
-                                  << ctx.cls->name << ", " << ctx.name << ")"
-                                  << std::endl;
-                    } else {
-                        String name =
-                            convertName(ctx.name.original, ctx.cls->superclass);
-
-                        std::string args = createPassArguments();
-                        output += "    ";
-                        if (generateReturnType() != "void") {
-                            output += "return ";
-                        }
-                        output += ctx.cls->ownerhandle + "->" + name + "(" +
-                                  args + ");\n";
-                    }
-                } else {
-                    for (const auto &p : ctx.params) {
-                        if (p->getIgnoreFlag()) {
-                            continue;
-                        }
-                        if (p->getSpecialType() ==
-                            VariableData::TYPE_ARRAY_PROXY) {
-                            if (p->isLenAttribIndirect()) {
-                                const auto &var = p->getLengthVar();
-                                std::string size = var->identifier() + "." +
-                                                   p->getLenAttribRhs();
-                                output += "    // if (" + p->identifier() +
-                                          ".size()" + " != " + size +
-                                          ") TODO\n";
-                            }
-                        }
-                    }
-
-                    output += generateMemberBody();
-                    if (!disableCheck &&
-                        ctx.pfnReturn == PFNReturnCategory::VK_RESULT) {
-                        output += generateCheck();
-                    }
-                     if (generateReturnType() != "void" && !returnValue.empty()) {
-                        output += "    return " + returnValue + ";\n";
-                    }
-                }
-                output += "  }\n";
-            });
-        }
-
         std::string createProtoArguments(bool declaration = false) {
             std::string args = ctx.createProtoArguments(false, declaration);
             return args;
         }
 
         std::string createPassArguments() {
-            bool allocVar = true;
-            if (allocatorVar && allocatorVar->getIgnoreFlag()) {
-                allocVar = false;
-            }
+//            bool allocVar = true;
+//            if (allocatorVar && allocatorVar->getIgnoreFlag()) {
+//                allocVar = false;
+//            }
             std::string args = ctx.createPassArguments(true);
             return args;
         }
 
         std::string generateArrayCode(const MemberContext::Var &var,
                                       bool useOriginal = false) {
+            disableCheck = true;
             if (useOriginal) {
                 for (const auto &p : ctx.params) {
                     if (p->isArray() ||
@@ -2211,7 +1541,8 @@ class Generator {
                                          size, id);
             } else {
                 if (lenVar->getIgnoreFlag()) {
-                    size = lenVar->getArrayVar()->identifier() + ".size()";
+                    // size = lenVar->getArrayVar()->identifier() + ".size()";
+                    size = id + ".size()";
                 } else if (var->isLenAttribIndirect()) {
                     if (lenVar->isPointer()) {
                         size += "->";
@@ -2241,26 +1572,75 @@ class Generator {
             return output;
         }
 
+        void transformToProxy(const std::shared_ptr<VariableData> &var) {
+                if (!var->hasLengthVar()) {
+                    return;
+                }
+
+                const auto &sizeVar = var->getLengthVar();
+
+//                if (!sizeVar->hasArrayVar()) {
+//                    sizeVar->bindArrayVar(var);
+//                }
+
+                if (!var->isLenAttribIndirect()) {
+                    sizeVar->setIgnoreFlag(true);
+                }
+
+                if (var->original.type() == "void" && !var->original.isConstSuffix()) {
+                    bool isPointer = sizeVar->original.isPointer();
+                    if (isPointer) {
+                        var->setFullType("", "uint8_t", "");
+                    } else {
+                        std::string templ = "DataType";
+                        if (isInContainter(usedTemplates, templ)) {
+                            std::cerr << "Warning: " << "same templates used in " << ctx.name << std::endl;
+                        }
+                        usedTemplates.push_back(templ);
+                        var->setFullType("", templ, "");
+                        var->setTemplate(templ);
+                        sizeVar->setIgnoreFlag(false);
+                    }
+                }
+
+                var->convertToArrayProxy();
+            };
+
+
+        void transformToProxyNoTemporaries(const std::shared_ptr<VariableData> &var) {
+            if (!var->hasLengthVar()) {
+                return;
+            }
+            transformToProxy(var);
+            var->setSpecialType(VariableData::TYPE_ARRAY_PROXY_NO_TEMPORARIES);
+        }
+
       public:
         std::string dbgtag;
 
         MemberResolverBase(MemberContext &refCtx)
-            : ctx(refCtx), resultVar(refCtx.gen, VariableData::TYPE_INVALID) {
+            : ctx(refCtx), resultVar(refCtx.gen, VariableData::TYPE_INVALID)
+        {
             returnType = strStripVk(std::string(ctx.type));
-            dbgtag =
-                "default"; // sc: " + std::to_string(ctx.successCodes.size());
+            dbgtag = "default";
             specifierInline = true;
             specifierExplicit = false;
-            specifierConst = true;
-            disableCheck = true;
+            specifierConst = true;            
+            specifierConstexpr = false;
+            specifierConstexpr14 = false;
+            disableCheck = false;            
 
             const auto &cfg = ctx.gen.getConfig();
-            if (cfg.gen.dispatchParam && ctx.ns == Namespace::VK) {
+
+            if (cfg.gen.dispatchParam && ctx.ns == Namespace::VK && !ctx.disableDispatch) {
                 std::string type = ctx.gen.getDispatchType();
                 VariableData var(ctx.gen);
                 var.setFullType("", type, " const &");
                 var.setIdentifier("d");
                 var.setIgnorePFN(true);
+                if (cfg.gen.dispatchTemplate) {
+                    var.setTemplate(type);
+                }
                 std::string assignment = cfg.macro.mDispatch->get();
                 if (!assignment.empty()) {
                     var.setAssignment(" " + assignment);
@@ -2271,16 +1651,11 @@ class Generator {
 
         virtual ~MemberResolverBase() {}
 
-        virtual void generate(std::string &decl, std::string &def) {
-            if (ctx.generateInline) {
-                decl += generateDefinition(true);
-            }
-            else {
-                decl += generateDeclaration();
-                def += generateDefinition(false);
-            }
-            ctx.cls->generated.push_back(ctx);
-        }
+        virtual void generate(std::string &decl, UnorderedOutput &def);
+
+        std::string generateDeclaration();
+
+        std::string generateDefinition(bool genInline, bool bypass = false);
 
         bool compareSignature(const MemberResolverBase &o) const {
             const auto removeWhitespace = [](std::string str) {
@@ -2315,34 +1690,34 @@ class Generator {
         void transformMemberArguments() {
             auto &params = ctx.params;
 
-            const auto transformToProxy =
-                [&](const std::shared_ptr<VariableData> &var) {
-                    if (var->hasLengthVar()) {
+//            const auto transformToProxy =
+//                [&](const std::shared_ptr<VariableData> &var) {
+//                    if (var->hasLengthVar()) {
 
-                        const auto &sizeVar = var->getLengthVar();
+//                        const auto &sizeVar = var->getLengthVar();
 
-                        if (!sizeVar->hasArrayVar()) {
-                            sizeVar->bindArrayVar(var);
-                        }
+//                        if (!sizeVar->hasArrayVar()) {
+//                            sizeVar->bindArrayVar(var);
+//                        }
 
-                        bool isPointer = sizeVar->original.isPointer();
-                        if (!var->isLenAttribIndirect()) {
-                            sizeVar->setIgnoreFlag(true);
-                        }
+//                        bool isPointer = sizeVar->original.isPointer();
+//                        if (!var->isLenAttribIndirect()) {
+//                            sizeVar->setIgnoreFlag(true);
+//                        }
 
-                        if (var->original.type() == "void") {
-                            if (isPointer) {
-                                var->setFullType("", "uint8_t", "");
-                            } else {
-                                var->setFullType("", "DataType", "");
-                                var->setTemplate("DataType");
-                                sizeVar->setIgnoreFlag(false);
-                            }
-                        }
+//                        if (var->original.type() == "void") {
+//                            if (isPointer) {
+//                                var->setFullType("", "uint8_t", "");
+//                            } else {
+//                                var->setFullType("", "DataType", "");
+//                                var->setTemplate("DataType");
+//                                sizeVar->setIgnoreFlag(false);
+//                            }
+//                        }
 
-                        var->convertToArrayProxy();
-                    }
-                };
+//                        var->convertToArrayProxy();
+//                    }
+//                };
 
             const auto convertName =
                 [](const std::shared_ptr<VariableData> &var) {
@@ -2430,7 +1805,7 @@ class Generator {
 
         virtual ~MemberResolver() {}
 
-        virtual void generate(std::string &decl, std::string &def) override {
+        virtual void generate(std::string &decl, UnorderedOutput &def) override {
             finalizeArguments();
             MemberResolverBase::generate(decl, def);
         }
@@ -2442,7 +1817,7 @@ class Generator {
             dbgtag = "disabled";
         }
 
-        virtual void generate(std::string &decl, std::string &def) override {
+        virtual void generate(std::string &decl, UnorderedOutput &def) override {
             decl += "/*\n";
             decl += generateDeclaration();
             decl += "*/\n";
@@ -2542,6 +1917,79 @@ class Generator {
         }
     };
 
+    class MemberResolverStructCtor : public MemberResolverBase {
+
+    public:
+      MemberResolverStructCtor(MemberContext &refCtx, bool transform) : MemberResolverBase(refCtx) {
+            InitializerBuilder init{"      "};
+            auto pNext = ctx.params.end();
+            for (auto it = ctx.params.begin(); it != ctx.params.end(); ++it) {
+                auto &p = *it;
+
+                p->setAssignment(transform? "" : " = {}");
+                const std::string &id = p->identifier();
+                if (id == "pNext") {
+                    p->setAssignment(" = nullptr");
+                    pNext = it;
+                }
+                p->setIdentifier(id + "_");
+//                if (p->hasArrayLength()) {
+//                    p->setSpecialType(VariableData::TYPE_ARRAY);
+//                    // std::cout << "set to array:" << p->identifier() << std::endl;
+//                }
+            }
+            for (const auto &p : ctx.params) {
+                if (p->type() == "StructureType") {
+                    p->setIgnoreFlag(true);
+                    continue;
+                }
+                bool toProxy = transform && p->hasLengthVar();
+                if (toProxy) {
+                    transformToProxyNoTemporaries(p);
+                    p->getLengthVar()->setIgnoreFlag(true);
+                }
+
+                std::string lhs = p->original.identifier();
+                if (toProxy) {
+                    init.append(lhs, p->toArrayProxyData());
+                }
+                else {
+                    std::string rhs = p->identifier();
+                    const auto &vars = p->getArrayVars();
+                    if (!vars.empty() && transform) {
+                        rhs = "static_cast<uint32_t>(";
+                        // std::cout << "> array vars: " << vars.size() << std::endl;
+                        for (size_t i = 0; i < vars.size(); ++i) {
+                            const auto &v = vars[i];
+                            const std::string &id = v->identifier();
+                            if (i != vars.size() - 1) {
+                                rhs += " !" + id + ".empty()? " + id + ".size() :\n";
+                            }
+                            else {
+                                rhs += id + ".size()";
+                            }
+                        }
+                        rhs += ")";
+                    }
+                    init.append(lhs, rhs);
+                }
+            }
+
+            if (pNext != ctx.params.end()) {
+                auto var = *pNext;
+                ctx.params.erase(pNext);
+                ctx.params.push_back(var);
+            }
+
+            specifierConstexpr = !transform;
+            initializer = init.string();
+      }
+
+      virtual std::string generateMemberBody() override {
+        return "";
+      }
+    };
+
     class MemberResolverCtor : public MemberResolverVectorRAII {
       protected:
         String name;
@@ -2562,12 +2010,12 @@ class Generator {
 
             returnType = "";
 
-            specifierInline = false;
+            specifierInline = true;
             specifierExplicit = true;
             specifierConst = false;
 
             dbgtag = "constructor";
-            // disableCheck = false;
+            disableCheck = true;
         }
 
         virtual std::string generateMemberBody() override {
@@ -2691,16 +2139,9 @@ class Generator {
         MemberResolverVectorCtor(MemberContext &refCtx)
             : MemberResolverCtor(refCtx) {
 
-            // ctx.name = name;
-
             last = ctx.getLastPointerVar();
 
-            if (last->hasLengthVar() && last->isArray()) {
-                //                if (last.get()->original.type() == "void") {
-                //                    if (last->isArrayIn()) {
-                //                        last->getLengthVar()->setIgnoreFlag(false);
-                //                    }
-                //                }
+            if (last->hasLengthVar() && last->isArray()) {                
                 last->getLengthVar()->removeLastAsterisk();
                 last->convertToStdVector();
             } else {
@@ -2728,11 +2169,7 @@ class Generator {
             : MemberResolver(refCtx) {
             returnVar = ctx.getLastPointerVar();
             returnVar->convertToReturn();
-            returnType = returnVar->type();
-            // returnType = returnVar->original.type();
-            // returnVar->setType(returnType);
-
-            // ctx.name += "Handle";
+            returnType = returnVar->type();            
             dbgtag = "create handle";
         }
 
@@ -2768,11 +2205,6 @@ class Generator {
 
             last->setConst(false);
             returnType = last->fullType();
-
-            //            if (ctx.lastHandleVariant) {
-            //                last->setType(last->original.type());
-            //                last->setIgnorePFN(true);
-            //            }
             disableCheck = false;
             dbgtag = ctx.nameCat == MemberNameCategory::ALLOCATE ? "allocate"
                                                                  : "create";
@@ -2805,8 +2237,7 @@ class Generator {
         }
     };
 
-    class MemberResolverCreateUnique : public MemberResolverCreate {
-        // std::shared_ptr<VariableData> last;
+    class MemberResolverCreateUnique : public MemberResolverCreate {        
         std::string name;
         bool isSubclass = {};
 
@@ -2814,17 +2245,7 @@ class Generator {
         MemberResolverCreateUnique(MemberContext &refCtx)
             : MemberResolverCreate(refCtx) {
 
-            //            last = ctx.getLastPointerVar();
-            //            last->convertToReturn();
-            //            last->setIgnorePFN(true);
-
-            returnType = "Unique" + last->type();
-            // ctx.pfnReturn = PFNReturnCategory::VOID;
-
-            //            if (ctx.params.begin()->get()->original.type() ==
-            //            ctx.cls->name.original) {
-            //                ctx.params.begin()->get()->setIgnorePFN(true);
-            //            }
+            returnType = "Unique" + last->type();            
 
             if (last->isHandle()) {
                 const auto &handle = ctx.gen.findHandle(last->original.type());
@@ -2835,13 +2256,7 @@ class Generator {
             dbgtag = "create unique";
         }
 
-        virtual std::string generateMemberBody() override {
-            //            const std::string &id = last->identifier();
-            //            const std::string &args = createPassArguments();
-            //            const auto &handle =
-            //            ctx.gen.findHandle(last->original.type()); std::string
-            //            call = name + "(" + args + ")"; std::string
-            //            ownerArgument;
+        virtual std::string generateMemberBody() override {            
             std::string args = last->identifier();
             if (isSubclass) {
                 args += ", *this";
@@ -2853,13 +2268,8 @@ class Generator {
                 args += ", d";
             }
 
-            std::string output = MemberResolverCreate::generateMemberBody();
-            // output += "    // (" + args + ")\n";
-            returnValue = generateReturnValue(returnType + "(" + args + ")");
-            //            output += "    " + ctx.gen.format("{0} {1} = {2};\n",
-            //            last->fullType(), id, call); output += "    " +
-            //            ctx.gen.format("return {0}({1}{2});\n", returnType,
-            //            id, ownerArgument);
+            std::string output = MemberResolverCreate::generateMemberBody();            
+            returnValue = generateReturnValue(returnType + "(" + args + ")");            
             return output;
         }
     };
@@ -2867,114 +2277,13 @@ class Generator {
     class MemberResolverGet : public MemberResolver {
       protected:
         std::shared_ptr<VariableData> last;
-        /*
-                std::string generateArray() {
-                    std::shared_ptr<VariableData> lenVar = last->getLengthVar();
-
-                    std::string output;
-                    std::string decl;
-
-                    std::string arrayDecl = last->toString();
-                    std::string id = last->identifier();
-                    if (ctx.lastHandleVariant) {
-                        last->setType(last->original.type());
-                        last->setIdentifier(last->identifier() + "Handles");
-                        decl += "    " + last->toString() + ";\n";
-                    }
-                    else {
-                        decl += "    " + arrayDecl + ";\n";
-                    }
-                    if (ctx.pfnReturn == PFNReturnCategory::VK_RESULT) {
-                        decl += "    " + assignToResult("");
-                    }
-
-                    std::string call = generatePFNcall();
-                    std::string finish;
-                    if (ctx.lastHandleVariant) {
-                        finish += "    " + arrayDecl + ";\n";
-                    }
-                    finish += "    " + generateReturnValue(id) + "\n";
-
-                    if (lenVar->getIgnoreFlag()) {
-                        output += "    " + lenVar->type() + " " +
-        lenVar->identifier() +
-                                  ";\n";
-                    }
-
-                    output += decl;
-                    if (ctx.pfnReturn == PFNReturnCategory::VK_RESULT) {
-
-                        output += ctx.gen.format(R"(
-            do {
-              {0}
-              if (result == Result::eSuccess && {1}) {
-                {2}.resize({1});
-                {0}
-                //VULKAN_HPP_ASSERT({1} <= {2}.size());
-              }
-            } while (result == Result::eIncomplete);
-            if (result == Result::eSuccess && {1} < {2}.size()) {
-              {2}.resize({1});
-            }
-        )",
-                                                 call, lenVar->identifier(),
-        id);
-
-                    } else {
-                        if (ctx.lastHandleVariant) {
-                            std::cerr << "Warning: unhandled situation in " <<
-        ctx.name << std::endl;
-                        }
-                        last->setAltPFN("nullptr");
-                        std::string firstcall = generatePFNcall();
-                        output += ctx.gen.format(R"(
-            {0}
-            {1}.resize({2});
-            {3}
-            // VULKAN_HPP_ASSERT({2} <= {1}.size());
-        )",
-                                                 firstcall, id,
-        lenVar->identifier(), call);
-                    }
-                    output += finish;
-                    return output;
-                }
-                std::string generateArrayWithSize() {
-                    std::string output;
-                    if (ctx.lastHandleVariant) {
-                        std::cerr << "Warning: unhandled situation in " <<
-        ctx.name << std::endl; return "";
-                    }
-
-                    std::string id = last->identifier();
-                    std::string sizeid = last->getLengthVar()->identifier();
-                    output += "    " + last->toString() + ";\n";
-                    if (const auto str = last->getTemplate(); !str.empty()) {
-                        output += "    " + id + ".resize(" + sizeid + " /
-        sizeof(" + str + "));\n";
-                    }
-                    else {
-                        output += "    " + id + ".resize(" + sizeid + ");\n";
-                    }
-                    output += "    " + generatePFNcall() + "\n";
-                    output += "    " + generateReturnValue(id) + "\n";
-
-                    return output;
-                }
-            */
 
         std::string generateSingle() {
-            std::string output;
-            if (ctx.lastHandleVariant) {
-                std::cerr << "Warning: unhandled situation in " << ctx.name
-                          << std::endl;
-                return "// TODO";
-            } else {
-                const std::string id = last->identifier();
-                output += "    " + returnType + " " + id + ";\n";
-                output += "    " + generatePFNcall() + "\n";
-                returnValue = generateReturnValue(id);
-            }
+            std::string output;            
+            const std::string id = last->identifier();
+            output += "    " + returnType + " " + id + ";\n";
+            output += "    " + generatePFNcall() + "\n";
+            returnValue = generateReturnValue(id);
             return output;
         }
 
@@ -3004,12 +2313,7 @@ class Generator {
 
         virtual std::string generateMemberBody() override {
             if (last->isArray()) {
-                return generateArrayCode(last);
-                //                if (last->hasLengthVar() &&
-                //                last->getLengthVar()->getIgnoreFlag()) {
-                //                    return generateArray();
-                //                }
-                //                return generateArrayWithSize();
+                return generateArrayCode(last);                
             }
             return generateSingle();
         }
@@ -3069,26 +2373,25 @@ class Generator {
                    std::vector<std::unique_ptr<MemberResolver>> &secondary);
 
     void generateClassMember(MemberContext &ctx, GenOutputClass &out,
-                             std::string &funcs);
+                             UnorderedOutput &funcs);
 
     void generateClassMembers(HandleData &data, GenOutputClass &out,
-                              std::string &funcs, Namespace ns);
+                              UnorderedOutput &funcs, Namespace ns);
 
-    void generateClassConstructors(const HandleData &data, GenOutputClass &out,
-                                   std::string &funcs);
+    void generateClassConstructors(const HandleData &data, GenOutputClass &out);
 
     void generateClassConstructorsRAII(const HandleData &data,
-                                       GenOutputClass &out, std::string &funcs);
+                                       GenOutputClass &out, UnorderedOutput &funcs);
 
-    std::string generateUniqueClass(HandleData &data, std::string &funcs);
+    std::string generateUniqueClass(HandleData &data, UnorderedOutput &funcs);
 
     String getHandleSuperclass(const HandleData &data);
 
     std::string generateClass(const std::string &name, HandleData data,
-                              std::string &funcs);
+                              UnorderedOutput &funcs);
 
     std::string generateClassRAII(const std::string &name, HandleData data,
-                                  std::string &funcs);
+                                UnorderedOutput &funcs);
 
     void parseCommands(XMLNode *node);
 
@@ -3108,21 +2411,92 @@ class Generator {
 
     void loadFinished();
 
+    class WhitelistBuilder {
+        std::string text;
+        bool hasDisabledElement = false;
+
+    public:        
+
+        template<typename T>
+        void add(const T &t) {
+            if constexpr (is_reference_wrapper<T>::value) {
+                append(t.get());
+            }
+            else if constexpr (std::is_pointer<T>::value) {
+                append(*t);
+            }
+            else {
+                append(t);
+            }
+        }
+
+        void append(const BaseType &t) {
+            if (t.isEnabled() || t.isRequired()) {
+                auto name = t.name.original;
+                text += "            " + name + "\n";
+            }
+            else if(t.isSuppored()) {
+                hasDisabledElement = true;
+            }
+        }
+
+        void insertToParent(XMLElement *parent, const std::string &name, const std::string &comment) {            
+            if (!text.empty()) {
+                text = "\n" + text + "        ";
+            }
+            XMLElement *elem = parent->GetDocument()->NewElement(name.c_str());
+            if (!comment.empty()) {
+                elem->SetAttribute("comment", comment.c_str());
+            }
+            if (!hasDisabledElement) {
+                XMLElement *reg = parent->GetDocument()->NewElement("regex");
+                reg->SetText(".*");
+                elem->InsertEndChild(reg);
+            }
+            else {
+                elem->SetText(text.c_str());
+            }
+            parent->InsertEndChild(elem);
+        }
+
+    };
+
     template<typename T>
     void configBuildList(const std::string &name, const std::map<std::string, T> &from, XMLElement *parent, const std::string &comment = "");
 
-    struct WhitelistBase {        
+    template<typename T>
+    void configBuildList(const std::string &name, const std::vector<T> &from, XMLElement *parent, const std::string &comment = "");
+
+    struct AbstractWhitelistBinding {
         std::string name;
+        std::vector<std::string> ordered;
         std::unordered_set<std::string> filter;
+        std::vector<std::regex> regexes;
+
+        virtual ~AbstractWhitelistBinding() {
+        }
+
+        bool add(const std::string &str) {
+            auto [it, inserted] = filter.insert(str);
+            if (!inserted) {
+                return false;
+            }
+            ordered.push_back(str);
+            return true;
+        }
+
+        void add(const std::regex &rgx) {
+            regexes.emplace_back(rgx);
+        }
 
         virtual void apply() = 0;
     };
 
     template<typename T>
-    struct WhitelistBinding : public WhitelistBase {
-        std::map<std::string, T> *dst;        
+    struct WhitelistBinding : public AbstractWhitelistBinding {
+        std::vector<T> *dst;
 
-        WhitelistBinding(std::map<std::string, T> *dst, std::string name)
+        WhitelistBinding(std::vector<T> *dst, std::string name)
          : dst(dst)
         {
             this->name = name;
@@ -3134,7 +2508,11 @@ class Generator {
   public:
     Generator();
 
+    static std::string findDefaultRegistryPath();
+
     void resetConfig();
+
+    void loadConfigPreset();
 
     void bindGUI(const std::function<void(void)> &onLoad);
 
@@ -3148,6 +2526,8 @@ class Generator {
 
     std::string getOutputFilePath() const { return outputFilePath; }
 
+    std::string getRegistryPath() const { return registryPath; }
+
     void load(const std::string &xmlPath);
 
     void unload();
@@ -3158,11 +2538,11 @@ class Generator {
 
     Extensions &getExtensions() { return extensions; };
 
-    std::map<std::string, CommandData> &getCommands() { return commands; }
+    auto& getCommands() { return commands; }
 
-    std::map<std::string, StructData> &getStructs() { return structs; }
+    auto& getStructs() { return structs; }
 
-    std::map<std::string, EnumData> &getEnums() { return enums; }
+    auto &getEnums() { return enums; }
 
     Config &getConfig() { return cfg; }
 
@@ -3176,8 +2556,14 @@ class Generator {
 
     void saveConfigFile(const std::string &filename);
 
+    template<typename T>
+    void saveConfigParam(XMLElement *parent, const T& t);
+
     template<size_t I = 0, typename... Tp>
     void saveConfigParam(XMLElement *parent, const std::tuple<Tp...>& t);
+
+    template<typename T>
+    void loadConfigParam(XMLElement *parent, T& t);
 
     template<size_t I = 0, typename... Tp>
     void loadConfigParam(XMLElement *parent, const std::tuple<Tp...>& t);

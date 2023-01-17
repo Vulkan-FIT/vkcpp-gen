@@ -1,6 +1,7 @@
 #ifndef STRINGUTILS_HPP
 #define STRINGUTILS_HPP
 
+#include <algorithm>
 #include <string>
 #include <vector>
 
@@ -84,6 +85,21 @@ static std::string convertSnakeToCamel(const std::string &str) {
         out += flag ? std::toupper(c) : std::tolower(c);
         flag = false;
     }
+    return out;
+}
+
+static std::vector<std::string_view> split2(const std::string_view &str, const std::string_view &delim) {
+    std::vector<std::string_view> out;
+    auto start = 0U;
+    auto end = str.find(delim);
+    while (end != std::string::npos) {
+        std::string_view token = str.substr(start, end - start);
+        out.push_back(token);
+        start = end + delim.size();
+        end = str.find(delim, start);
+    }
+    std::string_view token = str.substr(start, end - start);
+    out.push_back(token);
     return out;
 }
 

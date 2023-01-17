@@ -20,7 +20,7 @@ VariableData::VariableData(const Generator &gen, Type type) : gen(gen) {
     specialType = type;
     ns = Namespace::NONE;
     ignoreFlag = specialType == TYPE_INVALID;
-    arrayLengthFound = false;
+    // arrayLengthFound = false;
     ignorePFN = false;
     nullTerminated = false;
 }
@@ -92,7 +92,7 @@ bool VariableData::isNullTerminated() const {
 
 void VariableData::convertToArrayProxy() {
     specialType = TYPE_ARRAY_PROXY;
-    removeLastAsterisk();    
+    removeLastAsterisk();
 }
 
 void VariableData::bindLengthVar(const std::shared_ptr<VariableData> &var) {
@@ -107,7 +107,14 @@ void VariableData::bindLengthVar(const std::shared_ptr<VariableData> &var) {
 }
 
 void VariableData::bindArrayVar(const std::shared_ptr<VariableData> &var) {
-    arrayVar = var;
+    for (const auto &v : arrayVars) {
+        if (v == var) {
+            // already in array
+            std::cout << "Warning: bindArrayVar(): duplicate" << std::endl;
+            return;
+        }
+    }
+    arrayVars.push_back(var);
 }
 
 const std::shared_ptr<VariableData>& VariableData::getLengthVar() const {
@@ -117,11 +124,8 @@ const std::shared_ptr<VariableData>& VariableData::getLengthVar() const {
     return lenghtVar;
 }
 
-const std::shared_ptr<VariableData> &VariableData::getArrayVar() const {
-    if (!arrayVar.get()) {
-        throw std::runtime_error("access to null arrayVar");
-    }
-    return arrayVar;
+const std::vector<std::shared_ptr<VariableData>>& VariableData::getArrayVars() const {
+    return arrayVars;
 }
 
 void VariableData::convertToReturn() {
@@ -206,14 +210,40 @@ bool VariableData::isArrayOut() const {
 std::string VariableData::toArgument(bool useOriginal) const {
     if (!altPFN.empty()) {
         return altPFN;
-    }    
+    }
     switch (specialType) {
     case TYPE_VECTOR:
     case TYPE_ARRAY_PROXY:
+    case TYPE_ARRAY_PROXY_NO_TEMPORARIES:
         return toArgumentArrayProxy();
     default:
         return toArgumentDefault(useOriginal);
     }
+}
+
+std::string VariableData::toStructArgumentWithAssignment() const {
+    std::string out;
+    if (hasArrayLength()) {
+        std::string atype = "std::array";
+          switch (arrayAttrib) {
+            case ArraySize::NONE:
+                break;
+            case ArraySize::DIM_1D:
+                out += gen.format("{0}<{1}, {2}>", atype, get(TYPE), arraySizes[0]);
+                break;
+            case ArraySize::DIM_2D:
+                out += gen.format("{0}<{0}<{1}, {2}>, {3}>", atype, get(TYPE), arraySizes[1], arraySizes[0]);
+                break;
+        }
+        out += " const &" + get(IDENTIFIER);
+    }
+    else {
+        out = toString();
+    }
+    if (!_assignment.empty()) {
+        out += _assignment;
+    }
+    return out;
 }
 
 std::string VariableData::fullType() const {
@@ -221,8 +251,26 @@ std::string VariableData::fullType() const {
     type += namespaceString();
     type += get(TYPE) + get(SUFFIX);
     switch (specialType) {
+    case TYPE_ARRAY: {
+        std::string out;
+        std::string atype = "std::array";
+        switch (arrayAttrib) {
+            case ArraySize::NONE:
+                break;
+            case ArraySize::DIM_1D:
+                out += gen.format("{0}<{1}, {2}>", atype, get(TYPE), arraySizes[0]);
+                break;
+            case ArraySize::DIM_2D:
+                out += gen.format("{0}<{0}<{1}, {2}>, {3}>", atype, get(TYPE), arraySizes[1], arraySizes[0]);
+                break;
+        }
+        out += " const &";
+        return out;
+        }
     case TYPE_ARRAY_PROXY:    
         return "ArrayProxy<" + type + "> const &";
+    case TYPE_ARRAY_PROXY_NO_TEMPORARIES:
+        return "ArrayProxyNoTemporaries<" + type + "> const &";
     case TYPE_VECTOR:
         return "std::vector<" + type + ">";
     case TYPE_OPTIONAL:
@@ -239,8 +287,22 @@ std::string VariableData::toString() const {
     }
     out += optionalAmp;
     out += get(IDENTIFIER);
-    out += optionalArraySuffix();
+    if (specialType != TYPE_ARRAY) {
+        out += optionalArraySuffix();
+    }
     return out;
+}
+
+std::string VariableData::toStructString() const {
+    const auto &id = get(IDENTIFIER);
+    switch (arrayAttrib) {
+        case ArraySize::NONE:
+            return toString();
+        case ArraySize::DIM_1D:
+            return gen.format("{NAMESPACE}::ArrayWrapper1D<{0}, {1}> {2}", get(TYPE), arraySizes[0], id);
+        case ArraySize::DIM_2D:
+            return gen.format("{NAMESPACE}::ArrayWrapper2D<{0}, {1}, {2}> {3}", get(TYPE), arraySizes[0], arraySizes[1], id);
+    }
 }
 
 std::string VariableData::declaration() const {
@@ -255,6 +317,14 @@ std::string VariableData::declaration() const {
 
 std::string VariableData::toStringWithAssignment() const {
     std::string out = toString();
+    if (!_assignment.empty()) {
+        out += _assignment;
+    }
+    return out;
+}
+
+std::string VariableData::toStructStringWithAssignment() const {
+    std::string out = toStructString();
     if (!_assignment.empty()) {
         out += _assignment;
     }
@@ -279,6 +349,8 @@ std::string VariableData::getTemplate() const {
     return optionalTemplate;
 }
 
+
+
 void VariableData::evalFlags(const Generator &gen) {
     flags = Flags::NONE;
     if (gen.isHandle(original.type())) {
@@ -287,10 +359,18 @@ void VariableData::evalFlags(const Generator &gen) {
 }
 
 std::string VariableData::optionalArraySuffix() const {
-    if (arrayLengthFound) {
-        return "[" + arrayLengthStr + "]";
+//    if (arrayLengthFound) {
+//        return "[" + arrayLengthStr + "]";
+//    }
+    switch (arrayAttrib) {
+        case ArraySize::NONE:
+            return "";
+        case ArraySize::DIM_1D:
+            return "[" + arraySizes[0] + "]";
+        case ArraySize::DIM_2D:
+            return "[" + arraySizes[0] + "][" + arraySizes[1] + "]";
     }
-    return "";
+
 }
 
 std::string VariableData::toArgumentArrayProxy() const {
@@ -303,17 +383,17 @@ std::string VariableData::toArgumentArrayProxy() const {
 
 std::string VariableData::createCast(std::string from) const {
     std::string cast = "static_cast";
-    if ((strContains(original.get(SUFFIX), "*") || arrayLengthFound)) {
+    if ((strContains(original.get(SUFFIX), "*") || hasArrayLength())) {
         cast = "std::bit_cast";
     }    
-    return cast + "<" + originalFullType() + (arrayLengthFound ? "*" : "") +
+    return cast + "<" + originalFullType() + (hasArrayLength() ? "*" : "") +
            ">(" + from + ")";
 }
 
-std::string VariableData::toArgumentDefault(bool useOriginal) const {    
-    if (hasArrayVar()) {
-        const auto &var = getArrayVar();
-        if (var->isArrayIn() && !var->isLenAttribIndirect()) {
+std::string VariableData::toArgumentDefault(bool useOriginal) const {
+    if (!arrayVars.empty()) {
+        const auto &var = arrayVars[0];
+        if (var->isArrayIn() && !var->isLenAttribIndirect() && (var->specialType == TYPE_ARRAY_PROXY ||  var->specialType == TYPE_ARRAY_PROXY_NO_TEMPORARIES)) {
             std::string size = var->identifier() + ".size()";
             if (const auto &str = var->getTemplate(); !str.empty()) {
                 size += " * sizeof(" + str+ ")";
@@ -326,6 +406,28 @@ std::string VariableData::toArgumentDefault(bool useOriginal) const {
         return id;
     }
     return createCast(id);
+}
+
+std::string VariableData::toArrayProxySize() const {
+    std::string s = get(IDENTIFIER) + ".size()";
+    if (original.type() == "void") {
+        if (optionalTemplate.empty()) {
+            std::cerr << "Warning: ArrayProxy " << get(IDENTIFIER) << " has no template set, but is required" << std::endl;
+        }
+        s += " * sizeof(" + optionalTemplate + ")";
+    }
+    return s;
+}
+
+std::string VariableData::toArrayProxyData() const {
+    return get(IDENTIFIER) + ".data()";
+}
+
+std::pair<std::string, std::string> VariableData::toArrayProxyRhs() const {
+    if (specialType != TYPE_ARRAY_PROXY && specialType != TYPE_ARRAY_PROXY_NO_TEMPORARIES) {
+        return std::make_pair("", "");
+    }    
+    return std::make_pair(toArrayProxySize(), toArrayProxyData());
 }
 
 std::string VariableData::identifierAsArgument() const {
@@ -352,6 +454,7 @@ XMLVariableParser::XMLVariableParser(tinyxml2::XMLElement *element, const Genera
 
 void XMLVariableParser::parse(tinyxml2::XMLElement *element, const Generator &gen) {
     const char *len = element->Attribute("len");
+    const char *altlen = element->Attribute("altlen");
     if (len) {
         const auto s = split(std::string(len), ",");
         for (const auto &str : s) {
@@ -369,19 +472,49 @@ void XMLVariableParser::parse(tinyxml2::XMLElement *element, const Generator &ge
             }
         }
     }
+    if (altlen) {
+        altlenAttribStr = altlen;
+    }
 
     state = PREFIX;
-    arrayLengthFound = false;
+    //arrayLengthFound = false;
     element->Accept(this);
 
     trim();    
     convertToCpp(gen);
-    evalFlags(gen);        
+    evalFlags(gen);
+
+//    if (!arrayLengthStr.empty()) {
+//        auto pos = arrayLengthStr.find("][");
+//        if (pos != std::string::npos) {
+
+//        }
+
+//    }
 }
 
 bool XMLVariableParser::Visit(const tinyxml2::XMLText &text) {
     std::string_view tag = text.Parent()->Value();
-    std::string_view value = text.Value();
+    std::string value;
+    if (auto v = text.Value(); v) {
+        value = v;
+    }
+
+    const auto addArrayLength =[&](const std::string &length) {
+        switch (arrayAttrib) {
+            case ArraySize::NONE:
+                arraySizes[0] = length;
+                arrayAttrib = ArraySize::DIM_1D;
+                break;
+            case ArraySize::DIM_1D:
+                arraySizes[1] = length;
+                arrayAttrib = ArraySize::DIM_2D;
+                break;
+            case ArraySize::DIM_2D:
+                throw std::runtime_error("xml registry: unsupported array dimension");
+                break;
+        }
+    };
 
     if (tag == "type") { // text is type field
         state = TYPE;
@@ -390,11 +523,34 @@ bool XMLVariableParser::Visit(const tinyxml2::XMLText &text) {
     } else if (state == TYPE) { // text after type is suffix (optional)
         state = SUFFIX;
     } else if (state == IDENTIFIER) {
+
         if (value == "[") { // text after name is array size if [
             state = BRACKET_LEFT;
         } else if (value.starts_with("[") && value.ends_with("]")) {
-            arrayLengthStr = value.substr(1, value.size() - 2);
-            arrayLengthFound = true;
+
+            std::regex rgx("\\[[0-9]+\\]");
+            std::sregex_iterator it = std::sregex_iterator(value.begin(), value.end(), rgx);
+            std::string suffix;
+            while (it != std::sregex_iterator())
+            {
+                auto temp = it;
+                std::smatch m = *temp;
+                std::string match = m.str();
+                match = match.substr(1, match.size() - 2);
+                //std::cout << "  " << match << " at position " << m.position() << std::endl;
+                addArrayLength(match);
+                ++it;
+                if (it == std::sregex_iterator()) {
+                    suffix = temp->suffix();
+                    break;
+                }
+            }
+            if (!suffix.empty()) {
+                std::cerr << "[visit] unprocessed suffix: " << suffix << std::endl;
+            }
+
+            //arrayLengthStr = value.substr(1, value.size() - 2);
+            //arrayLengthFound = true;
             state = DONE;
             return false;
         } else {
@@ -403,10 +559,15 @@ bool XMLVariableParser::Visit(const tinyxml2::XMLText &text) {
         }
     } else if (state == BRACKET_LEFT) { // text after [ is <enum>SIZE</enum>
         state = ARRAY_LENGTH;
-        arrayLengthStr = value;
-    } else if (state == ARRAY_LENGTH) {
-        if (value == "]") { //  ] after SIZE confirms arrayLength field
-            arrayLengthFound = true;
+        //arrayLengthStr = value;
+        addArrayLength(value);
+    } else if (state == ARRAY_LENGTH) {        
+//        if (value == "]") { //  ] after SIZE confirms arrayLength field
+//            arrayLengthFound = true;
+//        }
+//        else
+        if (value == "][") { // multi dimensional array
+            state = BRACKET_LEFT;
         }
         state = DONE;
         return false;
@@ -445,7 +606,7 @@ void XMLDefineParser::trim() {
 
 bool XMLDefineParser::Visit(const tinyxml2::XMLText &text) {
     std::string_view tag = text.Parent()->Value();
-    std::string_view value = text.Value();    
+    std::string_view value = text.Value();
     if (tag == "name") {
         state = NAME;
     }

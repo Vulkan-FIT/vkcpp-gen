@@ -4,49 +4,257 @@
 #include <fstream>
 #include <optional>
 #include <vector>
+#include <future>
+#include <thread>
 
 #define GLFW_INCLUDE_VULKAN
 #include "GLFW/glfw3.h"
-#include "backends/imgui_impl_glfw.h"
-#include "backends/imgui_impl_vulkan.h"
 #include "imgui.h"
-#include "imgui_internal.h"
-#include "misc/cpp/imgui_stdlib.h"
 
 #include "Generator.hpp"
 
 class Window {
+protected:
+
+    std::atomic_bool redraw = false;
+    std::atomic_bool glfwWaiting = false;
+    void queueRedraw();
+
 public:
     std::function<void(Window *)> onClose;
     std::function<void(Window *, int, int)> onSize;
 
     void onKey(GLFWwindow *window, int key, int scancode, int action, int mods) {
-        std::cout << "key event: " << key << ", " << scancode << ", " << action << ", " << mods << std::endl;
-        glfwPostEmptyEvent();
+        queueRedraw();
     }
 };
 
 class GUI : public Window {
+public:
 
-    struct Macro {
-        Generator::Macro *data;
-        std::string text;
-
-        Macro(Generator::Macro *data, std::string text)
-            : data(data), text(text) {}
+    struct Renderable {
+        virtual ~Renderable() {}
+        virtual void render(GUI &g) = 0;
     };
 
-    struct BoolGUI {
+    template<size_t N>
+    struct RenderableArray : public Renderable {
+        std::array<std::unique_ptr<Renderable>, N> items;
+
+        template<typename ...T>
+        RenderableArray(T&&... t) : items({ std::forward<T>(t)... })
+        {}
+
+        virtual void render(GUI &g) override {
+            for (const auto &i : items) {
+                i->render(g);
+            }
+        }
+    };
+
+    struct RenderableGeneric : public Renderable {
+        std::function<void(GUI &g)> lambda;
+        RenderableGeneric(std::function<void(GUI &g)> lambda) : lambda(lambda)
+        {}
+
+        virtual void render(GUI &g) override {
+            lambda(g);
+        }
+
+    };
+
+    struct RenderableTable : public RenderableGeneric {
+        std::string str_id;
+        std::string text;
+        int columns;
+        ImGuiTableFlags flags;
+        bool advancedOnly;
+
+        RenderableTable(const std::string &str_id,
+                        const std::string &text,
+                        int columns,
+                        ImGuiTableFlags flags,
+                        std::function<void(GUI &g)> lambda,
+                        bool advancedOnly = false)
+            : RenderableGeneric(lambda),
+              str_id(str_id),
+              text(text),
+              columns(columns),
+              flags(flags),
+              advancedOnly(advancedOnly)
+        {}
+
+        virtual void render(GUI &g) override {
+            if (advancedOnly && !GUI::advancedMode) {
+                return;
+            }
+            if (ImGui::BeginTable(str_id.c_str(), 1, ImGuiTableFlags_BordersOuter)) {
+                ImGui::TableNextRow();
+                ImGui::TableSetColumnIndex(0);
+
+                if (ImGui::TreeNode(text.c_str())) {
+                    if (ImGui::BeginTable((str_id).c_str(), columns, flags)) {
+                        ImGui::TableNextRow();
+
+                        lambda(g);
+
+                        ImGui::EndTable();
+                    }
+                    ImGui::TreePop();
+                }
+                ImGui::EndTable();
+            }
+        }
+    };
+
+/*
+    struct RenderableVector : public Renderable {
+        std::vector<std::unique_ptr<Renderable>> items;
+
+        RenderableVector(std::initializer_list<std::unique_ptr<Renderable>> list) : items(list) {}
+
+        virtual void render() override {
+            for (const auto &i : items) {
+                i->render();
+            }
+        }
+    };
+    */
+
+    template <class A, class B>
+    struct RenderPair : public Renderable
+    {
+        RenderPair(A a, B b) : a(std::move(a)), b(std::move(b)) {}
+
+        virtual void render(GUI &g) override {
+            a.render(g);
+            b.render(g);
+        }
+
+        A a;
+        B b;
+    };
+
+    struct SameLine : public Renderable {
+        virtual void render(GUI &g) override {
+            ImGui::SameLine();
+        }
+    };
+
+    struct Dummy : public Renderable {
+        ImVec2 size;
+
+        Dummy(const ImVec2 &size) : size(size) {
+        }
+
+        Dummy(float w, float h) : size(w, h) {
+        }
+
+        virtual void render(GUI &g) override {
+            ImGui::Dummy(size);
+        }
+    };
+
+    struct DummySameLine : public Dummy {
+        DummySameLine(const ImVec2 &size) : Dummy(size) {
+        }
+
+        DummySameLine(float w, float h) : Dummy(w, h) {
+        }
+
+        virtual void render(GUI &g) override {
+            Dummy::render(g);
+            ImGui::SameLine();
+        }
+    };
+
+    struct HelpMarker : public Renderable {
+        std::string text;
+
+        HelpMarker(const std::string &text) : text(text)
+        {}
+
+        virtual void render(GUI &g) override {
+            GUI::showHelpMarker(text.c_str());
+        }
+    };
+
+    struct BoolGUI : public Renderable {
         bool *data;
         std::string text;
 
         BoolGUI(bool *data, std::string text) : data(data), text(text) {}
+
+        virtual void render(GUI &g) override {
+            GUI::guiBoolOption(*this);
+        }
+    };
+
+    struct AdvancedBoolGUI : public BoolGUI {
+
+        AdvancedBoolGUI(bool *data, std::string text) : BoolGUI(data, text) {}
+
+        virtual void render(GUI &g) override {
+            if (GUI::advancedMode) {
+                GUI::guiBoolOption(*this);
+            }
+            else {
+                ImGui::Text("%s", text.c_str());
+            }
+        }
+
+    };
+
+    struct MacroGUI : public Renderable {
+        Generator::Macro *data;
+        std::string text;
+
+        MacroGUI(Generator::Macro *data, std::string text)
+            : data(data), text(text) {}
+
+        virtual void render(GUI &g) override {
+            r(g, *data);
+        }
+
+    private:
+        void r(GUI &g, Generator::Macro &m) {
+
+            ImGui::Text("%s", text.c_str());
+            ImGui::SameLine();
+
+            bool disabled = !m.usesDefine;
+
+            if (disabled) {
+                ImGui::PushStyleVar(ImGuiStyleVar_Alpha,
+                                    ImGui::GetStyle().Alpha * 0.5f);
+            }
+
+            ImGui::Checkbox("#define ", &m.usesDefine);
+            if (m.usesDefine) {                
+                ImGui::SameLine();
+                g.guiInputText(m.define);                
+            }
+
+            if (disabled) {
+                ImGui::PopStyleVar();
+            }
+
+            ImGui::SameLine();
+            g.guiInputText(m.value);
+        }
     };
 
     struct Selectable {
         bool selected = {};
+        bool hovered = {};
+        bool filtered = true;
 
-        virtual void setEnabled(bool) = 0;
+        virtual void setEnabled(bool, bool ifSelected = false) {}
+
+        virtual void setEnabledChildren(bool, bool ifSelected = false) {}
+
+        virtual void setSelected(bool) {}
+
     };
 
     template<typename T>
@@ -55,37 +263,53 @@ class GUI : public Window {
 
         SelectableData(T &data) : data(&data) {}
 
-        virtual void setEnabled(bool value) override {
+        virtual void setEnabled(bool value, bool ifSelected = false) override {
+            if (ifSelected && !selected) {
+                return;
+            }
             data->setEnabled(value);
         };
+
+        virtual void setSelected(bool value) override {
+            selected = value;
+        }
     };
 
 
     template<typename T>
     class Container : public std::vector<T>, public Selectable {
-    public:
+    public:        
+
         std::string name;
-        bool isNode = {};
 
         void draw(int id);
 
-        virtual void setEnabled(bool value) override {
+        virtual void setEnabledChildren(bool value, bool ifSelected = false) override {
             for (auto &e : *this) {
-                if constexpr (std::is_pointer_v<T>) {
-                    //e->setEnabled(enabled);
-                    e->data->setEnabled(value);
+                if constexpr (std::is_pointer_v<T>) {                    
+                    e->setEnabled(value, ifSelected);
                 } else {
-                    //e.setEnabled(enabled);
-                    e.data->setEnabled(value);
+                    e.setEnabled(value, ifSelected);
                 }
             }
         };
+
+        virtual void setSelected(bool value) override {
+            for (auto &e : *this) {
+                if constexpr (std::is_pointer_v<T>) {
+                    e->selected = value;
+                } else {
+                    e.selected = value;
+                }
+            }
+        }
     };
 
     struct Type : public SelectableData<Generator::BaseType> {
         static bool visualizeDisabled;
-        const char *name;
-        bool hovered = {};
+        static bool drawFiltered;
+
+        const char *name;        
 
         Type(const std::string &name, Generator::BaseType &data)
             : SelectableData<Generator::BaseType>(data), name(name.c_str()) {}
@@ -103,19 +327,18 @@ class GUI : public Window {
         Extension(const std::string &name, Generator::ExtensionData &data)
             : SelectableData<Generator::ExtensionData>(data), name(name.c_str())
         {
-            commands.name = "Commands";
-            commands.isNode = true;
+            commands.name = "Commands";            
         }
 
         Generator::ExtensionData *operator->() { return data; }
 
         void draw(int id);
 
-//        virtual void setEnabled(bool enabled) override {
-//            for (auto &c : commands) {
-//                c->setEnabled(enabled);
-//            }
-//        }
+        virtual void setEnabledChildren(bool enabled, bool ifSelected = false) override {
+            for (auto &c : commands) {
+                c->setEnabled(enabled, ifSelected);
+            }
+        }
     };
 
     struct Platform : public SelectableData<Generator::PlatformData> {
@@ -129,37 +352,58 @@ class GUI : public Window {
 
         void draw(int id);
 
-        virtual void setEnabled(bool enabled) override {
+        virtual void setEnabledChildren(bool enabled, bool ifSelected = false) override {
             for (auto &e : extensions) {
-                e->setEnabled(enabled);
+                e->setEnabled(enabled, ifSelected);
             }
         }
     };
 
+private:
     static Generator *gen;
+    static bool menuOpened;
     using Platforms = Container<Platform>;
     using Extensions = Container<Extension>;
     using Types = Container<Type>;
 
-    static Platforms platforms;
-    static Extensions extensions;
-//    static std::vector<Extension *> otherExtensions;
-    static Types commands;
-    static Types structs;
-    static Types enums;
+    struct Collection {
+        Platforms platforms;
+        Extensions extensions;
+        Types commands;
+        Types structs;
+        Types enums;
 
-    static void onLoad();
+        void draw(int &id, bool filtered = false);
+    };
 
-    static bool drawContainerHeader(const char *name, bool node = false, Selectable *s = nullptr);
+    Collection collection;
+
+
+    struct AsyncButton {
+        std::string text;
+        std::function<void(void)> task;
+        std::future<void> future;
+        std::atomic_bool running = false;
+
+        void draw();
+        void run();
+    };
+
+    void onLoad();
+
+    static bool drawContainerHeader(const char *name, Selectable *s = nullptr, bool empty = false);
 
     template<typename T>
-    static bool drawContainerHeader(const char *name, bool node = false, SelectableData<T> *s = nullptr);
+    static bool drawContainerHeader(const char *name, SelectableData<T> *s = nullptr, bool empty = false);
+
+    static void drawSelectable(const char *name, Selectable *s);
 
     std::string configPath;
 
     std::string filter;
 
     ImFont* font;   
+    ImFont* font2;
 
     struct QueueFamilyIndices {
         std::optional<uint32_t> graphicsFamily;
@@ -177,9 +421,11 @@ class GUI : public Window {
 
     const int MAX_FRAMES_IN_FLIGHT = 3;
 
+    static bool advancedMode;
+
     int id;
     int width, height;
-    GLFWwindow *glfwWindow;    
+    GLFWwindow *glfwWindow;
     VkInstance instance;
     VkSurfaceKHR surface;
     VkPhysicalDevice physicalDevice;
@@ -193,11 +439,11 @@ class GUI : public Window {
     VkExtent2D swapChainExtent;
     std::vector<VkImageView> swapChainImageViews;
     VkRenderPass renderPass;
-    VkPipelineLayout pipelineLayout;
-    VkPipelineCache pipelineCache;
-    VkPipeline graphicsPipeline;
-    VkShaderModule vertShaderModule;
-    VkShaderModule fragShaderModule;
+//    VkPipelineLayout pipelineLayout;
+//    VkPipelineCache pipelineCache;
+//    VkPipeline graphicsPipeline;
+//    VkShaderModule vertShaderModule;
+//    VkShaderModule fragShaderModule;
     std::vector<VkFramebuffer> swapChainFramebuffers;
     VkCommandPool commandPool;
     std::vector<VkCommandBuffer> commandBuffers;
@@ -217,6 +463,12 @@ class GUI : public Window {
     std::vector<VkFence> imagesInFlight;
     size_t currentFrame = 0;
     uint32_t imageIndex = 0;
+
+    AsyncButton loadRegButton;
+    AsyncButton unloadRegButton;
+    AsyncButton generateButton;
+    AsyncButton loadConfigButton;
+    AsyncButton saveConfigButton;
 
     QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device);
 
@@ -282,11 +534,11 @@ class GUI : public Window {
 
     void createRenderPass();
 
-    void createPipelineCache();
+    //void createPipelineCache();
 
-    void createShaderModules();
+    //void createShaderModules();
 
-    void createGraphicsPipeline();
+    //void createGraphicsPipeline();
 
     void createFramebuffers();
 
@@ -310,20 +562,29 @@ class GUI : public Window {
 
     void guiInputText(std::string &data);
 
-    void guiMacroOption(Macro &data);
+    static void guiBoolOption(BoolGUI &data);
 
-    void guiBoolOption(BoolGUI &data);
+    std::atomic_bool filterTaskRunning = false;
+    std::atomic_bool filterTaskAbort = false;
+    std::atomic_bool filterTaskFinised = false;
+    std::atomic_bool filterSynced = true;
+    std::string filterTaskError;
+    std::future<void> filterFuture;
+
+    void filterTask(std::string filter) noexcept;
+
+    static void showHelpMarker(const char *desc);
 
   public:
     GUI(Generator &gen) {
         this->gen = &gen;
         physicalDevice = VK_NULL_HANDLE;
 
-        platforms.name = "Platforms";
-        extensions.name = "Extensions";
-        commands.name = "Commands";
-        structs.name = "Struct";
-        enums.name = "Enums";
+        collection.platforms.name = "Platforms";
+        collection.extensions.name = "Extensions";
+        collection.commands.name = "Commands";
+        collection.structs.name = "Struct";
+        collection.enums.name = "Enums";
     }
 
     void init();
@@ -332,9 +593,11 @@ class GUI : public Window {
 
     void setupImguiFrame();
 
-    static void HelpMarker(const char *desc);
-
     void updateImgui();
+
+    void mainScreen();
+
+    void loadScreen();
 
     void setupCommandBuffer(VkCommandBuffer cmd);
 

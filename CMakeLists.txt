@@ -33,7 +33,7 @@ if(GENERATOR_GUI)
     SET(IMGUI_SOURCES
         ${IMGUI_DIR}/imgui_draw.cpp
         ${IMGUI_DIR}/imgui_tables.cpp
-        ${IMGUI_DIR}/imgui_widgets.cpp
+        ${IMGUI_DIR}/imgui_widgets.cpp        
         ${IMGUI_DIR}/imgui.cpp
         ${IMGUI_DIR}/misc/cpp/imgui_stdlib.cpp
         ${IMGUI_DIR}/backends/imgui_impl_vulkan.cpp
@@ -48,11 +48,13 @@ set(STL_DIR ${CMAKE_CURRENT_SOURCE_DIR}/stlsoft)
 
 SET(HEADERS
     src/ArgumentsParser.hpp
+    src/Enums.h
     src/XMLVariableParser.hpp
     src/XMLUtils.hpp
     src/StringUtils.hpp
     src/Gui.hpp
     src/Generator.hpp
+    src/Instrumentation.h
     )
 
 SET(SOURCES
@@ -60,6 +62,7 @@ SET(SOURCES
     src/XMLVariableParser.cpp
     src/Gui.cpp
     src/Generator.cpp
+    src/Instrumentation.cpp
     )
 
 set(APP_SHADERS

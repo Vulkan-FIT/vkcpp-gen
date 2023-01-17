@@ -31,28 +31,41 @@ SOFTWARE.
 #include <unordered_set>
 #include <vector>
 #include <filesystem>
+#include <cstdlib>
 
 #include "ArgumentsParser.hpp"
 #include "Generator.hpp"
+#include "Instrumentation.h"
+
 #ifdef GENERATOR_GUI
 #include "Gui.hpp"
 #endif
 
 static constexpr char const *HELP_TEXT{
     R"(Usage:
-    -r, --reg       path to source registry file
-    -s, --source    path to source directory
-    -d, --dest      path to destination file)"};
+    -r, --reg       path to source registry file    
+    -d, --dest      path to destination directory
+    -c, --config    path to configuration file)"};
 
-int main(int argc, char **argv) {    
+static void loadDefaultRegistry(Generator &gen) {
+    std::string path = Generator::findDefaultRegistryPath();
+    if (path.empty()) {
+        throw std::runtime_error("Failed to detect vk.xml. See usage.");
+    }
+    gen.load(path);
+}
+
+int main(int argc, char **argv) {
     try {
         ArgOption helpOption{"-h", "--help"};
-        ArgOption xmlOption{"-r", "--reg", true};
+        ArgOption regOption{"-r", "--reg", true};
         ArgOption destOption{"-d", "--dest", true};
         ArgOption configOption{"-c", "--config", true};
+        ArgOption rlOption{"", "--readlog", true};
+        ArgOption resaveOption{"", "--resave-config"};
         ArgOption noguiOption{"", "--nogui"};
         ArgOption guifpsOption{"", "--fps"};
-        ArgParser p({&helpOption, &xmlOption, &destOption, &configOption, &noguiOption, &guifpsOption});
+        ArgParser p({&helpOption, &regOption, &destOption, &configOption, &noguiOption, &guifpsOption, &rlOption, &resaveOption});
 
         p.parse(argc, argv);
         // help option block
@@ -60,23 +73,48 @@ int main(int argc, char **argv) {
             std::cout << HELP_TEXT;
             return 0;
         }
+#ifdef INST
+        if (rlOption.set) {
+            Inst::readLog(rlOption.value);
+            return 0;
+        }
+#endif
 
-        Generator gen;        
+        Generator gen;
+
+        const auto loadRegistry = [&]{
+            if (regOption.set) {
+                gen.load(regOption.value);
+            }
+            else {
+               loadDefaultRegistry(gen);
+            }            
+        };
+
+        const auto generate = [&]{
+            // argument check
+            if (!destOption.set) {
+                throw std::runtime_error("Missing arguments. See usage.");
+            }
+            loadRegistry();
+            if (configOption.set) {
+                gen.loadConfigFile(configOption.value);
+            }
+            gen.generate();
+        };
 
         if (destOption.set) {
             gen.setOutputFilePath(destOption.value);
         }
-        if (xmlOption.set) {
-            gen.load(xmlOption.value);
-        }
-
-        const auto generate = [&]{
-            // argument check
-            if (!destOption.set || !xmlOption.set) {
+        if (resaveOption.set) {
+            if (!configOption.set) {
                 throw std::runtime_error("Missing arguments. See usage.");
             }
-            gen.generate();
-        };
+            loadRegistry();
+            gen.loadConfigFile(configOption.value);
+            gen.saveConfigFile(configOption.value);
+            return 0;
+        }
 
 #ifdef GENERATOR_GUI
         if (!noguiOption.set) {
@@ -88,14 +126,18 @@ int main(int argc, char **argv) {
             if (configOption.set) {
                 gui.setConfigPath(configOption.value);
             }
+            try {
+                loadRegistry();
+            }
+            catch (std::runtime_error) {
+                std::cout << "warning: registry load failed" << std::endl;
+                gen.unload();
+            }            
             gui.run();
+            return 0;
         }
-        else {
-            generate();
-        }
-#else
-        generate();
 #endif
+        generate();
 
     } catch (const std::exception &e) {
         std::cerr << "Error: " << e.what() << std::endl;
