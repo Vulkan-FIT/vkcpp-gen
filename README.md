@@ -1,3 +1,9 @@
-# Vulkan C++20 API Generator
+# Vulkan C++ API generator
+**Work in progress!**
 
-Currently work in progess.
+Written in C++20.
+Configurable via GUI for experimental purposes.
+
+
+## License
+Licensed under the MIT License.
