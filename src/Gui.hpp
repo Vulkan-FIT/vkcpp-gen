@@ -205,6 +205,19 @@ public:
 
     };
 
+    struct AdvancedOnlyGUI : public BoolGUI {
+
+        AdvancedOnlyGUI(bool *data, std::string text) : BoolGUI(data, text) {}
+
+        virtual void render(GUI &g) override {
+            if (GUI::advancedMode) {
+                GUI::guiBoolOption(*this);
+                ImGui::Text("%s", text.c_str());
+            }
+        }
+
+    };
+
     struct MacroGUI : public Renderable {
         Generator::Macro *data;
         std::string text;
@@ -309,10 +322,10 @@ public:
         static bool visualizeDisabled;
         static bool drawFiltered;
 
-        const char *name;        
+        const char *name = {};
 
-        Type(const std::string &name, Generator::BaseType &data)
-            : SelectableData<Generator::BaseType>(data), name(name.c_str()) {}
+        Type(Generator::BaseType &data)
+            : SelectableData<Generator::BaseType>(data), name(data.name.original.c_str()) {}
 
         Generator::BaseType *operator->() { return data; }
 
@@ -324,8 +337,8 @@ public:
 
         Container<Type *> commands;
 
-        Extension(const std::string &name, Generator::ExtensionData &data)
-            : SelectableData<Generator::ExtensionData>(data), name(name.c_str())
+        Extension(Generator::ExtensionData &data)
+            : SelectableData<Generator::ExtensionData>(data), name(data.name.original.c_str())
         {
             commands.name = "Commands";            
         }
@@ -345,8 +358,8 @@ public:
         const char *name;
         Container<Extension *> extensions;
 
-        Platform(const std::string &name, Generator::PlatformData &data)
-            : SelectableData<Generator::PlatformData>(data), name(name.c_str()) {}
+        Platform(Generator::PlatformData &data)
+            : SelectableData<Generator::PlatformData>(data), name(data.name.original.c_str()) {}
 
         Generator::PlatformData *operator->() { return data; }
 
@@ -370,6 +383,7 @@ private:
         Platforms platforms;
         Extensions extensions;
         Types commands;
+        Types handles;
         Types structs;
         Types enums;
 
@@ -583,6 +597,7 @@ private:
         collection.platforms.name = "Platforms";
         collection.extensions.name = "Extensions";
         collection.commands.name = "Commands";
+        collection.handles.name = "Handles";
         collection.structs.name = "Struct";
         collection.enums.name = "Enums";
     }

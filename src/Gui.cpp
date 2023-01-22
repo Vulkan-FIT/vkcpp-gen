@@ -831,6 +831,7 @@ void GUI::filterTask(std::string filter) noexcept {
         auto &enums = collection.enums;
         auto &structs = collection.structs;
         auto &commands = collection.commands;
+        auto &handles = collection.handles;
         auto &platforms = collection.platforms;
         auto &extensions = collection.extensions;
 
@@ -849,6 +850,14 @@ void GUI::filterTask(std::string filter) noexcept {
         }
 
         for (auto &c : commands) {
+            // std::cout << c.name << std::endl;
+            c.filtered = std::regex_search(c.name, rgx);
+            if (filterTaskAbort) {
+                break;
+            }
+        }
+
+        for (auto &c : handles) {
             c.filtered = std::regex_search(c.name, rgx);
             if (filterTaskAbort) {
                 break;
@@ -897,12 +906,14 @@ void GUI::onLoad() {
 
     auto &gEnums = gen->getEnums();
     auto &gStructs = gen->getStructs();
+    auto &gHandles = gen->getHandles();
     auto &gCommands = gen->getCommands();
     auto &gPlatforms = gen->getPlatforms();
     auto &gExtensions = gen->getExtensions();
 
     auto &enums = collection.enums;
     auto &structs = collection.structs;
+    auto &handles = collection.handles;
     auto &commands = collection.commands;
     auto &platforms = collection.platforms;
     auto &extensions = collection.extensions;
@@ -910,6 +921,7 @@ void GUI::onLoad() {
     platforms.clear();
     enums.clear();
     structs.clear();
+    handles.clear();
     commands.clear();
 
     const auto findPlatform = [&](const std::string &name) -> Platform * {
@@ -923,30 +935,35 @@ void GUI::onLoad() {
 
     platforms.reserve(gPlatforms.size());
     for (auto &p : gPlatforms) {
-        platforms.emplace_back(p.name.original, p);
+        platforms.emplace_back(p);
     }
 
     enums.reserve(gEnums.size());
     for (auto &e : gEnums) {
-        enums.emplace_back(e.name.original, e);
+        enums.emplace_back(e);
     }
 
     structs.reserve(gStructs.size());
     for (auto &e : gStructs) {
-        structs.emplace_back(e.name.original, e);
+        structs.emplace_back(e);
+    }
+
+    handles.reserve(gHandles.size());
+    for (auto &h : gHandles) {
+        handles.emplace_back(h);
     }
 
     std::map<std::string, Type *> cmdmap;
     commands.reserve(gCommands.size());
     for (auto &e : gCommands) {
-        auto name = e.name.original;
-        auto &p = commands.emplace_back(name, e);
+        const auto &name = e.name.original;
+        auto &p = commands.emplace_back(e);
         cmdmap.emplace(name, &p);
     }
 
     extensions.reserve(gExtensions.size());
     for (auto &e : gExtensions) {
-        auto &ext = extensions.emplace_back(e.name.original, e);
+        auto &ext = extensions.emplace_back(e);
         ext.commands.reserve(ext.data->commands.size());
         for (const auto &c : ext.data->commands) {
             auto cmd = cmdmap.find(c->name.original);
@@ -1025,7 +1042,7 @@ void GUI::setupImguiFrame() {
 
 void GUI::showHelpMarker(const char *desc) {
     ImGui::SameLine();
-    ImGui::TextDisabled("(?)");
+    ImGui::TextDisabled("[?]");
     if (ImGui::IsItemHovered()) {
         ImGui::BeginTooltip();
         ImGui::PushTextWrapPos(ImGui::GetFontSize() * 35.0f);
@@ -1159,7 +1176,7 @@ void GUI::mainScreen() {
         ImGui::PushID(id++);
 
         ImGuiTableFlags containerTableFlags = 0;
-        static auto t1 = RenderableTable("##TableNS", "General", 3, containerTableFlags, [&](GUI &g){
+        static auto t1 = RenderableTable("##TableNS", "General", 4, containerTableFlags, [&](GUI &g){
             static bool tempbool = false;
             static int indent = 25;
 
@@ -1169,7 +1186,8 @@ void GUI::mainScreen() {
             static auto content = RenderableArray<3>({
                 make_config_option(0, BoolGUI{&cfg.gen.cppModules.data, "C++ modules"}, "generate api in c++20 modules"),
                 make_config_option(0, BoolGUI{&cfg.gen.exceptions.data, "exceptions"}, "enable vulkan exceptions"),
-                make_config_option(0, BoolGUI{&cfg.gen.orderCommands.data, "order PFN pointers"}, "description"),
+                make_config_option(0, BoolGUI{&cfg.gen.nodiscard.data, "nodiscard"}, ""),
+                //make_config_option(0, AdvancedOnlyGUI{&cfg.gen.orderCommands.data, "order PFN pointers"}, "description"),
                 //make_decorator(DummySameLine(0, 0), BoolGUI{&cfg.gen.inlineCommands.data, "inline commands"}),
             });
             content.render(g);
@@ -1177,23 +1195,35 @@ void GUI::mainScreen() {
             ImGui::TableSetColumnIndex(1);
             ImGui::Text("Vulkan namespace");
 
-            static auto contentNamespace = RenderableArray<8>({
-                make_config_option(0, AdvancedBoolGUI(&cfg.gen.vulkanEnums.data, "enums"), "description"),
+            static auto contentNamespace1 = RenderableArray<5>({
+                // make_config_option(0, AdvancedBoolGUI(&cfg.gen.vulkanEnums.data, "enums"), "description"),
                 make_config_option(0, AdvancedBoolGUI(&cfg.gen.vulkanStructs.data, "structures"), "description"),
                 make_config_option(indent, BoolGUI(&cfg.gen.structConstructor.data, "struct constructors"), "description"),
+                make_config_option(indent, BoolGUI(&cfg.gen.structSetters.data, "setters"), "description"),
+                make_config_option(indent, BoolGUI(&cfg.gen.structSetters.data, "proxy setters"), "description"),
+                make_config_option(indent, BoolGUI(&cfg.gen.structReflect.data, "reflect"), "description"),                
+                }
+            );
+            contentNamespace1.render(g);
+
+            ImGui::TableSetColumnIndex(2);
+            ImGui::Text("");
+
+            static auto contentNamespace2 = RenderableArray<5>({
                 make_config_option(0, AdvancedBoolGUI(&cfg.gen.vulkanHandles.data, "handles"), "description"),
                 make_config_option(indent, BoolGUI(&cfg.gen.smartHandles.data, "smart handles"), "description"),
-                make_config_option(0, AdvancedBoolGUI(&cfg.gen.vulkanCommands.data, "commands"), "description"),
+                make_config_option(0, BoolGUI(&cfg.gen.vulkanCommands.data, "commands"), "description"),
                 make_config_option(indent, BoolGUI(&cfg.gen.dispatchParam.data, "dispatch paramenter"), "description"),
+                //make_config_option(indent * 2, AdvancedOnlyGUI(&cfg.gen.dispatchTemplate.data, "dispatch as template"), "description"),
                 make_config_option(indent, BoolGUI(&cfg.gen.allocatorParam.data, "allocator parameter"), "description")
                 }
             );
-            contentNamespace.render(g);
+            contentNamespace2.render(g);
 
-            ImGui::TableSetColumnIndex(2);
+            ImGui::TableSetColumnIndex(3);
             ImGui::Text("Vulkan RAII namespace");
             static auto contentRAII = RenderableArray<1>({
-                make_config_option(0, AdvancedBoolGUI(&cfg.gen.vulkanCommandsRAII.data, "commands"), "description"),
+                make_config_option(0, BoolGUI(&cfg.gen.vulkanCommandsRAII.data, "commands"), "description"),
                 }
             );
             contentRAII.render(g);
@@ -1594,6 +1624,7 @@ void GUI::Type::draw(int id) {
     ImGui::SameLine();
     bool check = data->isEnabled();
     if (ImGui::Checkbox("", &check)) {
+        std::cout << "set enabled: " << check << ": " << data->name << std::endl;
         data->setEnabled(check);
     }
     ImGui::SameLine();
@@ -1618,6 +1649,8 @@ void GUI::Type::draw(int id) {
             ImGui::EndTooltip();
         }
     }
+
+    // if ( !data->dependencies.empty()) {
 
     if (!disabler.empty()) {
         ImGui::PopStyleVar();
@@ -1676,6 +1709,7 @@ void GUI::Collection::draw(int &id, bool filtered) {
     Type::visualizeDisabled = true;
     enums.draw(id++);
     structs.draw(id++);
+    handles.draw(id++);
     commands.draw(id++);
 }
 

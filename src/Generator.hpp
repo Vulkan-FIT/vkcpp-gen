@@ -171,6 +171,7 @@ class Generator {
         ConfigWrapper<bool> vulkanHandles{"vk_handles", {true}};
 
         ConfigWrapper<bool> vulkanCommandsRAII{"vk_raii_commands", {true}};
+        ConfigWrapper<bool> nodiscard{"nodiscard", {true}};
         ConfigWrapper<bool> dispatchParam{"dispatch_param", {true}};
         ConfigWrapper<bool> dispatchTemplate{"dispatch_template", {true}};
         ConfigWrapper<bool> dispatchLoaderStatic{"dispatch_loader_static", {true}};
@@ -194,6 +195,7 @@ class Generator {
                 vulkanHandles,
                 vulkanCommands,
                 vulkanCommandsRAII,
+                nodiscard,
                 dispatchParam,
                 dispatchTemplate,
                 dispatchLoaderStatic,
@@ -350,10 +352,8 @@ class Generator {
         bool supported = true;
     };
 
-    struct PlatformData : public BaseType {
-        // std::string name;
+    struct PlatformData : public BaseType {        
         std::string_view protect;
-        //bool enabled = {};
 
         PlatformData(const std::string &name, std::string_view protect, bool enabled) :
             protect(protect)
@@ -362,17 +362,6 @@ class Generator {
             BaseType::enabled = enabled;
         }
 
-//        void setEnabled(bool value) {
-//            enabled = value;
-//        }
-
-//        bool isEnabled() const {
-//            return enabled;
-//        }
-
-//        bool isRequired() const {
-//            return enabled;
-//        }
     };
 
     using GenFunction = std::function<void(XMLNode *)>;
@@ -557,6 +546,16 @@ class Generator {
 //            return find(std::string_view{name}, dbg);
 //        }
 
+        typename std::vector<T>::const_iterator find(const std::string_view &name) const {
+            typename std::vector<T>::const_iterator it;
+            for (it = items.begin(); it != items.end(); ++it) {
+                if (it->name.original == name) {
+                    break;
+                }
+            }
+            return it;
+        }
+
         typename std::vector<T>::iterator find(const std::string_view &name, bool dbg = false) {
             typename std::vector<T>::iterator it;
             for (it = items.begin(); it != items.end(); ++it) {
@@ -610,17 +609,13 @@ class Generator {
 
     };
 
+    // struct StructData;
 
-    struct StructData;
-
-    struct ExtensionData : public BaseType {
-        // std::string name;
+    struct ExtensionData : public BaseType {        
         std::string protect;
         PlatformData *platform;
         std::vector<CommandData *> commands;
         std::vector<BaseType *> types;
-//        bool supported = true;
-//        bool enabled = {};
 
         ExtensionData(const std::string &name, PlatformData *platform, bool supported, bool enabled) :
             platform(platform)
@@ -633,32 +628,32 @@ class Generator {
             }
         }
 
-//        void setEnabled(bool value) {
-//            enabled = value;
-//        }
-
-//        bool isEnabled() const {
-//            return enabled;
-//        }
-
-//        bool isRequired() const {
-//            return enabled;
-//        }
-
     };
 
-    struct GenOutputClass {
-        std::string sPublic;
-        std::string sPrivate;
-        std::string sProtected;
-        std::string inherits;
+    struct FileOutput {
+        std::string filename;
+        std::string content;
+
+        FileOutput() {
+        }
+
+        FileOutput(const std::string &filename) : filename(filename)
+        {}
+
+        FileOutput& operator+=(const std::string& str){
+            content += str;
+            return *this;
+        }
     };
 
+
+    template<typename T = std::string>
     class UnorderedOutput {
         const Generator &g;
-        std::map<std::string, std::string> segments;
 
       public:
+        std::map<std::string, T> segments;
+
         UnorderedOutput(const Generator &gen) : g(gen) {}
 
         std::string get() const {
@@ -679,40 +674,24 @@ class Generator {
             segments[protect] += code;
         }
 
-        void addString(const std::string &code) {
-            segments[""] += code;
+        UnorderedOutput& operator+=(const std::string& str){
+            segments[""] += str;
+            return *this;
         }
     };
 
-    Config cfg;
-    bool verbose;
-    XMLDocument doc;
-    XMLElement *root;
-    std::string registryPath;
+    struct GenOutputClass {
+        GenOutputClass(const Generator &gen)
+            : sPublic(gen),
+              sPrivate(gen),
+              sProtected(gen)
+        {}
 
-    std::string outputFilePath;
-    UnorderedOutput outputFuncs;
-    UnorderedOutput outputFuncsRAII;
-
-    std::string headerVersion;
-
-    bool dispatchLoaderBaseGenerated;
-
-    std::vector<const EnumValue *> errorClasses;
-
-    using Commands = Container<CommandData>;
-    using Platforms = Container<PlatformData>;
-    using Extensions = Container<ExtensionData>;
-    using Tags = std::unordered_set<std::string>;
-
-    Platforms platforms; // maps platform name to protect (#if defined PROTECT)
-    Extensions extensions;
-    Tags tags; // list of tags from <tags>
-    std::unordered_map<Namespace, Macro *> namespaces;
-
-    Commands commands;
-    std::vector<std::reference_wrapper<CommandData>> staticCommands;
-    std::vector<std::reference_wrapper<CommandData>> orderedCommands;
+        UnorderedOutput<> sPublic;
+        UnorderedOutput<> sPrivate;
+        UnorderedOutput<> sProtected;
+        std::string inherits;
+    };
 
     struct StructData : BaseType {
         enum VkStructType { VK_STRUCT, VK_UNION } type;
@@ -727,126 +706,6 @@ class Generator {
         }
     };
 
-    Container<StructData> structs;
-
-    bool isStructOrUnion(const std::string &name) const;
-
-    Container<EnumData> enums;
-
-    template <class... Args>
-    std::string format(const std::string &format, const Args... args) const;
-
-    bool defaultWhitelistOption = true;
-
-    void parsePlatforms(XMLNode *node);
-
-    void parseFeature(XMLNode *node);
-
-    void parseExtensions(XMLNode *node);
-
-    void parseTags(XMLNode *node);
-
-    std::string genWithProtect(const std::string &code, const std::string &protect) const;
-
-    std::pair<std::string, std::string> genCodeAndProtect(const BaseType &type,
-                                                          std::function<void(std::string &)> function, bool bypass = false) const;
-
-    std::string genOptional(const BaseType &type,
-                            std::function<void(std::string &)> function, bool bypass = false) const;
-
-    std::string strRemoveTag(std::string &str) const;
-
-    std::string strWithoutTag(const std::string &str) const;
-
-    std::pair<std::string, std::string> snakeToCamelPair(std::string str) const;
-
-    std::string snakeToCamel(const std::string &str) const;
-
-    std::string enumConvertCamel(const std::string &enumName, std::string value,
-                                 bool isBitmask = false) const;
-
-    std::string genNamespaceMacro(const Macro &m);
-
-    std::string generateHeader();
-
-    struct GenOutput {
-        std::string enums;
-        std::string handles;
-        std::string structs;
-        std::string raii;
-    };
-
-    void generateFiles(std::filesystem::path path);
-
-    std::string generateMainFile(GenOutput&);
-
-    std::string generateModuleImpl();
-
-    Variables parseStructMembers(XMLElement *node, std::string &structType,
-                                 std::string &structTypeValue);
-
-    void parseEnumExtend(XMLElement &node, ExtensionData *ext);
-
-    std::string generateEnum(const EnumData &data);
-
-    std::string generateEnums();
-
-    std::string genFlagTraits(const EnumData &data, std::string name);
-
-    std::string generateDispatch();
-
-    std::string generateErrorClasses();
-
-    std::string generateDispatchLoaderBase();
-
-    std::string generateDispatchLoaderStatic();
-
-    bool useDispatchLoader() const {
-        const auto &cfg = getConfig();
-        return cfg.gen.dispatchLoaderStatic && !cfg.gen.useStaticCommands;
-    }
-
-    std::string getDispatchArgument(bool assignment) const {
-        if (!cfg.gen.dispatchParam) {
-            return "";
-        }
-        std::string out =
-            format("::{NAMESPACE}::DispatchLoaderStatic const &d");
-        if (assignment) {
-            out += " " + cfg.macro.mDispatch->get();
-        }
-        return out;
-    }
-
-    std::string getDispatchType() const {
-        if (cfg.gen.dispatchTemplate) {
-            return "Dispatch";
-        }
-        if (cfg.macro.mDispatchType->usesDefine) {
-            return cfg.macro.mDispatchType->define;
-        }
-        return format(cfg.macro.mDispatchType->value);
-    }
-
-    Argument getDispatchArgument() const {
-        if (!cfg.gen.dispatchParam) {
-            return Argument("", "");
-        }
-        std::string assignment = cfg.macro.mDispatch->get();
-        if (!assignment.empty()) {
-            assignment = " " + assignment;
-        }
-        auto type = format("::{NAMESPACE}::DispatchLoaderStatic const &");
-        return Argument(type, "d", assignment);
-    }
-
-    std::string getDispatchCall(const std::string &var = "d.") const {
-        if (cfg.gen.dispatchParam) {
-            return var;
-        }
-        return "::";
-    }
-
     struct MemberContext : CommandData {
         using Var = const std::shared_ptr<VariableData>;
 
@@ -854,7 +713,7 @@ class Generator {
         HandleData *cls;
         Namespace ns;
         std::string pfnSourceOverride;
-        std::string pfnNameOverride;        
+        std::string pfnNameOverride;
         bool raiiOnly = {};
         bool useThis = {};
         bool isStatic = {};
@@ -880,7 +739,7 @@ class Generator {
                       bool constructor = false)
             : gen(gen), ns(ns), constructor(constructor)
         {
-            *reinterpret_cast<BaseType*>(this) = s;            
+            *reinterpret_cast<BaseType*>(this) = s;
             this->cls = cls;
             // name = s.name;
             initParams(s.members);
@@ -1059,7 +918,7 @@ class Generator {
             creationCat = HandleCreationCategory::NONE;
         }
 
-        void clear() {            
+        void clear() {
             generated.clear();
             uniqueVars.clear();
             raiiVars.clear();
@@ -1078,9 +937,164 @@ class Generator {
         }
     };
 
-    using Handles = std::map<std::string, HandleData>;
+    struct GenOutput {
+        std::string enums;
+        std::string handles;
+        std::string structs;
+        std::string raii;
+    };
+
+    using Commands = Container<CommandData>;
+    using Platforms = Container<PlatformData>;
+    using Extensions = Container<ExtensionData>;
+    using Tags = std::unordered_set<std::string>;
+    using Handles = Container<HandleData>;
+    using Structs = Container<StructData>;
+    using Enums = Container<EnumData>;
+
+    Config cfg;
+    bool verbose;
+    XMLDocument doc;
+    XMLElement *root;
+    std::string registryPath;
+
+    std::string outputFilePath;
+    UnorderedOutput<> outputFuncs;
+    UnorderedOutput<> outputFuncsRAII;
+    UnorderedOutput<FileOutput> platformOutput;
+
+    std::string headerVersion;
+
+    bool dispatchLoaderBaseGenerated;
+
+    std::vector<const EnumValue *> errorClasses;
+
+    Platforms platforms; // maps platform name to protect (#if defined PROTECT)
+    Extensions extensions;
+    Tags tags; // list of tags from <tags>
+    std::unordered_map<Namespace, Macro *> namespaces;
+
+    Commands commands;
+    std::vector<std::reference_wrapper<CommandData>> staticCommands;
+    std::vector<std::reference_wrapper<CommandData>> orderedCommands;
+
+    Structs structs;
+    Enums enums;
+
+    //using Handles = std::map<std::string, HandleData>;
     Handles handles;
     HandleData loader;
+
+    bool isStructOrUnion(const std::string &name) const;
+
+    template <class... Args>
+    std::string format(const std::string &format, const Args... args) const;
+
+    bool defaultWhitelistOption = true;
+
+    void parsePlatforms(XMLNode *node);
+
+    void parseFeature(XMLNode *node);
+
+    void parseExtensions(XMLNode *node);
+
+    void parseTags(XMLNode *node);
+
+    std::string genWithProtect(const std::string &code, const std::string &protect) const;
+
+    std::pair<std::string, std::string> genCodeAndProtect(const BaseType &type,
+                                                          std::function<void(std::string &)> function, bool bypass = false) const;
+
+    std::string genOptional(const BaseType &type,
+                            std::function<void(std::string &)> function, bool bypass = false) const;
+
+    std::string strRemoveTag(std::string &str) const;
+
+    std::string strWithoutTag(const std::string &str) const;
+
+    std::pair<std::string, std::string> snakeToCamelPair(std::string str) const;
+
+    std::string snakeToCamel(const std::string &str) const;
+
+    std::string enumConvertCamel(const std::string &enumName, std::string value,
+                                 bool isBitmask = false) const;
+
+    std::string genNamespaceMacro(const Macro &m);
+
+    std::string generateHeader();
+
+    void generateFiles(std::filesystem::path path);
+
+    std::string generateMainFile(GenOutput&);
+
+    std::string generateModuleImpl();
+
+    Variables parseStructMembers(XMLElement *node, std::string &structType,
+                                 std::string &structTypeValue);
+
+    void parseEnumExtend(XMLElement &node, ExtensionData *ext);
+
+    std::string generateEnumStr(const EnumData &data);
+
+    std::string generateEnum(const EnumData &data);
+
+    std::string generateEnums();
+
+    std::string genFlagTraits(const EnumData &data, std::string name);
+
+    std::string generateDispatch();
+
+    std::string generateErrorClasses();
+
+    std::string generateDispatchLoaderBase();
+
+    std::string generateDispatchLoaderStatic();
+
+    bool useDispatchLoader() const {
+        const auto &cfg = getConfig();
+        return cfg.gen.dispatchLoaderStatic && !cfg.gen.useStaticCommands;
+    }
+
+    std::string getDispatchArgument(bool assignment) const {
+        if (!cfg.gen.dispatchParam) {
+            return "";
+        }
+        std::string out =
+            format("::{NAMESPACE}::DispatchLoaderStatic const &d");
+        if (assignment) {
+            out += " " + cfg.macro.mDispatch->get();
+        }
+        return out;
+    }
+
+    std::string getDispatchType() const {
+        if (cfg.gen.dispatchTemplate) {
+            return "Dispatch";
+        }
+        if (cfg.macro.mDispatchType->usesDefine) {
+            return cfg.macro.mDispatchType->define;
+        }
+        return format(cfg.macro.mDispatchType->value);
+    }
+
+    Argument getDispatchArgument() const {
+        if (!cfg.gen.dispatchParam) {
+            return Argument("", "");
+        }
+        std::string assignment = cfg.macro.mDispatch->get();
+        if (!assignment.empty()) {
+            assignment = " " + assignment;
+        }
+        auto type = format("::{NAMESPACE}::DispatchLoaderStatic const &");
+        return Argument(type, "d", assignment);
+    }
+
+    std::string getDispatchCall(const std::string &var = "d.") const {
+        if (cfg.gen.dispatchParam) {
+            return var;
+        }
+        return "::";
+    }  
 
     bool isHandle(const std::string &name) const {
         return handles.find(name) != handles.end() || name == loader.name.original;
@@ -1094,7 +1108,7 @@ class Generator {
         if (handle == handles.end()) {
             throw std::runtime_error("Handle not found: " + std::string(name));
         }
-        return handle->second;
+        return *handle;
     }
 
     const HandleData &findHandle(const std::string &name) const {
@@ -1105,7 +1119,7 @@ class Generator {
         if (handle == handles.end()) {
             throw std::runtime_error("Handle not found: " + std::string(name));
         }
-        return handle->second;
+        return *handle;
     }    
 
     BaseType *findType(const std::string &name) {
@@ -1128,11 +1142,16 @@ class Generator {
 //                return c.second;
 //            }
 //        }
-        for (auto &c : handles) {
-            if (c.second.name.original == name) {
-                return &c.second;
-            }
+
+        auto h = handles.find(name);
+        if (h != handles.end()) {
+            return h.base();
         }
+//        for (auto &c : handles) {
+//            if (c.second.name.original == name) {
+//                return &c.second;
+//            }
+//        }
         return nullptr;
     }
 
@@ -1388,6 +1407,10 @@ class Generator {
         }
 
         std::string generateNodiscard() {
+            const auto &cfg = ctx.gen.getConfig();
+            if (!cfg.gen.nodiscard) {
+                return "";
+            }
             if (!returnType.empty() && returnType != "void") {
                 return "VULKAN_HPP_NODISCARD ";
             }
@@ -1651,7 +1674,7 @@ class Generator {
 
         virtual ~MemberResolverBase() {}
 
-        virtual void generate(std::string &decl, UnorderedOutput &def);
+        virtual void generate(UnorderedOutput<> &decl, UnorderedOutput<> &def, UnorderedOutput<FileOutput> &platform_def, bool separate = false);
 
         std::string generateDeclaration();
 
@@ -1805,9 +1828,9 @@ class Generator {
 
         virtual ~MemberResolver() {}
 
-        virtual void generate(std::string &decl, UnorderedOutput &def) override {
+        virtual void generate(UnorderedOutput<> &decl, UnorderedOutput<> &def, UnorderedOutput<FileOutput> &platform_def, bool separate = false) override {
             finalizeArguments();
-            MemberResolverBase::generate(decl, def);
+            MemberResolverBase::generate(decl, def, platform_def, separate);
         }
     };
 
@@ -1817,7 +1840,7 @@ class Generator {
             dbgtag = "disabled";
         }
 
-        virtual void generate(std::string &decl, UnorderedOutput &def) override {
+        virtual void generate(UnorderedOutput<> &decl, UnorderedOutput<> &def, UnorderedOutput<FileOutput> &platform_def, bool separate = false) override {
             decl += "/*\n";
             decl += generateDeclaration();
             decl += "*/\n";
@@ -2373,25 +2396,28 @@ class Generator {
                    std::vector<std::unique_ptr<MemberResolver>> &secondary);
 
     void generateClassMember(MemberContext &ctx, GenOutputClass &out,
-                             UnorderedOutput &funcs);
+                             UnorderedOutput<> &funcs, bool inlineFuncs = false);
 
     void generateClassMembers(HandleData &data, GenOutputClass &out,
-                              UnorderedOutput &funcs, Namespace ns);
+                              UnorderedOutput<> &funcs, Namespace ns, bool inlineFuncs = false);
 
     void generateClassConstructors(const HandleData &data, GenOutputClass &out);
 
     void generateClassConstructorsRAII(const HandleData &data,
-                                       GenOutputClass &out, UnorderedOutput &funcs);
+                                       GenOutputClass &out, UnorderedOutput<> &funcs);
 
-    std::string generateUniqueClass(HandleData &data, UnorderedOutput &funcs);
+    std::string generateUniqueClassStr(HandleData &data, UnorderedOutput<> &funcs, bool inlineFuncs);
+
+    std::string generateUniqueClass(HandleData &data, UnorderedOutput<> &funcs);
 
     String getHandleSuperclass(const HandleData &data);
 
-    std::string generateClass(const std::string &name, HandleData data,
-                              UnorderedOutput &funcs);
+    std::string generateClass(HandleData data, UnorderedOutput<> &funcs);
 
-    std::string generateClassRAII(const std::string &name, HandleData data,
-                                UnorderedOutput &funcs);
+    std::string generateClassStr(HandleData data,
+                              UnorderedOutput<> &funcs, bool inlineFuncs);
+
+    std::string generateClassRAII(HandleData data, UnorderedOutput<> &funcs);
 
     void parseCommands(XMLNode *node);
 
@@ -2537,6 +2563,8 @@ class Generator {
     Platforms &getPlatforms() { return platforms; };
 
     Extensions &getExtensions() { return extensions; };
+
+    auto& getHandles() { return handles; }
 
     auto& getCommands() { return commands; }
 
