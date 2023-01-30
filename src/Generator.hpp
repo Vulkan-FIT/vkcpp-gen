@@ -164,7 +164,9 @@ class Generator {
         ConfigGroupGen() : ConfigGroup{"gen"} {}
 
         ConfigWrapper<bool> cppModules{"modules", false};
-        bool structNoinit{false};
+        ConfigWrapper<bool> separatePlatforms{"separate_platforms", true};
+        ConfigWrapper<bool> separatePlatformsSingle{"single_platforms_file", true};
+        bool structNoinit{false}; // unused
         ConfigWrapper<bool> vulkanCommands{"vk_commands", {true}};
         ConfigWrapper<bool> vulkanEnums{"vk_enums", {true}};
         ConfigWrapper<bool> vulkanStructs{"vk_structs", {true}};
@@ -176,7 +178,7 @@ class Generator {
         ConfigWrapper<bool> dispatchTemplate{"dispatch_template", {true}};
         ConfigWrapper<bool> dispatchLoaderStatic{"dispatch_loader_static", {true}};
         ConfigWrapper<bool> useStaticCommands{"static_link_commands", {false}}; // move
-        ConfigWrapper<bool> allocatorParam{"allocator_param", {false}};
+        ConfigWrapper<bool> allocatorParam{"allocator_param", {true}};
         ConfigWrapper<bool> smartHandles{"smart_handles", {true}};
         ConfigWrapper<bool> exceptions{"exceptions", {true}};
         ConfigWrapper<bool> resultValueType{"use_result_value_type", {false}};
@@ -186,6 +188,9 @@ class Generator {
         ConfigWrapper<bool> structSetters{"struct_setters", {true}};
         ConfigWrapper<bool> structSettersProxy{"struct_setters_proxy", {true}};
         ConfigWrapper<bool> structReflect{"struct_reflect", {true}};
+        ConfigWrapper<bool> unionConstructor{"union_constructor", {true}};
+        ConfigWrapper<bool> unionSetters{"union_setters", {true}};
+        ConfigWrapper<bool> unionSettersProxy{"union_setters_proxy", {true}};
 
         auto reflect() const {
             return std::tie(
@@ -209,7 +214,10 @@ class Generator {
                 structConstructor,
                 structSetters,
                 structSettersProxy,
-                structReflect
+                structReflect,
+                unionConstructor,
+                unionSetters,
+                unionSettersProxy
             );
         }
     };
@@ -452,6 +460,7 @@ class Generator {
         }
 
         std::shared_ptr<VariableData> getLastVar() {
+            // params must not be empty
             return *std::prev(params.end());
         }
 
@@ -498,6 +507,10 @@ class Generator {
               name(convertName(o.name.original, cls->name), false)
         {
             name.original = o.name.original;
+
+            if (cls->name.original == "VkCommandBuffer" && name.starts_with("cmd")) {
+                name = strFirstLower(name.substr(3));
+            }
         }
 
         ClassCommandData &operator=(ClassCommandData &o) noexcept = default;
@@ -630,6 +643,7 @@ class Generator {
 
     };
 
+/*
     struct FileOutput {
         std::string filename;
         std::string content;
@@ -645,7 +659,7 @@ class Generator {
             return *this;
         }
     };
-
+*/
 
     template<typename T = std::string>
     class UnorderedOutput {
@@ -656,7 +670,11 @@ class Generator {
 
         UnorderedOutput(const Generator &gen) : g(gen) {}
 
-        std::string get() const {
+        std::string get(bool onlyNoProtect = false) const {
+            if (onlyNoProtect) {
+                std::string o = segments.at("");
+                return o;
+            }
             std::string out;
             for (const auto &k : segments) {
                 // std::cout << ">> uo[" << k.first << "]" << std::endl;
@@ -722,6 +740,7 @@ class Generator {
         bool generateInline = {};
         bool disableSubstitution = {};
         bool disableDispatch = {};
+        bool returnSingle = {};
 
         MemberContext(const ClassCommandData &m, Namespace ns,
                       bool constructor = false)
@@ -758,6 +777,7 @@ class Generator {
             generateInline = o.generateInline;
             disableSubstitution = o.disableSubstitution;
             disableDispatch = o.disableDispatch;
+            returnSingle = o.returnSingle;
 
             const auto &p = o.params;
             params.clear();
@@ -774,7 +794,7 @@ class Generator {
 
         bool isIndirect() const { return cls->isSubclass; }
 
-        std::string createProtoArguments(bool useOriginal = false, bool declaration = false) const {
+        std::string createProtoArguments(bool useOriginal = false, bool declaration = false) const {            
             return createArguments(
                 filterProto,
                 [&](Var &v) {
@@ -866,8 +886,9 @@ class Generator {
                     if (inUnique && !proto && !disableSubstitution && !p->hasLengthVar()) {
                         for (const auto &v : cls->uniqueVars) {
                             if (p->type() == v.type()) {
-                                out += matchTypePointers(v.suffix(), p->original.suffix());
-                                out += v.identifier();
+//                                out += matchTypePointers(v.suffix(), p->original.suffix());
+//                                out += v.identifier();
+                                out += v.toArgument();
                                 match = true;
                                 break;
                             }
@@ -961,7 +982,7 @@ class Generator {
     std::string outputFilePath;
     UnorderedOutput<> outputFuncs;
     UnorderedOutput<> outputFuncsRAII;
-    UnorderedOutput<FileOutput> platformOutput;
+    UnorderedOutput<> platformOutput;
 
     std::string headerVersion;
 
@@ -986,6 +1007,10 @@ class Generator {
     HandleData loader;
 
     bool isStructOrUnion(const std::string &name) const;
+
+    struct Signature {
+
+    };
 
     template <class... Args>
     std::string format(const std::string &format, const Args... args) const;
@@ -1238,7 +1263,7 @@ class Generator {
             return ArraySizeArgument::SIZE;
         }
         return ArraySizeArgument::INVALID;
-    }
+    }        
 
     class MemberResolverBase {
 
@@ -1254,8 +1279,14 @@ class Generator {
         bool specifierConstexpr;
         bool specifierConstexpr14;
         bool disableCheck;        
+
         std::shared_ptr<VariableData> allocatorVar;
         std::vector<std::string> usedTemplates;
+
+        void reset() {
+            resultVar.setSpecialType(VariableData::TYPE_INVALID);
+            usedTemplates.clear();
+        }
 
         std::string declareReturnVar(const std::string &assignment = "") {
             if (!resultVar.isInvalid()) {
@@ -1332,14 +1363,23 @@ class Generator {
         }
 
         std::string generateReturnValue(const std::string &identifier) {
-            if (resultVar.isInvalid() || !usesResultValueType()) {
+            if (resultVar.isInvalid()) {
                 return identifier;
             }
 
-            std::string out = "createResultValueType";
-            //            if (returnType != "void" && returnType != "Result") {
-            //                out += "<" + returnType + ">";
-            //            }
+            std::string out;
+            if (usesResultValue()) {
+                out += "ResultValue<" + returnType + ">";
+            }
+            else if (usesResultValueType()) {
+                out += "createResultValueType";
+                //            if (returnType != "void" && returnType != "Result") {
+                //                out += "<" + returnType + ">";
+                //            }
+            }
+            else {
+                return identifier;
+            }
             out += "(";
             if (resultVar.identifier() != identifier) {
                 out += resultVar.identifier() + ", ";
@@ -1390,6 +1430,10 @@ class Generator {
             return output;
         }
 
+        bool usesResultValue() const {
+            return !returnType.empty() && returnType != "Result" && ctx.pfnReturn == PFNReturnCategory::VK_RESULT && ctx.successCodes.size() > 1;
+        }
+
         bool usesResultValueType() const {
             const auto &cfg = ctx.gen.getConfig();
             if (!cfg.gen.resultValueType) {
@@ -1400,6 +1444,9 @@ class Generator {
         }
 
         std::string generateReturnType() {
+            if (usesResultValue()) {
+                return "ResultValue<" + returnType + ">";
+            }
             if (usesResultValueType()) {
                 return "ResultValueType<" + returnType + ">::type";
             }
@@ -1443,17 +1490,24 @@ class Generator {
             }
 
             std::string temp;
+            std::string allocatorTemplate;
             for (const auto &p : ctx.params) {
                 const std::string &str = p->getTemplate();
                 if (!str.empty()) {
                     temp += "typename " + str;
-                    if (declaration && str == "Dispatch") {
-                        temp += " = VULKAN_HPP_DEFAULT_DISPATCHER_TYPE";
+                    if (declaration) {
+                        temp += p->getTemplateAssignment();
                     }
-                    temp += ", ";
+                    temp += ",\n";
                 }
             }
-            strStripSuffix(temp, ", ");
+            if (!allocatorTemplate.empty()) {
+                temp += "typename B0 = " + allocatorTemplate + ",\n";
+                strStripSuffix(allocatorTemplate, "Allocator");
+                temp += "typename std::enable_if<std::is_same<typename B0::value_type, " + allocatorTemplate + ">::value, int>::type = 0";
+            }
+
+            strStripSuffix(temp, ",\n");
             if (!temp.empty()) {
                 output += indent + "template <" + temp + ">\n";
             }
@@ -1638,6 +1692,9 @@ class Generator {
             var->setSpecialType(VariableData::TYPE_ARRAY_PROXY_NO_TEMPORARIES);
         }
 
+        std::shared_ptr<VariableData> last;
+        std::shared_ptr<VariableData> stdAllocator;
+
       public:
         std::string dbgtag;
 
@@ -1648,33 +1705,75 @@ class Generator {
             dbgtag = "default";
             specifierInline = true;
             specifierExplicit = false;
-            specifierConst = true;            
+            specifierConst = true;
             specifierConstexpr = false;
             specifierConstexpr14 = false;
-            disableCheck = false;            
+            disableCheck = false;
+
+            auto rbegin = ctx.params.rbegin();
+            if (rbegin != ctx.params.rend()) {
+                last = *rbegin;
+            }
+            else {
+                last = std::make_shared<VariableData>(refCtx.gen, VariableData::TYPE_INVALID);
+            }
 
             const auto &cfg = ctx.gen.getConfig();
+            bool dispatch = cfg.gen.dispatchParam && ctx.ns == Namespace::VK && !ctx.disableDispatch;
 
-            if (cfg.gen.dispatchParam && ctx.ns == Namespace::VK && !ctx.disableDispatch) {
+            if (dispatch) {
                 std::string type = ctx.gen.getDispatchType();
                 VariableData var(ctx.gen);
+                var.setSpecialType(VariableData::TYPE_DISPATCH);
                 var.setFullType("", type, " const &");
                 var.setIdentifier("d");
-                var.setIgnorePFN(true);
+                var.setIgnorePFN(true);                
+                var.setOptional(true);
                 if (cfg.gen.dispatchTemplate) {
                     var.setTemplate(type);
+                    var.setTemplateAssignment(" = VULKAN_HPP_DEFAULT_DISPATCHER_TYPE");
                 }
                 std::string assignment = cfg.macro.mDispatch->get();
                 if (!assignment.empty()) {
                     var.setAssignment(" " + assignment);
                 }
+
                 ctx.params.push_back(std::make_shared<VariableData>(var));
             }
         }
 
         virtual ~MemberResolverBase() {}
 
-        virtual void generate(UnorderedOutput<> &decl, UnorderedOutput<> &def, UnorderedOutput<FileOutput> &platform_def, bool separate = false);
+        virtual void generate(UnorderedOutput<> &decl, UnorderedOutput<> &def
+                              //,UnorderedOutput<FileOutput> &platform_def, bool separate = false
+                              );
+
+        bool returnsVector() const {
+            return last->getSpecialType() == VariableData::TYPE_VECTOR;
+        }
+
+        bool returnsTemplate() {
+            return !last->getTemplate().empty();
+        }
+
+        void addStdAllocator() {
+            auto it = ctx.params.rbegin();
+            if (it != ctx.params.rend() && (*it)->getSpecialType() == VariableData::TYPE_DISPATCH) {
+                it++;
+            }
+            const std::string &type = strFirstUpper(last->type()) + "Allocator";
+
+            VariableData var(ctx.gen);
+            var.setSpecialType(VariableData::TYPE_STD_ALLOCATOR);
+            var.setFullType("", type, " &");
+            var.setIdentifier(strFirstLower(type));
+            var.setIgnorePFN(true);
+            var.setTemplate(type);            
+            var.setTemplateAssignment(" = std::allocator<" + last->type() + ">");
+
+            stdAllocator = std::make_shared<VariableData>(var);
+            ctx.params.insert(it.base(), stdAllocator);
+        }
 
         std::string generateDeclaration();
 
@@ -1777,33 +1876,79 @@ class Generator {
                     p->setConst(true);
                     convertName(p);
                 }
-            }
-        }
 
-        void finalizeArguments() {        
-            bool hasAssignment = true;
-            for (auto it = ctx.params.rbegin(); it != ctx.params.rend(); it++) {
-                if (it->get()->getIgnoreFlag()) {
-                    continue;
-                }
-                if (hasAssignment && it->get()->assignment().empty()) {
-                    hasAssignment = false;
-                }
-                if (it->get()->type() == "AllocationCallbacks") {
-                    allocatorVar = *it;
-                    if (ctx.gen.getConfig().gen.allocatorParam) {
-                        allocatorVar->convertToOptional();
-                        if (hasAssignment) {
-                            allocatorVar->setAssignment(" = nullptr");
-                        }
-                    } else {
+                if (p->original.type() == "VkAllocationCallbacks") {
+                    allocatorVar = p;
+                    if (!ctx.gen.getConfig().gen.allocatorParam) {
                         allocatorVar->setIgnoreFlag(true);
+                    }
+                }
+
+                if (p->isOptional()) {
+                    if (!p->isPointer() && p->original.isPointer()) {
+                       p->convertToOptionalWrapper();
                     }
                 }
             }
         }
 
+        void finalizeArguments() {        
+
+            if (returnsVector()) {
+                for (auto it = ctx.successCodes.begin(); it != ctx.successCodes.end(); ++it) {
+                    if (*it == "VK_INCOMPLETE") {
+                        ctx.successCodes.erase(it);
+                        break;
+                    }
+                }
+            }
+
+            bool assignment = true;
+            for (auto it = ctx.params.rbegin(); it != ctx.params.rend(); it++) {
+                auto &v = *it;
+                if (v->getIgnoreFlag()) {
+                    continue;
+                }                
+                if (v->getSpecialType() == VariableData::TYPE_DISPATCH) {
+                    continue;
+                }
+
+//                if (hasAssignment && it->get()->getAssignment().empty()) {
+//                    hasAssignment = false;
+//                }
+
+//                if (hasAssignment) {
+//                    if (v->type() != "Dispatch" && v->type() != "AllocationCallbacks") {
+//                        std::cout << ">> can be optional: " << v->type() << std::endl;
+//                    }
+//                }
+                if (v->isOptional()) {
+                    if (v->isPointer()) {
+                        v->setAssignment(" VULKAN_HPP_DEFAULT_ARGUMENT_NULLPTR_ASSIGNMENT");
+                    }
+                    else {
+                        if (v->original.isPointer()) {
+                            v->setAssignment(" VULKAN_HPP_DEFAULT_ARGUMENT_NULLPTR_ASSIGNMENT");
+                        }
+                        else {
+                            v->setAssignment(" VULKAN_HPP_DEFAULT_ARGUMENT_ASSIGNMENT");
+                            // if (v->isReference() && !v->isConst())
+                            // integrity check
+                        }
+
+                    }
+                }
+                if (!assignment) {
+                    v->setAssignment("");
+                }
+                if (v->getAssignment().empty()) {
+                    assignment = false;
+                }
+            }
+        }
+
       protected:
+
         virtual std::string generateMemberBody() override {
             std::string output;
             bool immediate = ctx.pfnReturn != PFNReturnCategory::VK_RESULT &&
@@ -1828,9 +1973,11 @@ class Generator {
 
         virtual ~MemberResolver() {}
 
-        virtual void generate(UnorderedOutput<> &decl, UnorderedOutput<> &def, UnorderedOutput<FileOutput> &platform_def, bool separate = false) override {
+        virtual void generate(UnorderedOutput<> &decl, UnorderedOutput<> &def//, UnorderedOutput<FileOutput> &platform_def, bool separate = false
+                              ) override {
             finalizeArguments();
-            MemberResolverBase::generate(decl, def, platform_def, separate);
+            MemberResolverBase::generate(decl, def//, platform_def, separate
+                                         );
         }
     };
 
@@ -1840,7 +1987,8 @@ class Generator {
             dbgtag = "disabled";
         }
 
-        virtual void generate(UnorderedOutput<> &decl, UnorderedOutput<> &def, UnorderedOutput<FileOutput> &platform_def, bool separate = false) override {
+        virtual void generate(UnorderedOutput<> &decl, UnorderedOutput<> &def//, UnorderedOutput<FileOutput> &platform_def, bool separate = false
+                              ) override {
             decl += "/*\n";
             decl += generateDeclaration();
             decl += "*/\n";
@@ -1866,8 +2014,10 @@ class Generator {
 
       public:
         MemberResolverPass(MemberContext &refCtx)
-            : MemberResolverBase(refCtx) {
+            : MemberResolverBase(refCtx)
+        {
             ctx.disableSubstitution = true;
+            dbgtag = "pass";
         }
 
         virtual std::string generateMemberBody() override {
@@ -1878,14 +2028,15 @@ class Generator {
     class MemberResolverVectorRAII : public MemberResolver {
       protected:
         std::shared_ptr<VariableData> parent;
-        std::shared_ptr<VariableData> last;
+        // std::shared_ptr<VariableData> last;
         bool ownerInParent;
 
       public:
         MemberResolverVectorRAII(MemberContext &refCtx, bool term = true)
             : MemberResolver(refCtx) {
+
             if (term) {
-                last = *ctx.params.rbegin();
+                // last = *ctx.params.rbegin();
                 last->setIgnoreFlag(true);
                 last->setIgnorePFN(true);
                 if (last->hasLengthVar() && !last->isLenAttribIndirect()) {
@@ -2136,8 +2287,11 @@ class Generator {
                 }
                 for (const auto &v : ctx.cls->uniqueVars) {
                     if (p->type() == v.type()) {
-                        std::string m = matchTypePointers(p->suffix(), v.suffix());
-                        init.append(v.identifier(), m + p->identifier());
+                        VariableData src(*p);
+                        src.original.setFullType(v.prefix(), v.type(), v.suffix());
+                        // std::string m = matchTypePointers(p->suffix(), v.suffix());
+                        //init.append(v.identifier(), m + p->identifier());
+                        init.append(v.identifier(), src.toArgument());
                         break;
                     }
                 }
@@ -2156,7 +2310,7 @@ class Generator {
 
     class MemberResolverVectorCtor : public MemberResolverCtor {
 
-        std::shared_ptr<VariableData> last;
+        //std::shared_ptr<VariableData> last;
 
       public:
         MemberResolverVectorCtor(MemberContext &refCtx)
@@ -2211,14 +2365,18 @@ class Generator {
 
     class MemberResolverCreate : public MemberResolver {
       protected:
-        std::shared_ptr<VariableData> last;
+        // std::shared_ptr<VariableData> last;
 
       public:
         MemberResolverCreate(MemberContext &refCtx) : MemberResolver(refCtx) {
 
             last = ctx.getLastPointerVar();
 
-            if (last->isArray()) {
+//            if (ctx.returnSingle) {
+//                std::cout << "> rs: " << ctx.name << std::endl;
+//            }
+
+            if (last->isArray() && !ctx.returnSingle) {
                 last->convertToStdVector();
             } else {
                 last->convertToReturn();
@@ -2236,7 +2394,7 @@ class Generator {
 
         virtual std::string generateMemberBody() override {
             std::string output;
-            if (last->isArray()) {
+            if (last->isArray() && !ctx.returnSingle) {
                 output += generateArrayCode(last);
             } else {
                 if (ctx.ns == Namespace::RAII) {
@@ -2299,7 +2457,7 @@ class Generator {
 
     class MemberResolverGet : public MemberResolver {
       protected:
-        std::shared_ptr<VariableData> last;
+        //std::shared_ptr<VariableData> last;
 
         std::string generateSingle() {
             std::string output;            
@@ -2548,6 +2706,10 @@ class Generator {
 
     bool isOuputFilepathValid() const {
         return std::filesystem::is_directory(outputFilePath);
+    }
+
+    bool separatePlatforms() const {
+        return cfg.gen.separatePlatforms;
     }
 
     std::string getOutputFilePath() const { return outputFilePath; }

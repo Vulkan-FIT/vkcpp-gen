@@ -105,7 +105,9 @@ struct VariableData : public VariableFields {
         TYPE_ARRAY_PROXY_NO_TEMPORARIES,
         TYPE_VECTOR,
         TYPE_ARRAY,
-        TYPE_OPTIONAL
+        TYPE_OPTIONAL,
+        TYPE_DISPATCH,
+        TYPE_STD_ALLOCATOR
     };
 
     enum ArraySize {
@@ -153,14 +155,19 @@ struct VariableData : public VariableFields {
 
     bool isLenAttribIndirect() const;
 
-    // arrayLength flag getter
-    bool hasArrayLength() const {
-    //return arrayLengthFound;
+    bool isOptional() const {
+        return optional;
+    }
+
+    void setOptional(bool value) {
+        optional = value;
+    }
+
+    bool hasArrayLength() const {    
         return arrayAttrib != ArraySize::NONE;
     }
-    // arrayLength getter
-    const std::string &arrayLength(int index = 0) const {
-    //return arrayLengthStr;
+
+    const std::string &arrayLength(int index = 0) const {    
         return arraySizes[index];
     }
 
@@ -196,8 +203,6 @@ struct VariableData : public VariableFields {
 
     bool hasLengthVar() const { return lenghtVar.get() != nullptr; }
 
-    // bool hasArrayVar() const { return arrayVar.get() != nullptr; }
-
     const std::shared_ptr<VariableData>& getLengthVar() const;
 
     const std::vector<std::shared_ptr<VariableData>>& getArrayVars() const;
@@ -205,15 +210,13 @@ struct VariableData : public VariableFields {
         return arrayVars;
     };
 
-    // void convertToTemplate();
-
     void convertToReturn();
 
     void convertToReference();
 
     void convertToPointer();
 
-    void convertToOptional();
+    void convertToOptionalWrapper();
 
     void convertToStdVector();
 
@@ -260,11 +263,19 @@ struct VariableData : public VariableFields {
         optionalAmp = enabled? "&" : "";
     }
 
-    std::string assignment() const { return _assignment; }
+    bool isReference() const {
+        return optionalAmp == "&";
+    }
+
+    std::string getAssignment() const { return _assignment; }
 
     void setTemplate(const std::string &str);
 
+    void setTemplateAssignment(const std::string &str);
+
     std::string getTemplate() const;
+
+    std::string getTemplateAssignment() const;
 
     std::string toArrayProxySize() const;
     std::string toArrayProxyData() const;
@@ -278,17 +289,16 @@ struct VariableData : public VariableFields {
     Flags flags;
     Namespace ns;
     bool ignoreFlag;
-    bool ignorePFN;
-    //bool arrayLengthFound;
-    bool nullTerminated;
-    //std::string arrayLengthStr;
+    bool ignorePFN;    
+    bool nullTerminated;    
+    bool optional;
     ArraySize arrayAttrib{};
     std::string arraySizes[2];
     std::string lenAttribStr;
     std::string altlenAttribStr;
-    std::string _assignment;
-    // std::string optionalNamespace;
+    std::string _assignment;    
     std::string optionalTemplate;
+    std::string optionalTemplateAssignment;
 
     std::shared_ptr<VariableData> lenghtVar;
     std::vector<std::shared_ptr<VariableData>> arrayVars;

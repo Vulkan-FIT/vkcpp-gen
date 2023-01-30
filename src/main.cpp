@@ -91,7 +91,7 @@ int main(int argc, char **argv) {
             }            
         };
 
-        const auto generate = [&]{
+        const auto generate = [&] {
             // argument check
             if (!destOption.set) {
                 throw std::runtime_error("Missing arguments. See usage.");

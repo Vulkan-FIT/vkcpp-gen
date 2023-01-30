@@ -23,6 +23,7 @@ VariableData::VariableData(const Generator &gen, Type type) : gen(gen) {
     // arrayLengthFound = false;
     ignorePFN = false;
     nullTerminated = false;
+    optional = false;
 }
 
 VariableData::VariableData(const Generator &gen, const String &object) : VariableData(gen, object, strFirstLower(object))
@@ -149,7 +150,7 @@ void VariableData::convertToPointer() {
     setReferenceFlag(false);
 }
 
-void VariableData::convertToOptional() {
+void VariableData::convertToOptionalWrapper() {
     setReferenceFlag(false);
     specialType = TYPE_OPTIONAL;
 }
@@ -345,11 +346,17 @@ void VariableData::setTemplate(const std::string &str) {
     optionalTemplate = str;
 }
 
+void VariableData::setTemplateAssignment(const std::string &str) {
+    optionalTemplateAssignment = str;
+}
+
 std::string VariableData::getTemplate() const {
     return optionalTemplate;
 }
 
-
+std::string VariableData::getTemplateAssignment() const {
+    return optionalTemplateAssignment;
+}
 
 void VariableData::evalFlags(const Generator &gen) {
     flags = Flags::NONE;
@@ -402,7 +409,8 @@ std::string VariableData::toArgumentDefault(bool useOriginal) const {
         }
     }
     std::string id = identifierAsArgument();
-    if (get(TYPE) == original.get(TYPE) || useOriginal) {
+    bool same = get(TYPE) == original.get(TYPE);
+    if ((same && specialType != TYPE_OPTIONAL) || useOriginal) {
         return id;
     }
     return createCast(id);
@@ -455,6 +463,7 @@ XMLVariableParser::XMLVariableParser(tinyxml2::XMLElement *element, const Genera
 void XMLVariableParser::parse(tinyxml2::XMLElement *element, const Generator &gen) {
     const char *len = element->Attribute("len");
     const char *altlen = element->Attribute("altlen");
+    const char *optional = element->Attribute("optional");
     if (len) {
         const auto s = split(std::string(len), ",");
         for (const auto &str : s) {
@@ -474,6 +483,9 @@ void XMLVariableParser::parse(tinyxml2::XMLElement *element, const Generator &ge
     }
     if (altlen) {
         altlenAttribStr = altlen;
+    }
+    if (optional) {
+        this->optional = std::string_view{optional} == "true";
     }
 
     state = PREFIX;
