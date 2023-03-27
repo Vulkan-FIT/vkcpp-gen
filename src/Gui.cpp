@@ -1,3 +1,21 @@
+// MIT License
+// Copyright (c) 2021-2023  @guritchi
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+//                                                           copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+
 #include "Gui.hpp"
 
 #include "backends/imgui_impl_glfw.h"
@@ -11,7 +29,7 @@ Generator *GUI::gen;
 bool GUI::Type::visualizeDisabled;
 bool GUI::Type::drawFiltered;
 bool GUI::menuOpened = false;
-bool GUI::advancedMode = true;
+bool GUI::advancedMode = false;
 
 template <typename V, typename... T>
 constexpr auto array_of(T&&... t)
@@ -19,6 +37,8 @@ constexpr auto array_of(T&&... t)
 {
     return {{ std::forward<T>(t)... }};
 }
+
+static int xid = 0;
 
 namespace ImGui {
 bool CheckBoxTristate(const char *label, int *v_tristate) {
@@ -228,7 +248,7 @@ void GUI::createWindow() {
     glfwSetWindowSizeCallback(glfwWindow, genericCallback(onSize));
 
     glfwSetKeyCallback(glfwWindow, [](GLFWwindow *window, int key, int scancode, int action, int mods){
-//        std::cout << "key event: " << key << ", " << scancode << ", " << action << ", " << mods << std::endl;
+//        std::cout << "key event: " << key << ", " << scancode << ", " << action << ", " << mods << '\n';
         auto w = reinterpret_cast<Window *>(glfwGetWindowUserPointer(window));
         w->onKey(window, key, scancode, action, mods);
     });
@@ -628,7 +648,7 @@ void GUI::initImgui() {
     ImGuiIO& io = ImGui::GetIO();
     font = io.Fonts->AddFontFromMemoryCompressedBase85TTF(Poppins_compressed_data_base85, 20.0);
     if (!font) {
-        std::cerr << "font load error" << std::endl;
+        std::cerr << "font load error" << '\n';
     }
     else {
         io.Fonts->Build();
@@ -850,7 +870,7 @@ void GUI::filterTask(std::string filter) noexcept {
         }
 
         for (auto &c : commands) {
-            // std::cout << c.name << std::endl;
+            // std::cout << c.name << '\n';
             c.filtered = std::regex_search(c.name, rgx);
             if (filterTaskAbort) {
                 break;
@@ -887,7 +907,7 @@ void GUI::filterTask(std::string filter) noexcept {
         filterTaskError = e.what();
     }
     catch (std::runtime_error &e) {
-        std::cerr << "Task exception: " << e.what() << std::endl;
+        std::cerr << "Task exception: " << e.what() << '\n';
     }
     queueRedraw();
     filterTaskRunning = false;
@@ -969,7 +989,7 @@ void GUI::onLoad() {
             auto cmd = cmdmap.find(c->name.original);
             if (cmd == cmdmap.end()) {
                 std::cerr << "Gui: can't find command: " << c->name.original
-                          << std::endl;
+                          << '\n';
             } else {
                 ext.commands.push_back(cmd->second);
             }
@@ -985,8 +1005,8 @@ void GUI::onLoad() {
         }
     }
 
-    std::cout << "GUI loaded data." << std::endl;
-    //std::cout << "  " << commands.size() << " commands" << std::endl;
+    // std::cout << "GUI loaded data." << '\n';
+    // std::cout << "  " << commands.size() << " commands" << '\n';
 }
 
 void GUI::init() {
@@ -1040,9 +1060,9 @@ void GUI::setupImguiFrame() {
     imguiFrameBuilt = true;
 }
 
-void GUI::showHelpMarker(const char *desc) {
+void GUI::showHelpMarker(const char *desc, const std::string &label) {
     ImGui::SameLine();
-    ImGui::TextDisabled("[?]");
+    ImGui::TextDisabled("[%s]", label.c_str());
     if (ImGui::IsItemHovered()) {
         ImGui::BeginTooltip();
         ImGui::PushTextWrapPos(ImGui::GetFontSize() * 35.0f);
@@ -1117,7 +1137,7 @@ void GUI::mainScreen() {
     unloadRegButton.draw();
     ImGui::SameLine();
     std::string loadedText = "Current registry: " + gen->getRegistryPath();
-    showHelpMarker(loadedText.c_str());
+    showHelpMarker(loadedText.c_str(), "i");
     ImGui::SameLine();
 
     ImGui::Dummy(ImVec2(0.0f, 4.0f));
@@ -1273,7 +1293,7 @@ void GUI::mainScreen() {
             ImGui::SameLine();
             bool filterChanged = ImGui::InputText("", &filter);
             if (filterChanged) {
-                // std::cout << "filter text: " << filter << std::endl;
+                // std::cout << "filter text: " << filter << '\n';
                 if (filterTaskRunning) {
                     filterTaskAbort = true;
                 }
@@ -1299,6 +1319,7 @@ void GUI::mainScreen() {
             ImGui::PopID();
 
             if (filterSynced) {
+                xid = 0;
                 collection.draw(id, true);
             }
 
@@ -1314,9 +1335,11 @@ void GUI::loadScreen() {
         gen->load(regInputText);
     }
     ImGui::SameLine();
+    ImGui::PushID(100);
     if (ImGui::InputText("", &regInputText)) {
         regButtonDisabled = !std::filesystem::is_regular_file(regInputText);
     }
+    ImGui::PopID();
 
     if (regButtonDisabled) {
         ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
@@ -1623,14 +1646,19 @@ void GUI::Type::draw(int id) {
     ImGui::Dummy(ImVec2(5.0f, 0.0f));
     ImGui::SameLine();
     bool check = data->isEnabled();
+
+    ImGui::PushID(xid++);
+
     if (ImGui::Checkbox("", &check)) {
-        std::cout << "set enabled: " << check << ": " << data->name << std::endl;
+        // std::cout << "set enabled: " << check << ": " << data->name << '\n';
         data->setEnabled(check);
     }
+    ImGui::PopID();
+
     ImGui::SameLine();
     drawSelectable(n.c_str(), this);
 
-    if (!data->dependencies.empty()) {
+    if (!data->dependencies.empty() || !data->subscribers.empty()) {
         ImGui::SameLine();
         ImGui::TextDisabled("(?)");
         if (ImGui::IsItemHovered()) {
@@ -1640,9 +1668,19 @@ void GUI::Type::draw(int id) {
             if (!disabler.empty()) {
                 text += disabler + " is disabled\n\n";
             }
-            text += "Requires:\n\n";
+            text += "Requires:\n";
             for (const auto &d : data->dependencies) {
-                text += d->name + "\n";
+                text += "  " + d->name;
+                text += " (" + d->typeString() + ")";
+                text += "\n";
+            }
+            if (!data->subscribers.empty()) {
+                text += "\nRequired by:\n";
+                for (const auto &d : data->subscribers) {
+                    text += "  " + d->name;
+                    text += " (" + d->typeString() + ")";
+                    text += "\n";
+                }
             }
             ImGui::TextUnformatted(text.c_str());
             ImGui::PopTextWrapPos();
@@ -1740,7 +1778,7 @@ void GUI::AsyncButton::run() {
             task();
         }
         catch (const std::exception &e) {
-            std::cerr << e.what() << std::endl;
+            std::cerr << e.what() << '\n';
         }
         running = false;
     });

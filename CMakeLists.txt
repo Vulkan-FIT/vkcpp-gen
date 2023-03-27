@@ -2,7 +2,21 @@ cmake_minimum_required(VERSION 3.5)
 
 project(generator LANGUAGES CXX)
 
+set(CMAKE_VERBOSE_MAKEFILE ON)
+
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 OPTION(GENERATOR_GUI "gui" ON)
+
+find_program(CCACHE_FOUND ccache)
+if(CCACHE_FOUND)
+    set_property(GLOBAL PROPERTY RULE_LAUNCH_COMPILE ccache)
+    message("using CCACHE")
+endif(CCACHE_FOUND)
+
+if(GENERATOR_GUI)
+    find_package(Vulkan)
+endif()
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -26,7 +40,7 @@ macro(add_shaders nameList depsList)
 endmacro()
 
 if(GENERATOR_GUI)
-    find_package(Vulkan REQUIRED)
+
 
     set(IMGUI_DIR ${CMAKE_CURRENT_SOURCE_DIR}/imgui)
 
@@ -46,15 +60,14 @@ endif(GENERATOR_GUI)
 set(FF_DIR ${CMAKE_CURRENT_SOURCE_DIR}/fastformat)
 set(STL_DIR ${CMAKE_CURRENT_SOURCE_DIR}/stlsoft)
 
+
 SET(HEADERS
     src/ArgumentsParser.hpp
     src/Enums.h
     src/XMLVariableParser.hpp
-    src/XMLUtils.hpp
-    src/StringUtils.hpp
     src/Gui.hpp
     src/Generator.hpp
-    src/Instrumentation.h
+    src/Utils.hpp
     )
 
 SET(SOURCES
@@ -62,12 +75,10 @@ SET(SOURCES
     src/XMLVariableParser.cpp
     src/Gui.cpp
     src/Generator.cpp
-    src/Instrumentation.cpp
+    src/Utils.cpp
     )
 
 set(APP_SHADERS
-    shaders/vs.vert
-    shaders/ps.frag
    )
 
 add_shaders("${APP_SHADERS}" APP_SHADER_DEPS)
@@ -91,6 +102,6 @@ if(GENERATOR_GUI)
                                PUBLIC glfw/include
                                )
 
-    target_link_libraries(${CMAKE_PROJECT_NAME} ${Vulkan_LIBRARIES} glfw)
+    target_link_libraries(${CMAKE_PROJECT_NAME} glfw ${Vulkan_LIBRARIES})
 endif(GENERATOR_GUI)
 

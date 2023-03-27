@@ -1,38 +1,110 @@
+// MIT License
+// Copyright (c) 2021-2023  @guritchi
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+//                                                           copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+
 #include "XMLVariableParser.hpp"
 
 #include "Generator.hpp"
 
 void VariableFields::set(size_t index, const std::string &str) {
-    if (index >= size()) {
+    if (index >= N) {
+        std::cerr << "VariableFields set index out of bounds" << '\n';
         return;
     }
-    std::array<std::string, 4>::operator[](index) = str;
+    fields[index] = str;
 }
 
-const std::string &VariableFields::get(size_t index) const {
-    if (index >= size()) {
-        throw std::runtime_error("index out of bounds");
+VariableData::VariableData(const Generator &gen, tinyxml2::XMLElement *element) : gen(gen) {
+
+    XMLVariableParser p(*this, element);
+
+    const char *len = element->Attribute("len");
+    const char *altlen = element->Attribute("altlen");
+    const char *optional = element->Attribute("optional");
+    if (len) {
+        lenExpressions = split(std::string(len), ",");
+        for (const auto &str : lenExpressions) {
+            if (str.empty() || std::isdigit(str[0])) {
+                continue;
+            }
+            if (str == "null-terminated") {
+                nullTerminated = true;
+            }
+            else {
+                if (!lenAttribStr.empty()) {
+                    std::cout << "Warn: len attrib currently set (is " << lenAttribStr << ", new: " << str << "). xml: " << len << '\n';
+                }
+                lenAttribStr = str;
+            }
+        }
     }
-    return std::array<std::string, 4>::operator[](index);
+    if (altlen) {
+        altlenAttribStr = altlen;
+    }
+    if (optional) {
+        this->optional = std::string_view{optional} == "true";
+    }
+
+    trim();
+    original = *reinterpret_cast<VariableFields*>(this);
+
+    convertToCpp(gen);
+    // evalFlags(gen);
+    if (gen.isHandle(original.type())) {
+        flags |= Flags::HANDLE;
+    }
+
+    // save();
 }
 
 VariableData::VariableData(const Generator &gen, Type type) : gen(gen) {
-    specialType = type;
-    ns = Namespace::NONE;
-    ignoreFlag = specialType == TYPE_INVALID;
-    // arrayLengthFound = false;
-    ignorePFN = false;
-    nullTerminated = false;
-    optional = false;
+    specialType = type;    
+    ignoreFlag = specialType == TYPE_INVALID;    
+    ignoreProto = specialType == TYPE_INVALID;
+
+    // std::cout << "var ctor1 " << this << '\n';
 }
 
-VariableData::VariableData(const Generator &gen, const String &object) : VariableData(gen, object, strFirstLower(object))
+VariableData::VariableData(const Generator &gen, const VariableDataInfo &info) : gen(gen) {
+    if (!info.stdtype.empty()) {
+        original.setType(info.stdtype);
+        setFullType(info.prefix, String(info.stdtype, false), info.suffix);
+    }
+    else {
+        original.setType(info.vktype);
+        setFullType(info.prefix, String(info.vktype, true), info.suffix);
+    }
+    setIdentifier(info.identifier);
+    setAssignment(info.assigment);
+    setNamespace(info.ns);
+    setFlag(info.flag, true);
+    setSpecialType(info.specialType);
+
+    // std::cout << "var ctor2 " << this << '\n';
+    // save();
+}
+
+VariableData::VariableData(const Generator &gen, const String &type) : VariableData(gen, type, strFirstLower(type))
 {}
 
-VariableData::VariableData(const Generator &gen, const String &object, const std::string &id) : VariableData(gen, TYPE_DEFAULT) {
+VariableData::VariableData(const Generator &gen, const String &type, const std::string &id) : VariableData(gen, TYPE_DEFAULT) {
     setIdentifier(id);
-    original.setFullType("", object.original, " *");
-    setFullType("", object, " *");
+    original.setFullType("", type.original, " *");
+    setFullType("", type, " *");
     convertToReference();
 }
 
@@ -52,13 +124,17 @@ std::string VariableData::getLenAttribRhs() const {
     return lenAttribStr;
 }
 
-std::string VariableData::namespaceString() const {
+std::string VariableData::namespaceString(bool forceNamespace) const {
+    if (forceNamespace && ns == Namespace::RAII) {
+        return gen.getNamespace(Namespace::VK);
+    }
     return gen.getNamespace(ns);
 }
 
 bool VariableData::isLenAttribIndirect() const {
-    size_t pos = lenAttribStr.find_first_of("->");
-    return pos != std::string::npos;
+    auto pos = lenAttribStr.find_first_of("->");
+    bool indirect = pos != std::string::npos;
+    return indirect;
 }
 
 void VariableData::setNamespace(Namespace value) {
@@ -67,8 +143,10 @@ void VariableData::setNamespace(Namespace value) {
 
 void VariableData::toRAII() {
     ns = Namespace::RAII;
-    convertToReference();
-    setConst(true);
+    if (!isOutParam()) {
+        convertToReference();
+        setConst(true);
+    }
 }
 
 Namespace VariableData::getNamespace() const {
@@ -76,15 +154,14 @@ Namespace VariableData::getNamespace() const {
 }
 
 void VariableData::convertToCpp(const Generator &gen) {
-    for (size_t i = 0; i < size(); ++i) {
-        original.set(i, get(i));
-    }
 
-    if (gen.isInNamespace(get(TYPE))) {
+    const auto &t = original.type();
+    const auto &id = original.identifier();
+    if (gen.isInNamespace(t)) {
         ns = Namespace::VK;        
     }
-    set(TYPE, strStripVk(get(TYPE)));
-    set(IDENTIFIER, strStripVk(get(IDENTIFIER)));
+    setType(strStripVk(t));
+    setIdentifier(strStripVk(id));
 }
 
 bool VariableData::isNullTerminated() const {
@@ -94,10 +171,24 @@ bool VariableData::isNullTerminated() const {
 void VariableData::convertToArrayProxy() {
     specialType = TYPE_ARRAY_PROXY;
     removeLastAsterisk();
+    setReference(false);
 }
 
-void VariableData::bindLengthVar(const std::shared_ptr<VariableData> &var) {
-    lenghtVar = var;
+void VariableData::convertToConstReference() {
+    if (specialType == TYPE_ARRAY_PROXY) {
+        specialType = TYPE_DEFAULT;
+    }
+    else {
+        removeLastAsterisk();
+    }
+    if (!isConst()) {
+        setConst(true);
+    }
+    setReference(true);
+}
+
+void VariableData::bindLengthVar(VariableData &var) {
+    lenghtVar = &var;
 
     flags |= Flags::ARRAY;
     if (isConst()) {
@@ -107,67 +198,63 @@ void VariableData::bindLengthVar(const std::shared_ptr<VariableData> &var) {
     }
 }
 
-void VariableData::bindArrayVar(const std::shared_ptr<VariableData> &var) {
+void VariableData::bindArrayVar(VariableData *var) {
     for (const auto &v : arrayVars) {
         if (v == var) {
             // already in array
-            std::cout << "Warning: bindArrayVar(): duplicate" << std::endl;
+            std::cout << "Warning: bindArrayVar(): duplicate" << '\n';
             return;
         }
     }
     arrayVars.push_back(var);
 }
 
-const std::shared_ptr<VariableData>& VariableData::getLengthVar() const {
-    if (!lenghtVar.get()) {
-        throw std::runtime_error("access to null lengthVar");
-    }
+VariableData* VariableData::getLengthVar() const {
     return lenghtVar;
 }
 
-const std::vector<std::shared_ptr<VariableData>>& VariableData::getArrayVars() const {
+const std::vector<VariableData*>& VariableData::getArrayVars() const {
     return arrayVars;
 }
 
 void VariableData::convertToReturn() {
     specialType = TYPE_RETURN;
-    ignoreFlag = true;
-
-    removeLastAsterisk();
+    ignoreProto = true;
 }
 
 void VariableData::convertToReference() {
-    //specialType = TYPE_REFERENCE;
-    removeLastAsterisk();
-    setReferenceFlag(true);
+    int cfrom;
+    int cto;
+    std::tie(cfrom, cto) = countPointers(original.suffix(), suffix());
+    if (cfrom >= cto) {
+        removeLastAsterisk();
+    }
+    setReference(true);
 }
 
 void VariableData::convertToPointer() {
-    // specialType = TYPE_DEFAULT;
     if (!isPointer()) {
-        set(SUFFIX, get(SUFFIX) + "*");
+        fields[SUFFIX] = fields[SUFFIX] + "*";
     }
-    setReferenceFlag(false);
+    setReference(false);
 }
 
 void VariableData::convertToOptionalWrapper() {
-    setReferenceFlag(false);
+    setReference(false);
     specialType = TYPE_OPTIONAL;
 }
 
 void VariableData::convertToStdVector() {
     specialType = TYPE_VECTOR;
-    removeLastAsterisk();
-    std::string s = get(PREFIX);
+    auto &s = fields[PREFIX];
     auto pos = s.find("const");
     if (pos != std::string::npos) {
         s.erase(pos, 5);
-        set(PREFIX, s);
     }
 }
 
 bool VariableData::removeLastAsterisk() {
-    std::string &suffix = VariableFields::operator[](SUFFIX);
+    std::string &suffix = fields[SUFFIX];
     if (suffix.ends_with("*")) {
         suffix.erase(suffix.size() - 1); // removes * at end
         return true;
@@ -177,19 +264,27 @@ bool VariableData::removeLastAsterisk() {
 
 void VariableData::setConst(bool enabled) {
     if (enabled) {
-        if (get(PREFIX) != "const ") {
-            set(PREFIX, "const ");
+        if (fields[PREFIX] != "const ") {
+            fields[PREFIX] = "const ";
         }
     }
     else {
-        if (get(PREFIX) == "const ") {
-            set(PREFIX, "");
+        if (fields[PREFIX] == "const ") {
+            fields[PREFIX] = "";
         }
     }
 }
 
 VariableData::Flags VariableData::getFlags() const {
     return flags;
+}
+
+void VariableData::setFlag(Flags flag, bool enabled) {
+    if (enabled) {
+        flags |= flag;
+    } else {
+        flags &= ~EnumFlag<Flags>{flag};
+    }
 }
 
 bool VariableData::isHandle() const {
@@ -208,6 +303,46 @@ bool VariableData::isArrayOut() const {
     return hasFlag(flags, Flags::ARRAY_OUT);
 }
 
+bool VariableData::isOutParam() const {
+    return hasFlag(flags, Flags::OUT);
+}
+
+std::string VariableData::flagstr() const {
+    std::string s;
+    if (hasFlag(flags, Flags::OUT)) {
+        s += "OUT|";
+    }
+    if (hasFlag(flags, Flags::HANDLE)) {
+        s += "HANDLE|";
+    }
+    if (hasFlag(flags, Flags::ARRAY)) {
+        s += "ARRAY|";
+    }
+    if (hasFlag(flags, Flags::ARRAY_IN)) {
+        s += "ARRAY_IN|";
+    }
+    if (hasFlag(flags, Flags::ARRAY_OUT)) {
+        s += "ARRAY_OUT|";
+    }
+    if (hasFlag(flags, Flags::CLASS_VAR_VK)) {
+        s += "CLASS_VAR_VK|";
+    }
+    if (hasFlag(flags, Flags::CLASS_VAR_UNIQUE)) {
+        s += "CLASS_VAR_UNIQUE|";
+    }
+    if (hasFlag(flags, Flags::CLASS_VAR_RAII)) {
+        s += "CLASS_VAR_RAII|";
+    }
+    if (!s.empty()) {
+        s.erase(s.size() - 1);
+    }
+    return s;
+}
+
+std::string VariableData::toClassVar() const {
+    return fullType() + " " + identifier() + getAssignment() + ";\n";
+}
+
 std::string VariableData::toArgument(bool useOriginal) const {
     if (!altPFN.empty()) {
         return altPFN;
@@ -222,6 +357,38 @@ std::string VariableData::toArgument(bool useOriginal) const {
     }
 }
 
+std::string VariableData::toVariable(const VariableData &dst, bool useOriginal) const {
+    // TODO check array/vector match        
+    std::string s = useOriginal? dst.original.suffix() : dst.suffix();
+    std::string t = useOriginal? dst.original.type() : dst.type();
+
+    std::string id;
+    if (specialType == TYPE_OPTIONAL) {
+        id = identifierAsArgument();
+    }
+    else {
+        if (isHandle() && ns == Namespace::RAII && (dst.ns != Namespace::RAII || useOriginal)) {
+            id = "*"; // deference raii object
+        }
+        id += matchTypePointers(suffix(), s) + identifier();
+    }
+    std::string out;
+    if (t != type()) {
+        std::string cast = "static_cast";
+        if (strContains(s, "*")) {
+            cast = "std::bit_cast";
+        }
+        std::string f = useOriginal ? dst.originalFullType() : dst.fullType();
+
+        out = cast + "<" + f + ">(" + id + ")";
+    }
+    else {
+        out = id;
+    }
+
+    return out; //"/* ${" + fullType() + " -> " + originalFullType() + "} */";
+}
+
 std::string VariableData::toStructArgumentWithAssignment() const {
     std::string out;
     if (hasArrayLength()) {
@@ -230,13 +397,13 @@ std::string VariableData::toStructArgumentWithAssignment() const {
             case ArraySize::NONE:
                 break;
             case ArraySize::DIM_1D:
-                out += gen.format("{0}<{1}, {2}>", atype, get(TYPE), arraySizes[0]);
+                out += gen.format("{0}<{1}, {2}>", atype, fields[TYPE], arraySizes[0]);
                 break;
             case ArraySize::DIM_2D:
-                out += gen.format("{0}<{0}<{1}, {2}>, {3}>", atype, get(TYPE), arraySizes[1], arraySizes[0]);
+                out += gen.format("{0}<{0}<{1}, {2}>, {3}>", atype, fields[TYPE], arraySizes[1], arraySizes[0]);
                 break;
         }
-        out += " const &" + get(IDENTIFIER);
+        out += " const &" + fields[IDENTIFIER];
     }
     else {
         out = toString();
@@ -247,10 +414,11 @@ std::string VariableData::toStructArgumentWithAssignment() const {
     return out;
 }
 
-std::string VariableData::fullType() const {
-    std::string type = get(PREFIX);
-    type += namespaceString();
-    type += get(TYPE) + get(SUFFIX);
+std::string VariableData::fullType(bool forceNamespace) const {
+    std::string type = fields[PREFIX];
+    type += namespaceString(forceNamespace);
+    type += fields[TYPE];
+    type += fields[SUFFIX];
     switch (specialType) {
     case TYPE_ARRAY: {
         std::string out;
@@ -259,10 +427,10 @@ std::string VariableData::fullType() const {
             case ArraySize::NONE:
                 break;
             case ArraySize::DIM_1D:
-                out += gen.format("{0}<{1}, {2}>", atype, get(TYPE), arraySizes[0]);
+                out += gen.format("{0}<{1}, {2}>", atype, fields[TYPE], arraySizes[0]);
                 break;
             case ArraySize::DIM_2D:
-                out += gen.format("{0}<{0}<{1}, {2}>, {3}>", atype, get(TYPE), arraySizes[1], arraySizes[0]);
+                out += gen.format("{0}<{0}<{1}, {2}>, {3}>", atype, fields[TYPE], arraySizes[1], arraySizes[0]);
                 break;
         }
         out += " const &";
@@ -286,8 +454,7 @@ std::string VariableData::toString() const {
     if (!out.ends_with(" ")) {
         out += " ";
     }
-    out += optionalAmp;
-    out += get(IDENTIFIER);
+    out += fields[IDENTIFIER];
     if (specialType != TYPE_ARRAY) {
         out += optionalArraySuffix();
     }
@@ -295,14 +462,14 @@ std::string VariableData::toString() const {
 }
 
 std::string VariableData::toStructString() const {
-    const auto &id = get(IDENTIFIER);
+    const auto &id = fields[IDENTIFIER];
     switch (arrayAttrib) {
         case ArraySize::NONE:
             return toString();
         case ArraySize::DIM_1D:
-            return gen.format("{NAMESPACE}::ArrayWrapper1D<{0}, {1}> {2}", get(TYPE), arraySizes[0], id);
+            return gen.format("{NAMESPACE}::ArrayWrapper1D<{0}, {1}> {2}", fields[TYPE], arraySizes[0], id);
         case ArraySize::DIM_2D:
-            return gen.format("{NAMESPACE}::ArrayWrapper2D<{0}, {1}, {2}> {3}", get(TYPE), arraySizes[0], arraySizes[1], id);
+            return gen.format("{NAMESPACE}::ArrayWrapper2D<{0}, {1}, {2}> {3}", fields[TYPE], arraySizes[0], arraySizes[1], id);
     }
 }
 
@@ -311,7 +478,7 @@ std::string VariableData::declaration() const {
     if (!out.ends_with(" ")) {
         out += " ";
     }
-    out += get(IDENTIFIER);
+    out += fields[IDENTIFIER];
     out += optionalArraySuffix();
     return out;
 }
@@ -337,7 +504,7 @@ std::string VariableData::originalToString() const {
     if (!out.ends_with(" ")) {
         out += " ";
     }
-    out += original.get(IDENTIFIER);
+    out += original.identifier();
     out += optionalArraySuffix();
     return out;
 }
@@ -358,17 +525,14 @@ std::string VariableData::getTemplateAssignment() const {
     return optionalTemplateAssignment;
 }
 
-void VariableData::evalFlags(const Generator &gen) {
-    flags = Flags::NONE;
-    if (gen.isHandle(original.type())) {
-        flags |= Flags::HANDLE;
+void VariableData::evalFlags() {
+    if (isPointer() && !isConst() && arrayVars.empty()) {
+        flags |= Flags::OUT;
     }
 }
 
 std::string VariableData::optionalArraySuffix() const {
-//    if (arrayLengthFound) {
-//        return "[" + arrayLengthStr + "]";
-//    }
+
     switch (arrayAttrib) {
         case ArraySize::NONE:
             return "";
@@ -381,8 +545,8 @@ std::string VariableData::optionalArraySuffix() const {
 }
 
 std::string VariableData::toArgumentArrayProxy() const {
-    std::string out = get(IDENTIFIER) + ".data()";
-    if (get(TYPE) == original.get(TYPE)) {
+    std::string out = fields[IDENTIFIER] + ".data()";
+    if (fields[TYPE] == original.type()) {
         return out;
     }
     return "std::bit_cast<" + originalFullType() + ">(" + out + ")";
@@ -390,7 +554,7 @@ std::string VariableData::toArgumentArrayProxy() const {
 
 std::string VariableData::createCast(std::string from) const {
     std::string cast = "static_cast";
-    if ((strContains(original.get(SUFFIX), "*") || hasArrayLength())) {
+    if ((strContains(original.suffix(), "*") || hasArrayLength())) {
         cast = "std::bit_cast";
     }    
     return cast + "<" + originalFullType() + (hasArrayLength() ? "*" : "") +
@@ -409,7 +573,7 @@ std::string VariableData::toArgumentDefault(bool useOriginal) const {
         }
     }
     std::string id = identifierAsArgument();
-    bool same = get(TYPE) == original.get(TYPE);
+    bool same = fields[TYPE] == original.type();
     if ((same && specialType != TYPE_OPTIONAL) || useOriginal) {
         return id;
     }
@@ -417,10 +581,10 @@ std::string VariableData::toArgumentDefault(bool useOriginal) const {
 }
 
 std::string VariableData::toArrayProxySize() const {
-    std::string s = get(IDENTIFIER) + ".size()";
+    std::string s = fields[IDENTIFIER] + ".size()";
     if (original.type() == "void") {
         if (optionalTemplate.empty()) {
-            std::cerr << "Warning: ArrayProxy " << get(IDENTIFIER) << " has no template set, but is required" << std::endl;
+            std::cerr << "Warning: ArrayProxy " << fields[IDENTIFIER] << " has no template set, but is required" << '\n';
         }
         s += " * sizeof(" + optionalTemplate + ")";
     }
@@ -428,7 +592,7 @@ std::string VariableData::toArrayProxySize() const {
 }
 
 std::string VariableData::toArrayProxyData() const {
-    return get(IDENTIFIER) + ".data()";
+    return fields[IDENTIFIER] + ".data()";
 }
 
 std::pair<std::string, std::string> VariableData::toArrayProxyRhs() const {
@@ -439,70 +603,25 @@ std::pair<std::string, std::string> VariableData::toArrayProxyRhs() const {
 }
 
 std::string VariableData::identifierAsArgument() const {
-    const std::string &suf = get(SUFFIX);
-    std::string id = get(IDENTIFIER);
+    const std::string &suf = fields[SUFFIX];
+    const std::string &id = fields[IDENTIFIER];
     if (specialType == TYPE_OPTIONAL) {
-        std::string type = get(PREFIX);
+        std::string type = fields[PREFIX];
         type += namespaceString();
-        type += get(TYPE) + get(SUFFIX);
+        type += fields[TYPE] + fields[SUFFIX];
         return "static_cast<" + type + "*>(" + id + ")";
     }
-//    if (std::count(ogsuf.begin(), ogsuf.end(), '*') > std::count(suf.begin(), suf.end(), '*')) {
-//        return "&" + id;
-//    }
+
     if (ns == Namespace::RAII) {
         return "*" + id;
     }
-    return matchTypePointers(suf, original.get(SUFFIX)) + id;
+    return matchTypePointers(suf, original.suffix()) + id;
 }
 
-XMLVariableParser::XMLVariableParser(tinyxml2::XMLElement *element, const Generator &gen) : VariableData(gen) {
-    parse(element, gen);
-}
-
-void XMLVariableParser::parse(tinyxml2::XMLElement *element, const Generator &gen) {
-    const char *len = element->Attribute("len");
-    const char *altlen = element->Attribute("altlen");
-    const char *optional = element->Attribute("optional");
-    if (len) {
-        const auto s = split(std::string(len), ",");
-        for (const auto &str : s) {
-            if (str.empty() || std::isdigit(str[0])) {
-                continue;
-            }
-            if (str == "null-terminated") {
-                nullTerminated = true;
-            }
-            else {
-                if (!lenAttribStr.empty()) {
-                    std::cout << "Warn: len attrib currently set (is " << lenAttribStr << ", new: " << str << "). xml: " << len << std::endl;
-                }
-                lenAttribStr = str;
-            }
-        }
-    }
-    if (altlen) {
-        altlenAttribStr = altlen;
-    }
-    if (optional) {
-        this->optional = std::string_view{optional} == "true";
-    }
-
-    state = PREFIX;
-    //arrayLengthFound = false;
+XMLVariableParser::XMLVariableParser(VariableData &data, tinyxml2::XMLElement *element)
+    : data(data)
+{
     element->Accept(this);
-
-    trim();    
-    convertToCpp(gen);
-    evalFlags(gen);
-
-//    if (!arrayLengthStr.empty()) {
-//        auto pos = arrayLengthStr.find("][");
-//        if (pos != std::string::npos) {
-
-//        }
-
-//    }
 }
 
 bool XMLVariableParser::Visit(const tinyxml2::XMLText &text) {
@@ -511,22 +630,6 @@ bool XMLVariableParser::Visit(const tinyxml2::XMLText &text) {
     if (auto v = text.Value(); v) {
         value = v;
     }
-
-    const auto addArrayLength =[&](const std::string &length) {
-        switch (arrayAttrib) {
-            case ArraySize::NONE:
-                arraySizes[0] = length;
-                arrayAttrib = ArraySize::DIM_1D;
-                break;
-            case ArraySize::DIM_1D:
-                arraySizes[1] = length;
-                arrayAttrib = ArraySize::DIM_2D;
-                break;
-            case ArraySize::DIM_2D:
-                throw std::runtime_error("xml registry: unsupported array dimension");
-                break;
-        }
-    };
 
     if (tag == "type") { // text is type field
         state = TYPE;
@@ -549,8 +652,8 @@ bool XMLVariableParser::Visit(const tinyxml2::XMLText &text) {
                 std::smatch m = *temp;
                 std::string match = m.str();
                 match = match.substr(1, match.size() - 2);
-                //std::cout << "  " << match << " at position " << m.position() << std::endl;
-                addArrayLength(match);
+                //std::cout << "  " << match << " at position " << m.position() << '\n';
+                data.addArrayLength(match);
                 ++it;
                 if (it == std::sregex_iterator()) {
                     suffix = temp->suffix();
@@ -558,11 +661,9 @@ bool XMLVariableParser::Visit(const tinyxml2::XMLText &text) {
                 }
             }
             if (!suffix.empty()) {
-                std::cerr << "[visit] unprocessed suffix: " << suffix << std::endl;
+                std::cerr << "[visit] unprocessed suffix: " << suffix << '\n';
             }
 
-            //arrayLengthStr = value.substr(1, value.size() - 2);
-            //arrayLengthFound = true;
             state = DONE;
             return false;
         } else {
@@ -571,13 +672,8 @@ bool XMLVariableParser::Visit(const tinyxml2::XMLText &text) {
         }
     } else if (state == BRACKET_LEFT) { // text after [ is <enum>SIZE</enum>
         state = ARRAY_LENGTH;
-        //arrayLengthStr = value;
-        addArrayLength(value);
-    } else if (state == ARRAY_LENGTH) {        
-//        if (value == "]") { //  ] after SIZE confirms arrayLength field
-//            arrayLengthFound = true;
-//        }
-//        else
+        data.addArrayLength(value);
+    } else if (state == ARRAY_LENGTH) {
         if (value == "][") { // multi dimensional array
             state = BRACKET_LEFT;
         }
@@ -585,14 +681,14 @@ bool XMLVariableParser::Visit(const tinyxml2::XMLText &text) {
         return false;
     }
 
-    if (state < size()) { // append if state index is in range
-        VariableFields::operator[](state).append(value);
+    if (state < 4) { // append if state index is in range
+        data.set(state, value);
     }
     return true;
 }
 
-void XMLVariableParser::trim() {
-    std::string &suffix = VariableFields::operator[](SUFFIX);
+void VariableData::trim() {
+    std::string &suffix = fields[SUFFIX];
     const auto it = suffix.find_last_not_of(' ');
     if (it != std::string::npos) {
         suffix.erase(it + 1); // removes trailing space
