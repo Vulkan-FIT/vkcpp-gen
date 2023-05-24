@@ -1379,13 +1379,21 @@ regex_replace(const std::string &input, const std::regex &regex,
 }
 
 std::string Registry::findDefaultRegistryPath() {
-    const char* sdk = std::getenv("VULKAN_SDK");
-    if (!sdk) {
+    size_t size;
+
+    getenv_s(&size, nullptr, 0, "VULKAN_SDK");
+    if (size == 0) {
         return "";
     }
+    std::string sdk;
+    sdk.resize(size);
+    getenv_s(&size, sdk.data(), sdk.size(), "VULKAN_SDK");
+    sdk.resize(size - 1);
+
     std::filesystem::path sdkPath{sdk};
     std::filesystem::path file{"share/vulkan/registry/vk.xml"};
     std::filesystem::path regPath = sdkPath / file;
+
     if (!std::filesystem::exists(regPath)) {
         return "";
     }
@@ -1721,7 +1729,7 @@ void Registry::parseTypes(Generator &gen, XMLNode *node) {
                                     ? StructData::VK_STRUCT
                                     : StructData::VK_UNION;
 
-                    auto &s = structs.items.emplace_back(gen, name, t, type);
+                    auto &s = structs.items.emplace_back(gen, std::string_view{name}, t, type);
 
                     auto extends = getAttrib(type, "structextends");
                     if (extends) {
@@ -1804,6 +1812,9 @@ void Registry::parseTypes(Generator &gen, XMLNode *node) {
     }
 
     structs.prepare();
+//    for (const auto &s : structs.items) {
+//        std::cout << "Struct: " << s.name << std::endl;
+//    }
     for (auto &a : aliasedTypes) {
         const auto &it = structs.find(a.second.data());
         if (it == structs.end()) {
@@ -1923,11 +1934,11 @@ void Registry::parseCommands(Generator &gen, XMLNode *node) {
             //if (alias->second.size() >= 2) {
                 //std::cout << "multiple aliases: " << alias->first << '\n';
             //}
-
+            command.alias = alias->second[0];
             for (auto &a : alias->second) {
                 commands.items.emplace_back(gen, command, a);
             }
-            command.alias = alias->second[0];
+
         }
     }
     commands.prepare();
@@ -2287,8 +2298,8 @@ void Registry::parseExtensions(Generator &gen, XMLNode *node) {
                             command->setUnsuppored();
                         }
                         else {
-                            if (!isInContainter(ext->commands, command.base())) {
-                               ext->commands.push_back(command.base());
+                            if (!isInContainter(ext->commands, &*command)) {
+                               ext->commands.push_back(&*command);
                             }
                             command->ext = ext;
                         }
@@ -5695,6 +5706,10 @@ std::string Generator::generateClass(const HandleData &data, UnorderedFunctionOu
         generateClassConstructorsRAII(data, out, outputFuncsRAII);
 
         std::string release;
+//        if (data.vkhandle.getAssignment() != " = {}") {
+//            std::cerr << &data << " vkhandle: " << data.vkhandle.identifier() << " invalid assignment: " << data.vkhandle.getAssignment() << std::endl;
+//        }
+
         data.foreachVars(VariableData::Flags::CLASS_VAR_RAII, [&](const VariableData &v){
             out.sPrivate += "    " + v.toClassVar();
             if (v.identifier() != handle) {
@@ -6716,6 +6731,7 @@ std::string Generator::MemberResolver::generateDefinition(bool genInline, bool b
     if (gen.getConfig().dbg.methodTags) {
         output += genInline ? "// inline definition\n" : "// definition\n";
     }
+    // output += "// r: " + std::to_string((int)cmd->pfnReturn) + "\n";
     bool usesTemplate = false;
     output += getProto(indent, genInline, usesTemplate) + "\n  {\n";
     if (ctx.ns == Namespace::RAII && isIndirect() && !constructor) {
@@ -7094,7 +7110,7 @@ std::string Generator::MemberResolver::successCodesCondition(const std::string &
         if (c == "VK_INCOMPLETE") {
             continue;
         }
-        "( " + id + " == Result::" + gen.enumConvertCamel("Result", c) + " ) ||\n" + indent;
+        output += "( " + id + " == Result::" + gen.enumConvertCamel("Result", c) + " ) ||\n" + indent;
     }
     strStripSuffix(output, " ||\n" + indent);
     return output;
@@ -7284,7 +7300,7 @@ Registry::StructData::StructData(Generator &gen, const std::string_view name, Vk
     // iterate contents of <type>, filter only <member> children
     for (XMLElement *member : Elements(e) | ValueFilter("member")) {
 
-        auto &v = members.emplace_back(std::make_unique<VariableData>(gen, member));
+        auto &v = members.emplace_back(std::move(std::make_unique<VariableData>(gen, member)));
 
         const std::string &type = v->type();
         const std::string &name = v->identifier();

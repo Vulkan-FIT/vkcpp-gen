@@ -464,13 +464,14 @@ std::string VariableData::toString() const {
 std::string VariableData::toStructString() const {
     const auto &id = fields[IDENTIFIER];
     switch (arrayAttrib) {
-        case ArraySize::NONE:
-            return toString();
         case ArraySize::DIM_1D:
             return gen.format("{NAMESPACE}::ArrayWrapper1D<{0}, {1}> {2}", fields[TYPE], arraySizes[0], id);
         case ArraySize::DIM_2D:
             return gen.format("{NAMESPACE}::ArrayWrapper2D<{0}, {1}, {2}> {3}", fields[TYPE], arraySizes[0], arraySizes[1], id);
+        case ArraySize::NONE:
+            return toString();
     }
+    return "";
 }
 
 std::string VariableData::declaration() const {
@@ -541,7 +542,7 @@ std::string VariableData::optionalArraySuffix() const {
         case ArraySize::DIM_2D:
             return "[" + arraySizes[0] + "][" + arraySizes[1] + "]";
     }
-
+    return "";
 }
 
 std::string VariableData::toArgumentArrayProxy() const {

@@ -166,7 +166,10 @@ public:
         : VariableBase2(o), gen(o.gen)
     {
         // std::cout << "VariableData copy ctor " << this << '\n';
+        _assignment = o._assignment;
     }
+    //VariableData(const VariableData &o) = default;
+
     // assignment
     VariableData& operator=(VariableData&) = delete;
 

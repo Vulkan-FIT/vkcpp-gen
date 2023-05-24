@@ -58,7 +58,7 @@ bool CheckBoxTristate(const char *label, int *v_tristate) {
     }
     return ret;
 }
-}; // namespace ImGui
+} // namespace ImGui
 
 GUI::QueueFamilyIndices GUI::findQueueFamilies(VkPhysicalDevice device) {
     QueueFamilyIndices indices;
@@ -735,10 +735,10 @@ void GUI::cleanup() {
 void GUI::initImguiStyle() {
     ImGuiStyle &style = ImGui::GetStyle();
 
-    ImVec4 col_text = ImVec4(1.0, 1.0, 1.0, 1.0);
-    ImVec4 col_main = ImVec4(0.18, 0.0, 0, 1.0);
-    ImVec4 col_back = ImVec4(0.01, 0.01, 0.01, 1.0);
-    ImVec4 col_area = ImVec4(0.15, 0.0, 0, 1.0);
+    ImVec4 col_text = ImVec4(1.f, 1.f, 1.f, 1.f);
+    ImVec4 col_main = ImVec4(0.18f, 0.f, 0.f, 1.f);
+    ImVec4 col_back = ImVec4(0.01f, 0.01f, 0.01f, 1.f);
+    ImVec4 col_area = ImVec4(0.15f, 0.f, 0.f, 1.f);
 
     style.Colors[ImGuiCol_Text] =
         ImVec4(col_text.x, col_text.y, col_text.z, 1.00f);
@@ -814,8 +814,8 @@ void GUI::initImguiStyle() {
 }
 
 void GUI::guiInputText(std::string &data) {
-    int s = ImGui::CalcTextSize(data.c_str()).x;
-    s = std::clamp(s, 0, width / 3) + 20;
+    float s = ImGui::CalcTextSize(data.c_str()).x;
+    s = std::clamp(s, 0.f, static_cast<float>(width) / 3.f) + 20;
     ImGui::PushItemWidth(s);
     ImGui::PushID((id++) + 1000);
     if (ImGui::InputText("", &data)) {
@@ -826,7 +826,7 @@ void GUI::guiInputText(std::string &data) {
 
 void GUI::guiBoolOption(BoolGUI &data) {
 //    size_t y1 = ImGui::CalcTextSize("").y;
-    ImGui::SetWindowFontScale(0.9);
+    ImGui::SetWindowFontScale(0.9f);
 //    size_t y2 = ImGui::CalcTextSize("").y;
 //    size_t margin = (y1 - y2) / 2;
 //    size_t pos = ImGui::GetCursorPosY();
@@ -1083,7 +1083,7 @@ auto make_config_option(int x, const T &element, const std::string &text)
 {
     return std::make_unique<GUI::RenderableArray<3>>(
         GUI::RenderableArray<3>({
-            std::make_unique<GUI::DummySameLine>(x, 0),
+            std::make_unique<GUI::DummySameLine>(static_cast<float>(x), 0.f),
             std::make_unique<T>(element),
             std::make_unique<GUI::HelpMarker>(text)
         }));
@@ -1093,7 +1093,7 @@ void GUI::updateImgui() {
     ImGui::NewFrame();
 
     ImGui::SetNextWindowPos(ImVec2(.0f, .0f), ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2(width, height), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(static_cast<float>(width), static_cast<float>(height)), ImGuiCond_Always);
 
     bool mainw;
     ImGui::Begin("Gen", &mainw,
@@ -1104,9 +1104,9 @@ void GUI::updateImgui() {
         int fps = 0;
         float delta = ImGui::GetIO().DeltaTime;
         if (delta != 0) {
-            fps = 1.0 / delta;
+            fps = static_cast<int>(1.0 / delta);
         }
-        ImGui::Text("FPS %d, avg: %d", fps, (int)ImGui::GetIO().Framerate);
+        ImGui::Text("FPS %d, avg: %d", fps, static_cast<int>(ImGui::GetIO().Framerate));
     }
 
     if (gen->isLoaded()) {
@@ -1543,7 +1543,7 @@ bool GUI::drawContainerHeader(const char *name, Selectable *s, bool empty) {
         }
     }
     else {
-        int x = ImGui::GetTreeNodeToLabelSpacing();
+        float x = ImGui::GetTreeNodeToLabelSpacing();
         ImGui::SetCursorPosX(ImGui::GetCursorPosX() + x);
         drawSelectable(name, s);
     }
@@ -1608,9 +1608,9 @@ void GUI::Container<T>::draw(int id) {
     if (open) {
         for (size_t i = 0; i < elements.size(); i++) {
             if constexpr (std::is_pointer_v<T>) {
-                elements[i]->draw(i);
+                elements[i]->draw(static_cast<int>(i));
             } else {
-                elements[i].draw(i);
+                elements[i].draw(static_cast<int>(i));
             }
         }        
         ImGui::TreePop();

@@ -624,17 +624,40 @@ public:
     };
 
     struct StructData : BaseType {
-        enum VkStructType { VK_STRUCT, VK_UNION } type;
         // XMLNode *node;
         std::string structTypeValue;
         std::vector<String> aliases;
         std::vector<std::string> extends;
         Variables members;
+        enum VkStructType { VK_STRUCT, VK_UNION } type;
         bool returnedonly = false;
 
         StructData(Generator &gen, const std::string_view name, VkStructType type, XMLElement *e);
 
-        // StructData(const StructData&o) = delete;
+        StructData(const StructData&o) = delete;
+
+        StructData(StructData &&o) noexcept {
+            BaseType::operator=(o);
+            structTypeValue = std::move(o.structTypeValue);
+            aliases = std::move(o.aliases);
+            extends = std::move(o.extends);
+            members = std::move(o.members);
+            returnedonly = o.returnedonly;
+            type = o.type;
+        }
+
+        StructData& operator=(const StructData &o) = delete;
+
+        StructData& operator=(StructData &&o) noexcept {
+            BaseType::operator=(o);
+            structTypeValue = std::move(o.structTypeValue);
+            aliases = std::move(o.aliases);
+            extends = std::move(o.extends);
+            members = std::move(o.members);
+            returnedonly = o.returnedonly;
+            type = o.type;
+            return *this;
+        }
 
         std::string getType() const {
             return type == StructData::VK_STRUCT ? "struct" : "union";
@@ -685,6 +708,11 @@ public:
         CommandData(CommandData &&o) = default;
 
         void check() {
+            bool ok;
+            check(ok);
+        }
+
+        void check(bool &ok) {
             const auto find = [&](VariableData *v) {
                 for (auto &p : _params) {
                     if (v == p.get()) {
@@ -696,7 +724,7 @@ public:
             };
 
             std::stringstream s;
-            bool ok = true;
+            ok = true;
             for (auto &p : _params) {
                 s << "  p: " << p.get() << '\n';
                 auto v = p->getLengthVar();
@@ -743,7 +771,7 @@ public:
 
         void prepare() {
             if (prepared) {
-                return;
+                // return;
             }
             // std::cerr << "  >cmd prepare  " << this << '\n';
             for (auto &v : _params) {
@@ -767,7 +795,6 @@ public:
 //            }
             // std::cout << "cmd prepare " << this << '\n';
 #ifndef NDEBUG
-            std::cout << "." << '\n';
             check();
 #endif
             prepared = true;
@@ -907,11 +934,17 @@ public:
         }
 
         VariableData* getLastHandleVar() const {
-            for (VariableData &v : std::ranges::reverse_view(params)) {
-                if (v.isHandle()) {
-                    return &v;
+            for (auto it = params.rbegin(); it != params.rend(); ++it) {
+                if (it->get().isHandle()) {
+                    return &it->get();
                 }
             }
+            return nullptr;
+//            for (VariableData &v : std::ranges::reverse_view(params)) {
+//                if (v.isHandle()) {
+//                    return &v;
+//                }
+//            }
             throw std::runtime_error("can't get param (last handle)");
         }
 
@@ -1012,6 +1045,12 @@ public:
         {}
 
         HandleData(Generator &gen, const std::string_view name, const std::string_view parent);
+
+//        HandleData(HandleData&&) = delete;
+//        HandleData(const HandleData&) = delete;
+//
+//        HandleData& operator=(HandleData&&) = delete;
+//        HandleData& operator=(const HandleData&) = delete;
 
         static HandleData& empty(Generator &gen) {
             static HandleData h{gen, "", ""};
@@ -1199,7 +1238,7 @@ protected:
     BaseType *findType(const std::string &name) {
         auto s = structs.find(name);
         if (s != structs.end()) {
-            return s.base();
+            return &*s;
         }
 //        for (auto &c : structs) {
 //            if (c.second.name.original == name) {
@@ -1208,7 +1247,7 @@ protected:
 //        }
         auto e = enums.find(name);
         if (e != enums.end()) {
-            return e.base();
+            return &*e;
         }
 //        for (auto &c : enumMap) {
 //            if (c.second->name.original == name) {
@@ -1218,7 +1257,7 @@ protected:
 
         auto h = handles.find(name);
         if (h != handles.end()) {
-            return h.base();
+            return &*h;
         }
 //        for (auto &c : handles) {
 //            if (c.second.name.original == name) {
@@ -2170,9 +2209,16 @@ class Generator : public Registry {
             }
             strStripSuffix(str, ", ");
 
-            int count = cmd->outParams.size();
+            auto count = cmd->outParams.size();
+            // cmd->pfnReturn == PFNReturnCategory::OTHER
+
             if (count == 0) {
-                type = "void";
+                if (cmd->pfnReturn == PFNReturnCategory::OTHER) {
+                    type = strStripVk(std::string(cmd->type));
+                }
+                else {
+                    type = "void";
+                }
             }
             else if (count == 1) {
                 type = str;
@@ -3883,13 +3929,23 @@ class Generator : public Registry {
 
             generate<MemberResolverDefault>(MemberGuard::NONE); // TODO ignore sFuncs
 
-            auto &generated = gen.generatedDestroyOverloads[m.cls->name];
-            const auto &last = m.src->getLastHandleVar();
+            const auto &type = m.cls->name;
+
+            auto &generated = gen.generatedDestroyOverloads[type];
+
+            m.src->prepare();
+#ifndef NDEBUG
+            bool ok;
+            m.src->check(ok);
+#endif
+            auto last = m.src->getLastHandleVar();
             if (!last) {
                 std::cerr << "null access" << '\n';
                 return;
             }
-            if (generated.contains(last->type())) {
+            const auto &lastType = last->type();
+            auto s = generated.size();
+            if (generated.contains(lastType)) {
                 // std::cerr << "can't generate destroy: already exists  " << m.cls->name << ": " << last->type() << '\n';
                 return;
             }

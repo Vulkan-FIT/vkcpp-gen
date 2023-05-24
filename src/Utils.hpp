@@ -302,7 +302,7 @@ static std::string convertSnakeToCamel(const std::string &str) {
 
 static std::vector<std::string_view> split2(const std::string_view &str, const std::string_view &delim) {
     std::vector<std::string_view> out;
-    auto start = 0U;
+    size_t start = 0;
     auto end = str.find(delim);
     while (end != std::string::npos) {
         std::string_view token = str.substr(start, end - start);
@@ -317,7 +317,7 @@ static std::vector<std::string_view> split2(const std::string_view &str, const s
 
 static std::vector<std::string> split(const std::string &str, const std::string &delim) {
     std::vector<std::string> out;
-    auto start = 0U;
+    size_t start = 0;
     auto end = str.find(delim);
     while (end != std::string::npos) {
         std::string token = str.substr(start, end - start);
@@ -352,7 +352,7 @@ static std::string toCppStyle(const std::string &str, bool firstCapital = false)
 }
 
 static int countPointers(const std::string &str) {
-    return std::count(str.begin(), str.end(), '*');
+    return static_cast<int>(std::count(str.begin(), str.end(), '*'));
 }
 
 static std::pair<int, int> countPointers(const std::string &from, const std::string &to) {
