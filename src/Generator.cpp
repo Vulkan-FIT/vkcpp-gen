@@ -1378,18 +1378,44 @@ regex_replace(const std::string &input, const std::regex &regex,
     return output;
 }
 
-std::string Registry::findDefaultRegistryPath() {
-    const char* sdk = std::getenv("VULKAN_SDK");
-    if (!sdk) {
+std::string Registry::findSystemRegistryPath() {
+    size_t size;
+
+    getenv_s(&size, nullptr, 0, "VULKAN_SDK");
+    if (size == 0) {
         return "";
     }
+    std::string sdk;
+    sdk.resize(size);
+    getenv_s(&size, sdk.data(), sdk.size(), "VULKAN_SDK");
+    sdk.resize(size - 1);
+
     std::filesystem::path sdkPath{sdk};
     std::filesystem::path file{"share/vulkan/registry/vk.xml"};
     std::filesystem::path regPath = sdkPath / file;
-    if (!std::filesystem::exists(regPath)) {
-        return "";
+
+    if (std::filesystem::exists(regPath)) {
+        return std::filesystem::absolute(regPath).string();
     }
-    return regPath.string();
+    return "";
+}
+
+std::string Registry::findLocalRegistryPath() {
+    std::filesystem::path regPath{"vk.xml"};
+    if (std::filesystem::exists(regPath)) {
+        return std::filesystem::absolute(regPath).string();
+    }
+    return "";
+}
+
+std::string Registry::findDefaultRegistryPath() {
+    std::string path = findSystemRegistryPath();
+    if (!path.empty()) {
+        return path;
+    }
+    else {
+        return findLocalRegistryPath();
+    }
 }
 
 Registry::Registry(Generator &gen)
@@ -1600,6 +1626,10 @@ void Registry::parsePlatforms(Generator &gen, XMLNode *node) {
         std::cout << "Parsing platforms" << '\n';
     // iterate contents of <platforms>, filter only <platform> children
     for (XMLElement *platform : Elements(node) | ValueFilter("platform")) {
+        if (!isVulkan(platform)) {
+            continue;
+        }
+
         const char *name = platform->Attribute("name");
         const char *protect = platform->Attribute("protect");
         if (name && protect) {
@@ -1637,7 +1667,11 @@ void Registry::parseTypes(Generator &gen, XMLNode *node) {
     std::vector<XMLElement*> handleNodes;
 
     // iterate contents of <types>, filter only <type> children
-    for (XMLElement *type : Elements(node) | ValueFilter("type")) {        
+    for (XMLElement *type : Elements(node) | ValueFilter("type")) {
+        if (!isVulkan(type)) {
+            continue;
+        }
+
         const auto cat = getAttrib(type, "category").value_or("");
         const char *name = type->Attribute("name");
 
@@ -1721,7 +1755,7 @@ void Registry::parseTypes(Generator &gen, XMLNode *node) {
                                     ? StructData::VK_STRUCT
                                     : StructData::VK_UNION;
 
-                    auto &s = structs.items.emplace_back(gen, name, t, type);
+                    auto &s = structs.items.emplace_back(gen, std::string_view{name}, t, type);
 
                     auto extends = getAttrib(type, "structextends");
                     if (extends) {
@@ -1736,7 +1770,9 @@ void Registry::parseTypes(Generator &gen, XMLNode *node) {
         } else if (cat == "define") {
             XMLDefineParser parser{type, gen};
             if (parser.name == "VK_HEADER_VERSION") {
-                headerVersion = parser.value;
+                if (isVulkan(type)) {
+                    headerVersion = parser.value;
+                }
             }
         }
     }
@@ -1804,6 +1840,9 @@ void Registry::parseTypes(Generator &gen, XMLNode *node) {
     }
 
     structs.prepare();
+//    for (const auto &s : structs.items) {
+//        std::cout << "Struct: " << s.name << std::endl;
+//    }
     for (auto &a : aliasedTypes) {
         const auto &it = structs.find(a.second.data());
         if (it == structs.end()) {
@@ -1821,6 +1860,9 @@ void Registry::parseTypes(Generator &gen, XMLNode *node) {
 }
 
 void Registry::parseEnums(Generator &gen, XMLNode *node) {
+    if (!isVulkan(node->ToElement())) {
+        return;
+    }
 
     const char *typeptr = node->ToElement()->Attribute("type");
     if (!typeptr) {
@@ -1858,6 +1900,10 @@ void Registry::parseEnums(Generator &gen, XMLNode *node) {
         std::vector<std::string> aliased;
 
         for (XMLElement *e : Elements(node) | ValueFilter("enum")) {
+            if (!isVulkan(e)) {
+                continue;
+            }
+
             const char *value = e->Attribute("name");
             if (value) {
                 const char *alias = e->Attribute("alias");
@@ -1896,6 +1942,10 @@ void Registry::parseCommands(Generator &gen, XMLNode *node) {
     std::vector<XMLElement *> unaliased;
 
     for (XMLElement *commandElement : Elements(node) | ValueFilter("command")) {
+        if (!isVulkan(commandElement)) {
+            continue;
+        }
+
         const char *alias = commandElement->Attribute("alias");
         if (alias) {
             const char *name = commandElement->Attribute("name");
@@ -1923,11 +1973,11 @@ void Registry::parseCommands(Generator &gen, XMLNode *node) {
             //if (alias->second.size() >= 2) {
                 //std::cout << "multiple aliases: " << alias->first << '\n';
             //}
-
+            command.alias = alias->second[0];
             for (auto &a : alias->second) {
                 commands.items.emplace_back(gen, command, a);
             }
-            command.alias = alias->second[0];
+
         }
     }
     commands.prepare();
@@ -2202,38 +2252,120 @@ void Registry::orderHandles(bool usenew ) {
 }
 
 void Registry::parseFeature(Generator &gen, XMLNode *node) {
-    if (verbose)
-        std::cout << "Parsing feature" << '\n';
-    const char *name = node->ToElement()->Attribute("name");
-    if (name) {
+    if (!isVulkan(node->ToElement())) {
+        // std::cout << "disable feature " << getAttrib(node->ToElement(), "name").value_or("") << std::endl;
         for (XMLElement *require : Elements(node) | ValueFilter("require")) {
             for (XMLElement &entry : Elements(require)) {
                 const std::string_view value = entry.Value();
-                if (value == "enum") {
-                    parseEnumExtend(entry, nullptr);
+                const auto name = getAttrib(&entry, "name");
+                if (!name) {
+                    continue;
+                }
+                if (value == "type") {
+                    auto type = findType(std::string{name.value()});
+                    if (type && type->vulkanSpec == 0) {
+                        type->setUnsuppored();
+                    }
+                }
+                else if (value == "command") {
+                    auto command = commands.find(std::string{name.value()});
+                    if (command != commands.end() && command->vulkanSpec == 0) {
+                        command->setUnsuppored();
+                    }
                 }
             }
         }
+
+        return;
     }
-    if (verbose)
-        std::cout << "Parsing feature done" << '\n';
+
+    const auto name = getAttrib(node->ToElement(), "name");
+    const auto number = getAttrib(node->ToElement(), "number");
+    static int spec = 0;
+
+    if (name) {
+        if (verbose)
+            std::cout << "Parsing feature" << '\n';
+        spec++;
+        for (XMLElement *require : Elements(node) | ValueFilter("require")) {
+            for (XMLElement &entry : Elements(require)) {
+                const std::string_view value = entry.Value();
+                const auto name = std::string{getAttrib(&entry, "name").value_or("")};
+                if (value == "enum") {
+                    parseEnumExtend(entry, nullptr, spec);
+                }
+                else if (value == "command") {
+                    auto command = commands.find(name);
+                    if (command != commands.end()) {
+                        command->vulkanSpec = spec;
+                    }
+                } else if (value == "type") {
+                    auto type = findType(name);
+                    if (type) {
+                        type->vulkanSpec = spec;
+                    }
+                }
+            }
+        }
+        if (verbose)
+            std::cout << "Parsing feature done" << '\n';
+    }
 }
 
 void Registry::parseExtensions(Generator &gen, XMLNode *node) {
+    const auto disableTypes = [&](XMLElement *e) {
+        for (XMLElement &entry : Elements(e)) {
+
+            const std::string_view value = entry.Value();
+            if (value == "command") {
+                const char *name = entry.Attribute("name");
+                if (name) {
+                    auto command = commands.find(name);
+                    if (command != commands.end()) {
+                        command->setUnsuppored();
+                    }
+                }
+
+            } else if (value == "type") {
+                const char *nameAttrib = entry.Attribute("name");
+                if (!nameAttrib) {
+                    continue;
+                }
+                std::string name = nameAttrib;
+                if (!name.starts_with("Vk")) {
+                    continue;
+                }
+                auto type = findType(name);
+                if (type) {
+                    type->setUnsuppored();
+                }
+            }
+        }
+    };
+
     if (verbose)
         std::cout << "Parsing extensions" << '\n';
 
+    std::vector<XMLElement*> nodes;
+
     // iterate contents of <extensions>, filter only <extension> children
     for (XMLElement *extension : Elements(node) | ValueFilter("extension")) {
-        const auto name = getRequiredAttrib(extension, "name");
+        if (!isVulkanExtension(extension)) {
 
-        bool supported = true;
-        if (getAttrib(extension, "supported") == "disabled") {
-            supported = false;
+            for (XMLElement *require : Elements(extension) | ValueFilter("require")) {
+                disableTypes(require);
+            }
+            continue;
         }
 
+//        bool supported = true;
+//        if (getAttrib(extension, "supported") == "disabled") {
+//            supported = false;
+//        }
+
+        const auto name = getRequiredAttrib(extension, "name");
         // std::cout << "Extension: " << name << '\n';
-        if (supported) {
+        // if (supported) {
             PlatformData* platform = nullptr;
             const auto platformAttrib = getAttrib(extension, "platform");
             if (platformAttrib.has_value()) {
@@ -2246,17 +2378,20 @@ void Registry::parseExtensions(Generator &gen, XMLNode *node) {
                 }
             }
 
-            bool enabled = supported && defaultWhitelistOption;
+            bool enabled = //supported &&
+                 defaultWhitelistOption;
             // std::cout << "add ext: " << name << '\n';
-            extensions.items.emplace_back(std::string{name}, platform, supported, enabled);
+            extensions.items.emplace_back(std::string{name}, platform, true, enabled);
 //            std::cout << "ext: " << ext << '\n';
 //            std::cout << "> n: " << ext->name.original << '\n';
-        }
+
+            nodes.push_back(extension);
+        // }
     }
     extensions.prepare();
 
-
-    for (XMLElement *extension : Elements(node) | ValueFilter("extension")) {
+    for (XMLElement *extension : nodes ) {
+    //for (XMLElement *extension : Elements(node) | ValueFilter("extension")) {
         const auto name = getRequiredAttrib(extension, "name");
 
         ExtensionData *ext = nullptr;
@@ -2266,11 +2401,20 @@ void Registry::parseExtensions(Generator &gen, XMLNode *node) {
         }
 
         // iterate contents of <extension>, filter only <require> children
-        for (XMLElement *require :
-             Elements(extension) | ValueFilter("require")) {
+        for (XMLElement *require : Elements(extension) | ValueFilter("require")) {
+            if (!isVulkan(require)) {
+                disableTypes(require);
+                continue;
+            }
+
+
             // iterate contents of <require>
             // std::cout << "  <require>" << '\n';
             for (XMLElement &entry : Elements(require)) {
+                if (!isVulkan(&entry)) {
+                    continue;
+                }
+
                 const std::string_view value = entry.Value();
                 // std::cout << "    <" << value << ">" << '\n';
 
@@ -2287,8 +2431,8 @@ void Registry::parseExtensions(Generator &gen, XMLNode *node) {
                             command->setUnsuppored();
                         }
                         else {
-                            if (!isInContainter(ext->commands, command.base())) {
-                               ext->commands.push_back(command.base());
+                            if (!isInContainter(ext->commands, &*command)) {
+                               ext->commands.push_back(&*command);
                             }
                             command->ext = ext;
                         }
@@ -2317,7 +2461,7 @@ void Registry::parseExtensions(Generator &gen, XMLNode *node) {
                     }
                     if (type) {
                         if (!ext) {
-                            type->setUnsuppored();
+                            // type->setUnsuppored();
                         }
                         else {
                             if (!isInContainter(ext->types, type)) {
@@ -2340,7 +2484,7 @@ void Registry::parseExtensions(Generator &gen, XMLNode *node) {
         std::cout << "Parsing extensions done" << '\n';
 }
 
-void Registry::parseEnumExtend(XMLElement &node, ExtensionData *ext) {
+void Registry::parseEnumExtend(XMLElement &node, ExtensionData *ext, uint8_t spec) {
     const char *extends = node.Attribute("extends");
     // const char *bitpos = node.Attribute("bitpos");
     const char *value = node.Attribute("name");
@@ -2361,6 +2505,7 @@ void Registry::parseEnumExtend(XMLElement &node, ExtensionData *ext) {
                 v.original = value;
                 EnumValue data{v, alias ? true : false};
                 data.ext = ext;
+                data.vulkanSpec = spec;
                 it->members.push_back(data);
             }
 
@@ -2647,6 +2792,33 @@ void Registry::unload() {
     commands.clear();
     errorClasses.clear();
     loader.clear();    
+}
+
+static bool checkVulkanElement(XMLElement *e, const std::string_view attribute, const std::string_view target) {
+    const auto attr = getAttrib(e, attribute);
+    if (attr) {
+        if (attr->find(',') != std::string::npos) {
+            const auto api = split(std::string{attr.value()}, ",");
+            for (const auto &t : api) {
+                if (t == target) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        else {
+            return attr == target;
+        }
+    }
+    return true;
+}
+
+bool Registry::isVulkan(XMLElement *e) const {
+    return checkVulkanElement(e, "api", "vulkan");
+}
+
+bool Registry::isVulkanExtension(XMLElement *e) const {
+    return checkVulkanElement(e, "supported", "vulkan");
 }
 
 std::string Generator::genWithProtect(const std::string &code, const std::string &protect) const {
@@ -5507,7 +5679,7 @@ static VULKAN_HPP_CONST_OR_CONSTEXPR {NAMESPACE}::DebugReportObjectTypeEXT debug
             MemberResolverCtor resolver{*this, d, ctx};
 
             if (!resolver.hasDependencies) {
-                std::cout << "ctor skipped: class " << data.name << ", s: " << superclass << '\n';
+                // std::cout << "ctor skipped: class " << data.name << ", s: " << superclass << '\n';
                 return;
             }
 
@@ -5695,6 +5867,10 @@ std::string Generator::generateClass(const HandleData &data, UnorderedFunctionOu
         generateClassConstructorsRAII(data, out, outputFuncsRAII);
 
         std::string release;
+//        if (data.vkhandle.getAssignment() != " = {}") {
+//            std::cerr << &data << " vkhandle: " << data.vkhandle.identifier() << " invalid assignment: " << data.vkhandle.getAssignment() << std::endl;
+//        }
+
         data.foreachVars(VariableData::Flags::CLASS_VAR_RAII, [&](const VariableData &v){
             out.sPrivate += "    " + v.toClassVar();
             if (v.identifier() != handle) {
@@ -6125,16 +6301,19 @@ void Generator::load(const std::string &xmlPath) {
 
 void Generator::generate() {
 
-    if (outputFilePath.empty()) {
-        std::cerr << "empty output path" << '\n';
-        return;
-    }
+//    if (outputFilePath.empty()) {
+//        std::cerr << "empty output path" << '\n';
+//        return;
+//    }
 
     std::cout << "generating" << '\n';
 
     auto start = std::chrono::system_clock::now();
 
     std::string p = outputFilePath;
+    if (outputFilePath.empty()) {
+        p = ".";
+    }
     std::replace(p.begin(), p.end(), '\\', '/');
     if (!p.ends_with('/')) {
         p += '/';
@@ -6716,6 +6895,7 @@ std::string Generator::MemberResolver::generateDefinition(bool genInline, bool b
     if (gen.getConfig().dbg.methodTags) {
         output += genInline ? "// inline definition\n" : "// definition\n";
     }
+    // output += "// r: " + std::to_string((int)cmd->pfnReturn) + "\n";
     bool usesTemplate = false;
     output += getProto(indent, genInline, usesTemplate) + "\n  {\n";
     if (ctx.ns == Namespace::RAII && isIndirect() && !constructor) {
@@ -6975,7 +7155,9 @@ Registry::CommandData::CommandData(Generator &gen, XMLElement *command, const st
         }
         // <param> section
         else if (std::string_view(child.Value()) == "param") {
-            _params.emplace_back(std::make_unique<VariableData>(gen, &child));
+            if (gen.isVulkan(&child)) {
+                _params.emplace_back(std::make_unique<VariableData>(gen, &child));
+            }
         }
     }
     if (name.empty()) {
@@ -7094,7 +7276,7 @@ std::string Generator::MemberResolver::successCodesCondition(const std::string &
         if (c == "VK_INCOMPLETE") {
             continue;
         }
-        "( " + id + " == Result::" + gen.enumConvertCamel("Result", c) + " ) ||\n" + indent;
+        output += "( " + id + " == Result::" + gen.enumConvertCamel("Result", c) + " ) ||\n" + indent;
     }
     strStripSuffix(output, " ||\n" + indent);
     return output;
@@ -7283,8 +7465,11 @@ Registry::StructData::StructData(Generator &gen, const std::string_view name, Vk
 
     // iterate contents of <type>, filter only <member> children
     for (XMLElement *member : Elements(e) | ValueFilter("member")) {
+        if (!gen.isVulkan(member)) {
+            continue;
+        }
 
-        auto &v = members.emplace_back(std::make_unique<VariableData>(gen, member));
+        auto &v = members.emplace_back(std::move(std::make_unique<VariableData>(gen, member)));
 
         const std::string &type = v->type();
         const std::string &name = v->identifier();
