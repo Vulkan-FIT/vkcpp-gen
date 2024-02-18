@@ -4,7 +4,7 @@
 // of this software and associated documentation files (the "Software"), to deal
 // in the Software without restriction, including without limitation the rights
 // to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-//                                                           copies of the Software, and to permit persons to whom the Software is
+// copies of the Software, and to permit persons to whom the Software is
 // furnished to do so, subject to the following conditions:
 // The above copyright notice and this permission notice shall be included in all
 // copies or substantial portions of the Software.
@@ -16,52 +16,54 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
+#include "ArgumentsParser.hpp"
+#include "Generator.hpp"
+
 #include <algorithm>
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
 #include <functional>
 #include <iostream>
-#include <fstream>
 #include <map>
 #include <memory>
 #include <stdexcept>
 #include <unordered_set>
 #include <vector>
-#include <filesystem>
-#include <cstdlib>
-
-#include "ArgumentsParser.hpp"
-#include "Generator.hpp"
-#include "Instrumentation.h"
 
 #ifdef GENERATOR_GUI
-#include "Gui.hpp"
+#    include "Gui.hpp"
 #endif
 
 static constexpr char const *HELP_TEXT{
     R"(Usage:
     -r, --reg       path to source registry file    
     -d, --dest      path to destination directory
-    -c, --config    path to configuration file)"};
+    -c, --config    path to configuration file)"
+};
 
-static void loadDefaultRegistry(Generator &gen) {
-    std::string path = Generator::findDefaultRegistryPath();
+static void loadDefaultRegistry(vkgen::Generator &gen) {
+    std::string path = vkgen::Generator::findDefaultRegistryPath();
     if (path.empty()) {
         throw std::runtime_error("Failed to detect vk.xml. See usage.");
     }
     gen.load(path);
 }
 
-int main(int argc, char **argv) {    
+int main(int argc, char **argv) {
+    using namespace vkgen;
 
     try {
-        ArgOption helpOption{"-h", "--help"};
-        ArgOption regOption{"-r", "--reg", true};
-        ArgOption destOption{"-d", "--dest", true};
-        ArgOption configOption{"-c", "--config", true};
-        ArgOption rlOption{"", "--readlog", true};
-        ArgOption resaveOption{"", "--resave-config"};
-        ArgOption noguiOption{"", "--nogui"};
-        ArgOption guifpsOption{"", "--fps"};
-        ArgParser p({&helpOption, &regOption, &destOption, &configOption, &noguiOption, &guifpsOption, &rlOption, &resaveOption});
+        ArgOption helpOption{ "-h", "--help" };
+        ArgOption regOption{ "-r", "--reg", true };
+        ArgOption destOption{ "-d", "--dest", true };
+        ArgOption configOption{ "-c", "--config", true };
+        ArgOption rlOption{ "", "--readlog", true };
+        ArgOption resaveOption{ "", "--resave-config" };
+        ArgOption noguiOption{ "", "--nogui" };
+        ArgOption guifpsOption{ "", "--fps" };
+        ArgOption dbgtagOption{ "", "--debug" };
+        ArgParser p({ &helpOption, &regOption, &destOption, &configOption, &noguiOption, &guifpsOption, &rlOption, &resaveOption, &dbgtagOption });
 
         p.parse(argc, argv);
         // help option block
@@ -78,13 +80,12 @@ int main(int argc, char **argv) {
 
         Generator gen;
 
-        const auto loadRegistry = [&]{
+        const auto loadRegistry = [&] {
             if (regOption.set) {
                 gen.load(regOption.value);
+            } else {
+                loadDefaultRegistry(gen);
             }
-            else {
-               loadDefaultRegistry(gen);
-            }            
         };
 
         const auto generate = [&] {
@@ -95,6 +96,9 @@ int main(int argc, char **argv) {
             loadRegistry();
             if (configOption.set) {
                 gen.loadConfigFile(configOption.value);
+            }
+            if (dbgtagOption.set) {
+                gen.cfg.dbg.methodTags.data = true;
             }
             gen.generate();
         };
@@ -114,10 +118,10 @@ int main(int argc, char **argv) {
 
 #ifdef GENERATOR_GUI
         if (!noguiOption.set) {
-            GUI gui{gen};
+            GUI gui{ gen };
             gui.init();
             if (guifpsOption.set) {
-               gui.showFps = true;
+                gui.showFps = true;
             }
             if (configOption.set) {
                 gui.setConfigPath(configOption.value);
@@ -135,8 +139,8 @@ int main(int argc, char **argv) {
         }
 #endif
         generate();
-
-    } catch (const std::exception &e) {
+    }
+    catch (const std::exception &e) {
         std::cerr << "Error: " << e.what() << std::endl;
         return 1;
     }

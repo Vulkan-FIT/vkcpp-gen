@@ -40,26 +40,43 @@ endif(GENERATOR_GUI)
 
 SET(HEADERS
     src/ArgumentsParser.hpp
-    src/Enums.h
-    src/XMLVariableParser.hpp
+    src/Enums.hpp
+    src/Config.hpp
+    src/Variable.hpp
     src/Gui.hpp
+    src/Registry.hpp
+    src/Members.hpp
     src/Generator.hpp
     src/Utils.hpp
-    )
+    src/Output.hpp
+)
 
 SET(SOURCES
     src/main.cpp
-    src/XMLVariableParser.cpp
+    src/Config.cpp
+    src/Variable.cpp
     src/Gui.cpp
     src/Generator.cpp
     src/Utils.cpp
-    )
+    src/Registry.cpp
+    src/Members.cpp
+    src/Enums.cpp
+    src/Format.hpp
+    src/Output.cpp
+)
 
 add_executable(${CMAKE_PROJECT_NAME} ${SOURCES} ${HEADERS} ${IMGUI_SOURCES})
 
 target_link_libraries(${CMAKE_PROJECT_NAME} tinyxml2)
 
 add_subdirectory(tinyxml2)
+add_subdirectory(fmt)
+
+target_include_directories(${CMAKE_PROJECT_NAME}
+    PUBLIC fmt/include
+)
+
+target_link_libraries(${CMAKE_PROJECT_NAME} fmt)
 
 if(GENERATOR_GUI)
 

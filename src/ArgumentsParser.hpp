@@ -4,7 +4,7 @@
 // of this software and associated documentation files (the "Software"), to deal
 // in the Software without restriction, including without limitation the rights
 // to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-//                                                           copies of the Software, and to permit persons to whom the Software is
+// copies of the Software, and to permit persons to whom the Software is
 // furnished to do so, subject to the following conditions:
 // The above copyright notice and this permission notice shall be included in all
 // copies or substantial portions of the Software.
@@ -20,32 +20,31 @@
 #define ARGUMENTSPARSER_H
 
 #include <optional>
-#include <vector>
 #include <stdexcept>
+#include <vector>
 
 // holds arguments data
-struct ArgOption {
+struct ArgOption
+{
     std::optional<std::string> shortName;
     std::optional<std::string> longName;
-    bool requiredValue = false; // if true parser loads value with next argument
-    bool set = false; // set to true if argument exists
-    std::string value = {};
+    bool                       requiredValue = false;  // if true parser loads value with next argument
+    bool                       set           = false;  // set to true if argument exists
+    std::string                value         = {};
 };
 
 // simple class made for parsing command line arguments
-class ArgParser {
+class ArgParser
+{
     using Option = ArgOption;
-    const std::vector<Option*> options;
+    const std::vector<Option *> options;
 
-public:
-    ArgParser(std::initializer_list<Option*> list)
-        : options(list)
-    {}
+  public:
+    ArgParser(std::initializer_list<Option *> list) : options(list) {}
 
     // parses arguments. throws if there are less arguments than expected
     inline void parse(int argc, char **argv) {
-
-        const auto getArg = [&](int index) { // tries to access argument at index, throws on fail
+        const auto getArg = [&](int index) {  // tries to access argument at index, throws on fail
             if (argc <= index) {
                 throw std::runtime_error("Arguments out of range. See usage.");
             }
@@ -54,19 +53,18 @@ public:
 
         for (int i = 0; i < argc; ++i) {
             for (Option *o : options) {
-                std::string_view arg = getArg(i); // fetch current argument
-                if ((o->shortName.has_value() && arg == o->shortName.value()) || // compares short name
-                    (o->longName.has_value()  && arg == o->longName.value()))    // comapres long name
+                std::string_view arg = getArg(i);                                 // fetch current argument
+                if ((o->shortName.has_value() && arg == o->shortName.value()) ||  // compares short name
+                    (o->longName.has_value() && arg == o->longName.value()))      // comapres long name
                 {
                     if (o->requiredValue) {
-                        o->value = getArg(++i); // try to fetch next argument
+                        o->value = getArg(++i);  // try to fetch next argument
                     }
                     o->set = true;
                 }
             }
         }
     }
-
 };
 
-#endif // ARGUMENTSPARSER_H
+#endif  // ARGUMENTSPARSER_H

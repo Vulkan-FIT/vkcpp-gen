@@ -1,27 +1,31 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-# Vulkan C++ API generator
+# Vulkan C++ bindings generator
 
-⚠️ **Work in progress! Use at your own risk**
+⚠️ **This project is partial WIP and not always up to date!**
 
-Generates C++20 Vulkan API bindings. 
+Official C++ bindings: <https://github.com/KhronosGroup/Vulkan-Hpp>
 
-Official C++ bindings: <https://github.com/KhronosGroup/Vulkan-Hpp>.\
-Main purpose of this project is to introduce more lightweight   
-bindings resulting in faster compilation speed.
+Main purpose of this project is to provide customizable Vulkan bindings.
+Adding more flexibility and experimental features. 
 
-Configurable via GUI for experimental purposes.
+* possibly more lightweight, faster compilation speed
+* embed PFN pointers in `vk::` namespace objects
+* create handles with constructors instead of `create` or `allocate`
+* functions returning `SmallVector` and `std::array`
+* c++ modules support
 
+Configurable via GUI or xml file.
 ![GUI](doc/screenshot.png)
 
 ## Requirements
 
-* C++20 compatible compiler
+* C++20 capable compiler
 * Vulkan SDK <https://www.lunarg.com/vulkan-sdk/>
 * CMake <https://cmake.org/>
 
 ## Environment
 
-Tested on windows 10 & clang 16.
+Tested on Windows 11, clang 17, Vulkan v1.3.275.
 
 ## License
 Licensed under the MIT License.
