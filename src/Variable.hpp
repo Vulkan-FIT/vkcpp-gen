@@ -303,6 +303,14 @@ namespace vkgen
             specialType = type;
         }
 
+        void setNameSuffix(std::string &str) {
+            nameSuffix = str;
+        }
+
+        bool hasNameSuffix() const {
+            return !nameSuffix.empty();
+        }
+
         Type getSpecialType() const {
             return specialType;
         }
@@ -689,6 +697,7 @@ namespace vkgen
         VariableData *lenghtVar = {};
         std::string   _assignment;
         std::string   altPFN;
+        std::string   nameSuffix;
         std::string   optionalTemplate;
         std::string   optionalTemplateAssignment;
         std::string   templateDataTypeStr;

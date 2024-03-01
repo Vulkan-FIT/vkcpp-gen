@@ -167,6 +167,9 @@ namespace vkgen
 
         void prepareParams();
 
+
+        void setOptionalAssignments();
+
         bool checkMethod() const;
 
       public:
@@ -245,8 +248,6 @@ namespace vkgen
     {
       private:
         void transformMemberArguments();
-
-        void setOptionalAssignments();
 
       protected:
         std::string getSuperclassArgument(const String &superclass) const;

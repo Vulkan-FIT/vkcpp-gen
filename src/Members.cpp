@@ -142,6 +142,7 @@ namespace vkgen
 
     void MemberResolver::generate(UnorderedFunctionOutput &decl, UnorderedFunctionOutput &def) {
         // std::cout << "generate: " << dbgtag << '\n';
+        setOptionalAssignments();
 
         if (gen.getConfig().dbg.methodTags) {
             for (auto &p : cmd->_params) {
@@ -945,10 +946,12 @@ namespace vkgen
     MemberResolver::~MemberResolver() {}
 
     void MemberResolver::generateX(std::string &def) {
+        setOptionalAssignments();
         def += generateDefinition(true);
     }
 
     void MemberResolver::generateX(std::string &decl, std::string &def) {
+        setOptionalAssignments();
         decl += generateDeclaration();
         def += generateDefinition(false);
     }
@@ -1125,6 +1128,45 @@ namespace vkgen
         }
     }
 
+    void MemberResolver::setOptionalAssignments() {
+        bool assignment = true;
+        for (auto it = cmd->params.rbegin(); it != cmd->params.rend(); it++) {
+            auto &v = it->get();
+            if (v.getIgnoreProto()) {
+                continue;
+            }
+            if (!assignment) {
+                v.setAssignment("");
+            }
+            else {
+                if (v.getSpecialType() == VariableData::TYPE_DISPATCH) {
+                    continue;
+                }
+                if (v.type() == "AllocationCallbacks") {
+                    v.setDbgTag("/*TEST*/");
+                    v.setAssignment(" VULKAN_HPP_DEFAULT_ALLOCATOR_ASSIGNMENT");
+                    continue;
+                }
+                if (v.isOptional()) {
+                    if (v.isPointer()) {
+                        v.setAssignment(" VULKAN_HPP_DEFAULT_ARGUMENT_NULLPTR_ASSIGNMENT");
+                    } else {
+                        if (v.original.isPointer()) {
+                            v.setAssignment(" VULKAN_HPP_DEFAULT_ARGUMENT_NULLPTR_ASSIGNMENT");
+                        } else {
+                            v.setAssignment(" VULKAN_HPP_DEFAULT_ARGUMENT_ASSIGNMENT");
+                            // if (v->isReference() && !v->isConst())
+                            // integrity check?
+                        }
+                    }
+                }
+                if (v.getAssignment().empty()) {
+                    assignment = false;
+                }
+            }
+        }
+    }
+
     bool MemberResolver::compareSignature(const MemberResolver &o) const {
         const auto removeWhitespace = [](std::string str) { return std::regex_replace(str, std::regex("\\s+"), ""); };
 
@@ -1278,43 +1320,6 @@ namespace vkgen
         }
 
         returnType = createReturnType();
-    }
-
-    void MemberResolverDefault::setOptionalAssignments() {
-        bool assignment = true;
-        for (auto it = cmd->params.rbegin(); it != cmd->params.rend(); it++) {
-            auto &v = it->get();
-            if (v.getIgnoreProto()) {
-                continue;
-            }
-            if (v.getSpecialType() == VariableData::TYPE_DISPATCH) {
-                continue;
-            }
-            if (v.type() == "AllocationCallbacks") {
-                v.setAssignment(" VULKAN_HPP_DEFAULT_ALLOCATOR_ASSIGNMENT");
-                continue;
-            }
-
-            if (v.isOptional()) {
-                if (v.isPointer()) {
-                    v.setAssignment(" VULKAN_HPP_DEFAULT_ARGUMENT_NULLPTR_ASSIGNMENT");
-                } else {
-                    if (v.original.isPointer()) {
-                        v.setAssignment(" VULKAN_HPP_DEFAULT_ARGUMENT_NULLPTR_ASSIGNMENT");
-                    } else {
-                        v.setAssignment(" VULKAN_HPP_DEFAULT_ARGUMENT_ASSIGNMENT");
-                        // if (v->isReference() && !v->isConst())
-                        // integrity check?
-                    }
-                }
-            }
-            if (!assignment) {
-                v.setAssignment("");
-            }
-            if (v.getAssignment().empty()) {
-                assignment = false;
-            }
-        }
     }
 
     std::string MemberResolverDefault::getSuperclassArgument(const String &superclass) const {
@@ -1737,7 +1742,6 @@ for (auto const &{2} : {3}) {
 
     void MemberResolverDefault::generate(UnorderedFunctionOutput &decl, UnorderedFunctionOutput &def) {
         // std::cerr << "MemberResolverDefault::generate  " << cmd->name.original << '\n';
-        setOptionalAssignments();
         MemberResolver::generate(decl, def);
         // std::cerr << "MemberResolverDefault::generate  " << cmd->name.original << "  done " << '\n';
     }

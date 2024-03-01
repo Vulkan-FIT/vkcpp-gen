@@ -103,7 +103,12 @@ vkgen::VariableData::VariableData(const String &type, const std::string &id) : V
 void vkgen::VariableData::updateMetaType(const Registry &reg) {
     auto *t = reg.find(original.type());
     if (t) {
-        ns = Namespace::VK;
+        if (nameSuffix.empty()) {
+            ns = Namespace::VK;
+        }
+        else {
+            setType(original.type());
+        }
         setMetaType(t->metaType());
     }
 }
@@ -422,6 +427,7 @@ std::string vkgen::VariableData::fullType(bool forceNamespace) const {
         case TYPE_OPTIONAL: return "Optional<" + type + ">";
         default: return type;
     }
+    type += nameSuffix;
 }
 
 std::string vkgen::VariableData::toString() const {
@@ -433,6 +439,7 @@ std::string vkgen::VariableData::toString() const {
     if (specialType != TYPE_ARRAY) {
         out += optionalArraySuffix();
     }
+    out += nameSuffix;
     return out;
 }
 
@@ -604,7 +611,6 @@ bool vkgen::XMLVariableParser::Visit(const tinyxml2::XMLText &text) {
     if (auto v = text.Value(); v) {
         value = v;
     }
-
     if (tag == "type") {  // text is type field
         state = TYPE;
     } else if (tag == "name") {  // text is name field
@@ -638,6 +644,12 @@ bool vkgen::XMLVariableParser::Visit(const tinyxml2::XMLText &text) {
             state = DONE;
             return false;
         } else {
+            if (value == "][") {  // multi dimensional array
+                state = BRACKET_LEFT;
+            }
+            else if (!value.empty() && tag != "comment") {
+                data.setNameSuffix(value);
+            }
             state = DONE;
             return false;
         }
@@ -645,9 +657,6 @@ bool vkgen::XMLVariableParser::Visit(const tinyxml2::XMLText &text) {
         state = ARRAY_LENGTH;
         data.addArrayLength(value);
     } else if (state == ARRAY_LENGTH) {
-        if (value == "][") {  // multi dimensional array
-            state = BRACKET_LEFT;
-        }
         state = DONE;
         return false;
     }

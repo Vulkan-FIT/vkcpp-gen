@@ -2891,7 +2891,11 @@ void vkgen::Generator::generateFiles(std::filesystem::path path) {
 
     generateForwardHandles(handles_forward);
 
-    generateForwardDeclarations(structs_forward, this->structs.ordered, *this);
+    structs_forward += beginNamespace();
+    for (const Struct &e : this->structs.ordered) {
+        structs_forward += generateStructDecl(e);
+    }
+    structs_forward += endNamespace();
 
     forward += "#include \"" + out.getFilename("_enums_forward") + "\"\n";
     forward += "#include \"" + out.getFilename("_structs_forward") + "\"\n";
@@ -3017,7 +3021,14 @@ void vkgen::Generator::generateEnum(const Enum &data, OutputBuffer &output, Outp
         output += genOptional(data, [&](std::string &output) { generateEnumStr(data, output, to_string_output.emplace()); });
     }
 
-    output_forward += genOptional(data, [&](std::string &output) { output += "  enum class " + data.name + ";\n"; });
+    output_forward += genOptional(data, [&](std::string &output) {
+        output += "  enum class " + data.name;
+        if (data.isBitmask) {
+            std::string const base = std::regex_replace(data.name.original, std::regex("FlagBits"), "Flags");
+            output += " : " + base;
+        }
+        output += ";\n";
+    });
 }
 
 std::string vkgen::Generator::generateToStringInclude() const {
@@ -3451,7 +3462,9 @@ std::string vkgen::Generator::generateClassString(const std::string &className, 
 
 std::string vkgen::Generator::generateForwardInclude(GenOutput &out) const {
     std::string output;
-    output += "#include \"" + out.getFilename("_handles_forward") + "\"\n";
+    output += "#include \"" + out.getFilename("_forward") + "\"\n";
+    // output += "#include \"" + out.getFilename("_handles_forward") + "\"\n";
+    // output += "#include \"" + out.getFilename("_structs_forward") + "\"\n";
 
     if (cfg.gen.raii.interop) {
         output += "#include \"" + out.getFilename("_raii_forward") + "\"\n";
@@ -3477,9 +3490,9 @@ void vkgen::Generator::generateHandles(OutputBuffer &output, OutputBuffer &outpu
     output += beginNamespace();
     // }
 
-    for (const Struct &e : structs.ordered) {
-        output += generateStructDecl(e);
-    }
+//    for (const Struct &e : structs.ordered) {
+//        output += generateStructDecl(e);
+//    }
 
     output += expIfndef("VULKAN_HPP_EXPERIMENTAL_NO_TEMPLATES");
     output += R"(
@@ -3842,9 +3855,6 @@ std::string vkgen::Generator::generateStruct(const Struct &data, bool exp) {
 
     bool containsFloatingPoints = false;
     for (const auto &m : data.members) {
-        if (enums.contains(m->original.type())) {
-            m->setNamespace(Namespace::VK);
-        }
         if (data.isStruct()) {
             std::string assignment = "{}";
             const auto &type       = m->original.type();
