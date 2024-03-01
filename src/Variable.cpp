@@ -18,6 +18,7 @@
 
 #include "Variable.hpp"
 
+#include "Format.hpp"
 #include "Generator.hpp"
 
 void vkgen::VariableFields::set(size_t index, const std::string &str) {
@@ -103,7 +104,11 @@ vkgen::VariableData::VariableData(const String &type, const std::string &id) : V
 void vkgen::VariableData::updateMetaType(const Registry &reg) {
     auto *t = reg.find(original.type());
     if (t) {
-        ns = Namespace::VK;
+        if (nameSuffix.empty()) {
+            ns = Namespace::VK;
+        } else {
+            setType(original.type());
+        }
         setMetaType(t->metaType());
     }
 }
@@ -124,11 +129,12 @@ std::string vkgen::VariableData::getLenAttribRhs() const {
     return lenAttribStr;
 }
 
-std::string vkgen::VariableData::namespaceString(bool forceNamespace) const {
-    if (forceNamespace && ns == Namespace::RAII) {
-        return vkgen::getNamespace(Namespace::VK);
+std::string vkgen::VariableData::namespaceString(const Generator &gen, bool forceNamespace) const {
+    std::string_view ns_str = gen.getNamespace((forceNamespace && ns == Namespace::RAII) ? Namespace::VK : ns);
+    if (ns_str.empty()) {
+        return "";
     }
-    return vkgen::getNamespace(ns);
+    return std::string{ ns_str } + "::";
 }
 
 bool vkgen::VariableData::isLenAttribIndirect() const {
@@ -330,11 +336,11 @@ std::string vkgen::VariableData::flagstr() const {
     return s;
 }
 
-std::string vkgen::VariableData::toClassVar() const {
-    return fullType() + " " + identifier() + getAssignment() + ";\n";
+std::string vkgen::VariableData::toClassVar(const Generator &gen) const {
+    return fullType(gen) + " " + identifier() + getAssignment() + ";\n";
 }
 
-std::string vkgen::VariableData::toArgument(bool useOriginal) const {
+std::string vkgen::VariableData::toArgument(const Generator &gen, bool useOriginal) const {
     if (!altPFN.empty()) {
         return altPFN;
     }
@@ -345,18 +351,18 @@ std::string vkgen::VariableData::toArgument(bool useOriginal) const {
         case TYPE_EXP_ARRAY:
         case TYPE_ARRAY_PROXY:
         case TYPE_ARRAY_PROXY_NO_TEMPORARIES: return toArgumentArrayProxy();
-        default: return toArgumentDefault(useOriginal);
+        default: return toArgumentDefault(gen, useOriginal);
     }
 }
 
-std::string vkgen::VariableData::toVariable(const VariableData &dst, bool useOriginal) const {
+std::string vkgen::VariableData::toVariable(const Generator &gen, const VariableData &dst, bool useOriginal) const {
     // TODO check array/vector match
     std::string s = useOriginal ? dst.original.suffix() : dst.suffix();
     std::string t = useOriginal ? dst.original.type() : dst.type();
 
     std::string id;
     if (specialType == TYPE_OPTIONAL) {
-        id = identifierAsArgument();
+        id = identifierAsArgument(gen);
     } else {
         if (isHandle() && ns == Namespace::RAII && (dst.ns != Namespace::RAII || useOriginal)) {
             id = "*";  // deference raii object
@@ -369,7 +375,7 @@ std::string vkgen::VariableData::toVariable(const VariableData &dst, bool useOri
         if (strContains(s, "*")) {
             cast = "std::bit_cast";
         }
-        std::string f = useOriginal ? dst.originalFullType() : dst.fullType();
+        std::string f = useOriginal ? dst.originalFullType() : dst.fullType(gen);
 
         out = cast + "<" + f + ">(" + id + ")";
     } else {
@@ -379,7 +385,7 @@ std::string vkgen::VariableData::toVariable(const VariableData &dst, bool useOri
     return out;  //"/* ${" + fullType() + " -> " + originalFullType() + "} */";
 }
 
-std::string vkgen::VariableData::toStructArgumentWithAssignment() const {
+std::string vkgen::VariableData::toStructArgumentWithAssignment(const Generator &gen) const {
     std::string out;
     if (hasArrayLength()) {
         std::string atype = "std::array";
@@ -390,7 +396,7 @@ std::string vkgen::VariableData::toStructArgumentWithAssignment() const {
         }
         out += " const &" + fields[IDENTIFIER];
     } else {
-        out = toString();
+        out = toString(gen);
     }
     if (!_assignment.empty()) {
         out += _assignment;
@@ -398,9 +404,9 @@ std::string vkgen::VariableData::toStructArgumentWithAssignment() const {
     return out;
 }
 
-std::string vkgen::VariableData::fullType(bool forceNamespace) const {
+std::string vkgen::VariableData::fullType(const Generator &gen, bool forceNamespace) const {
     std::string type = fields[PREFIX];
-    type += namespaceString(forceNamespace);
+    type += namespaceString(gen, forceNamespace);
     type += fields[TYPE];
     type += fields[SUFFIX];
     switch (specialType) {
@@ -422,10 +428,11 @@ std::string vkgen::VariableData::fullType(bool forceNamespace) const {
         case TYPE_OPTIONAL: return "Optional<" + type + ">";
         default: return type;
     }
+    type += nameSuffix;
 }
 
-std::string vkgen::VariableData::toString() const {
-    std::string out = fullType();
+std::string vkgen::VariableData::toString(const Generator &gen) const {
+    std::string out = fullType(gen);
     if (!out.ends_with(" ")) {
         out += " ";
     }
@@ -433,21 +440,22 @@ std::string vkgen::VariableData::toString() const {
     if (specialType != TYPE_ARRAY) {
         out += optionalArraySuffix();
     }
+    out += nameSuffix;
     return out;
 }
 
-std::string vkgen::VariableData::toStructString() const {
+std::string vkgen::VariableData::toStructString(const Generator &gen) const {
     const auto &id = fields[IDENTIFIER];
     switch (arrayAttrib) {
-        case ArraySize::DIM_1D: return vkgen::format("VULKAN_HPP_NAMESPACE::ArrayWrapper1D<{}, {}> {}", fields[TYPE], arraySizes[0], id);
-        case ArraySize::DIM_2D: return vkgen::format("VULKAN_HPP_NAMESPACE::ArrayWrapper2D<{}, {}, {}> {}", fields[TYPE], arraySizes[0], arraySizes[1], id);
-        case ArraySize::NONE: return toString();
+        case ArraySize::DIM_1D: return vkgen::format("{}::ArrayWrapper1D<{}, {}> {}", gen.m_ns, fields[TYPE], arraySizes[0], id);
+        case ArraySize::DIM_2D: return vkgen::format("{}::ArrayWrapper2D<{}, {}, {}> {}", gen.m_ns, fields[TYPE], arraySizes[0], arraySizes[1], id);
+        case ArraySize::NONE: return toString(gen);
     }
     return "";
 }
 
-std::string vkgen::VariableData::declaration() const {
-    std::string out = fullType();
+std::string vkgen::VariableData::declaration(const Generator &gen) const {
+    std::string out = fullType(gen);
     if (!out.ends_with(" ")) {
         out += " ";
     }
@@ -456,16 +464,16 @@ std::string vkgen::VariableData::declaration() const {
     return out;
 }
 
-std::string vkgen::VariableData::toStringWithAssignment() const {
-    std::string out = toString();
+std::string vkgen::VariableData::toStringWithAssignment(const Generator &gen) const {
+    std::string out = toString(gen);
     if (!_assignment.empty()) {
         out += _assignment;
     }
     return out;
 }
 
-std::string vkgen::VariableData::toStructStringWithAssignment() const {
-    std::string out = toStructString();
+std::string vkgen::VariableData::toStructStringWithAssignment(const Generator &gen) const {
+    std::string out = toStructString(gen);
     if (!_assignment.empty()) {
         out += _assignment;
     }
@@ -537,7 +545,34 @@ std::string vkgen::VariableData::createCast(std::string from) const {
     return cast + "<" + originalFullType() + (hasArrayLength() ? "*" : "") + ">(" + from + ")";
 }
 
-std::string vkgen::VariableData::toArgumentDefault(bool useOriginal) const {
+std::string vkgen::VariableData::getReturnType(const Generator &gen, bool forceNamespace) const {
+    std::string type = fullType(gen, forceNamespace);
+    return type;
+};
+
+void vkgen::VariableData::createLocalReferenceVar(const Generator &gen, const std::string &indent, const std::string &assignment, std::string &output) {
+    output += indent + getReturnType(gen, true) + " &" + identifier() + " = " + assignment + ";\n";
+    localVar = true;
+}
+
+void vkgen::VariableData::createLocalVar(
+  const Generator &gen, const std::string &indent, const std::string &dbg, std::string &output, const std::string &assignment) {
+    output += indent + getReturnType(gen, true) + " " + identifier();
+    if (isArrayOut()) {
+        const auto &init = getLocalInit();
+        if (!init.empty()) {
+            output += "( " + init + " )";
+        }
+    }
+    if (!assignment.empty()) {
+        output += " = ";
+        output += assignment;
+    }
+    output += ";" + dbg + "\n";
+    localVar = true;
+}
+
+std::string vkgen::VariableData::toArgumentDefault(const Generator &gen, bool useOriginal) const {
     if (!arrayVars.empty()) {
         const auto &var = arrayVars[0];
         if (var->isArrayIn() && !var->isLenAttribIndirect() && (var->specialType == TYPE_ARRAY_PROXY || var->specialType == TYPE_ARRAY_PROXY_NO_TEMPORARIES)) {
@@ -548,7 +583,7 @@ std::string vkgen::VariableData::toArgumentDefault(bool useOriginal) const {
             return size;
         }
     }
-    std::string id   = identifierAsArgument();
+    std::string id   = identifierAsArgument(gen);
     bool        same = fields[TYPE] == original.type();
     if ((same && specialType != TYPE_OPTIONAL) || useOriginal) {
         return id;
@@ -578,12 +613,12 @@ std::pair<std::string, std::string> vkgen::VariableData::toArrayProxyRhs() const
     return std::make_pair(toArrayProxySize(), toArrayProxyData());
 }
 
-std::string vkgen::VariableData::identifierAsArgument() const {
+std::string vkgen::VariableData::identifierAsArgument(const Generator &gen) const {
     const std::string &suf = fields[SUFFIX];
     const std::string &id  = fields[IDENTIFIER];
     if (specialType == TYPE_OPTIONAL) {
         std::string type = fields[PREFIX];
-        type += namespaceString();
+        type += namespaceString(gen);
         type += fields[TYPE] + fields[SUFFIX];
         return "static_cast<" + type + "*>(" + id + ")";
     }
@@ -604,7 +639,6 @@ bool vkgen::XMLVariableParser::Visit(const tinyxml2::XMLText &text) {
     if (auto v = text.Value(); v) {
         value = v;
     }
-
     if (tag == "type") {  // text is type field
         state = TYPE;
     } else if (tag == "name") {  // text is name field
@@ -638,6 +672,11 @@ bool vkgen::XMLVariableParser::Visit(const tinyxml2::XMLText &text) {
             state = DONE;
             return false;
         } else {
+            if (value == "][") {  // multi dimensional array
+                state = BRACKET_LEFT;
+            } else if (!value.empty() && tag != "comment") {
+                data.setNameSuffix(value);
+            }
             state = DONE;
             return false;
         }
@@ -645,9 +684,6 @@ bool vkgen::XMLVariableParser::Visit(const tinyxml2::XMLText &text) {
         state = ARRAY_LENGTH;
         data.addArrayLength(value);
     } else if (state == ARRAY_LENGTH) {
-        if (value == "][") {  // multi dimensional array
-            state = BRACKET_LEFT;
-        }
         state = DONE;
         return false;
     }

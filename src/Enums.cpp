@@ -17,22 +17,3 @@
 // SOFTWARE.
 
 #include "Enums.hpp"
-
-static std::string getNamespaceString(vkgen::Namespace ns) {
-    using enum vkgen::Namespace;
-    switch (ns) {
-        case VK: return "VULKAN_HPP_NAMESPACE";
-        case RAII: return "VULKAN_HPP_NAMESPACE::VULKAN_HPP_RAII_NAMESPACE";
-        case EXP: return "VULKAN_HPP_NAMESPACE::VULKAN_HPP_EXP_NAMESPACE";
-        case STD: return "std";
-        default: return "";
-    }
-}
-
-std::string vkgen::getNamespace(Namespace ns, bool colons) {
-    auto str = getNamespaceString(ns);
-    if (colons && !str.empty()) {
-        str += "::";
-    }
-    return str;
-}

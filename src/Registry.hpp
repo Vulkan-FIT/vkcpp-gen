@@ -199,7 +199,12 @@ namespace vkgen
         BaseType(MetaType::Value type, std::string_view name, bool firstCapital = false) : name(std::string{ name }, firstCapital), MetaType(type) {}
 
         std::string_view getProtect() const;
+
         void             setProtect(const std::string_view);
+
+        bool hasProtect() const {
+            return !protect.empty();
+        }
 
         void setExtension(vkr::Extension *ext);
 
@@ -832,8 +837,8 @@ namespace vkgen
     {
         std::string define;
         std::string value;
-        Macro      *parent     = {};
-        bool        usesDefine = {};
+        //        Macro      *parent     = {};
+        bool usesDefine = {};
 
         Macro(const std::string &define, const std::string &value, bool usesDefine) : define(define), value(value), usesDefine(usesDefine) {}
 
@@ -842,9 +847,9 @@ namespace vkgen
         }
 
         std::string get() const {
-            if (parent) {
-                return parent->get() + "::" + getDefine();
-            }
+            //            if (parent) {
+            //                return parent->get() + "::" + getDefine();
+            //            }
             return getDefine();
         }
 
@@ -1013,7 +1018,16 @@ namespace vkgen
                         std::cerr << "Error: dep not found: " << dep << '\n';
                         return;
                     }
-                    deps.push_back(item);
+                    bool unique = true;
+                    for (const auto &d : deps) {
+                        if (d->data->name.original == dep) {
+                            unique = false;
+                            break;
+                        }
+                    }
+                    if (unique) {
+                        deps.push_back(item);
+                    }
                     item->add(this);
                 }
 
@@ -1076,6 +1090,15 @@ namespace vkgen
                     }
                     if (!empty && stuck) {
                         std::cerr << "dependcy sort: infinite loop detected" << std::endl;
+                        for (auto &i : items) {
+                            if (!i.inserted) {
+                                std::cout << i.data->name << "\n";
+                                for (auto &d : i.deps) {
+                                    std::cout << "  " << d->data->name;
+                                }
+                                std::cout << "\n";
+                            }
+                        }
                         break;
                     }
                 }
@@ -1238,7 +1261,7 @@ namespace vkgen
 
         void loadFinished();
 
-        void loadXML(const std::string &xmlPath);
+        bool loadXML(const std::string &xmlPath);
 
         void parseXML(Generator &gen);
 
@@ -1287,7 +1310,7 @@ namespace vkgen
             return registryPath;
         }
 
-        void load(Generator &gen, const std::string &xmlPath);
+        bool load(Generator &gen, const std::string &xmlPath);
 
         void unload();
 

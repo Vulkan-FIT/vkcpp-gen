@@ -17,6 +17,7 @@
 // SOFTWARE.
 
 #include "Members.hpp"
+#include "Format.hpp"
 
 #include "Generator.hpp"
 
@@ -142,6 +143,7 @@ namespace vkgen
 
     void MemberResolver::generate(UnorderedFunctionOutput &decl, UnorderedFunctionOutput &def) {
         // std::cout << "generate: " << dbgtag << '\n';
+        setOptionalAssignments();
 
         if (gen.getConfig().dbg.methodTags) {
             for (auto &p : cmd->_params) {
@@ -267,7 +269,7 @@ namespace vkgen
                         if (sameType && ctx.useThis) {
                             break;
                         }
-                        return v.toVariable(var, pfn);
+                        return v.toVariable(gen, var, pfn);
                     }
                 }
                 if (sameType) {
@@ -310,7 +312,7 @@ namespace vkgen
                     if (sameType && ctx.useThis) {
                         break;
                     }
-                    return v.toVariable(var, pfn);
+                    return v.toVariable(gen, var, pfn);
                 }
             }
             if (sameType) {
@@ -376,7 +378,7 @@ namespace vkgen
             resultVar.setFullType("", "Result", "");
         }
 
-        std::string out = resultVar.toString();
+        std::string out = resultVar.toString(gen);
         if (!assignment.empty()) {
             out += " = " + assignment;
         }
@@ -412,9 +414,9 @@ namespace vkgen
         if (output.empty()) {
             if (ctx.ns == Namespace::RAII) {
                 if (cls->name == "Instance" && gen.getConfig().gen.raii.staticInstancePFN) {
-                    output += "VULKAN_HPP_NAMESPACE::VULKAN_HPP_RAII_NAMESPACE::Instance::dispatcher.";
+                    output += gen.m_ns_raii + "::Instance::m_dispatcher.";
                 } else if (cls->name == "Device" && gen.getConfig().gen.raii.staticDevicePFN) {
-                    output += "VULKAN_HPP_NAMESPACE::VULKAN_HPP_RAII_NAMESPACE::Device::dispatcher.";
+                    output += gen.m_ns_raii + "::Device::m_dispatcher.";
                 } else {
                     if (!cls->ownerhandle.empty()) {
                         output += cls->ownerhandle + "->getDispatcher()->";
@@ -526,7 +528,7 @@ namespace vkgen
         std::string message;
 
         const auto &macros = gen.getConfig().macro;
-        const auto &ns     = (ctx.ns == Namespace::RAII && !constructorInterop) ? macros.mNamespaceRAII : macros.mNamespace;
+        const auto &ns     = (ctx.ns == Namespace::RAII && !constructorInterop) ? macros.mNamespaceRAII.data : macros.mNamespace.data;
         if (ns.usesDefine) {
             message = ns.define + "_STRING \"";
         } else {
@@ -596,7 +598,7 @@ namespace vkgen
             }
         } else {
             if (usesResultValue()) {
-                return vkgen::format("std::pair<VULKAN_HPP_NAMESPACE::Result, {0}>", returnType);
+                return vkgen::format("std::pair<{0}::Result, {1}>", gen.m_ns, returnType);
             }
         }
         return returnType;
@@ -610,7 +612,7 @@ namespace vkgen
         std::string type;
         std::string str;
         for (const VariableData &p : cmd->outParams) {
-            str += p.getReturnType() + ", ";
+            str += p.getReturnType(gen) + ", ";
         }
         strStripSuffix(str, ", ");
 
@@ -945,10 +947,12 @@ namespace vkgen
     MemberResolver::~MemberResolver() {}
 
     void MemberResolver::generateX(std::string &def) {
+        setOptionalAssignments();
         def += generateDefinition(true);
     }
 
     void MemberResolver::generateX(std::string &decl, std::string &def) {
+        setOptionalAssignments();
         decl += generateDeclaration();
         def += generateDefinition(false);
     }
@@ -1018,9 +1022,9 @@ namespace vkgen
                   return v.originalToString();
               }
               if (declaration) {
-                  return v.toStringWithAssignment();
+                  return v.toStringWithAssignment(gen);
               }
-              return v.toString();
+              return v.toString(gen);
           },
           true,
           false);
@@ -1033,7 +1037,7 @@ namespace vkgen
             output = "// {PFNargs}";
         }
         output += createArguments(
-          filterPFN, [&](const VariableData &v) { return v.toArgument(useOriginal); }, false, true);
+          filterPFN, [&](const VariableData &v) { return v.toArgument(gen, useOriginal); }, false, true);
         return output;
     }
 
@@ -1121,6 +1125,45 @@ namespace vkgen
                 var.setDbgTag("(A)");
 
                 v.setStdAllocator(var.identifier());
+            }
+        }
+    }
+
+    void MemberResolver::setOptionalAssignments() {
+        bool assignment = true;
+        for (auto it = cmd->params.rbegin(); it != cmd->params.rend(); it++) {
+            auto &v = it->get();
+            if (v.getIgnoreProto()) {
+                continue;
+            }
+            if (!assignment) {
+                v.setAssignment("");
+            }
+            else {
+                if (v.getSpecialType() == VariableData::TYPE_DISPATCH) {
+                    continue;
+                }
+                if (v.type() == "AllocationCallbacks") {
+                    v.setDbgTag("/*TEST*/");
+                    v.setAssignment(" VULKAN_HPP_DEFAULT_ALLOCATOR_ASSIGNMENT");
+                    continue;
+                }
+                if (v.isOptional()) {
+                    if (v.isPointer()) {
+                        v.setAssignment(" VULKAN_HPP_DEFAULT_ARGUMENT_NULLPTR_ASSIGNMENT");
+                    } else {
+                        if (v.original.isPointer()) {
+                            v.setAssignment(" VULKAN_HPP_DEFAULT_ARGUMENT_NULLPTR_ASSIGNMENT");
+                        } else {
+                            v.setAssignment(" VULKAN_HPP_DEFAULT_ARGUMENT_ASSIGNMENT");
+                            // if (v->isReference() && !v->isConst())
+                            // integrity check?
+                        }
+                    }
+                }
+                if (v.getAssignment().empty()) {
+                    assignment = false;
+                }
             }
         }
     }
@@ -1237,7 +1280,7 @@ namespace vkgen
             p.setConst(false);
             auto &vars = p.getArrayVars();
             if (vars.empty()) {
-                if (p.fullType() == "void") {
+                if (p.fullType(gen) == "void") {
                     if (toTemplate) {
                         std::cerr << "Warning: multile void returns" << '\n';
                     }
@@ -1267,7 +1310,7 @@ namespace vkgen
                     if (count > 0) {
                         type += std::to_string(count);
                     }
-                    p.setTemplateAssignment(" = std::vector<" + p.namespaceString() + p.type() + ">");
+                    p.setTemplateAssignment(" = std::vector<" + p.namespaceString(gen) + p.type() + ">");
                     p.setTemplate("typename " + type);
                     p.setFullType("", type, "");
                     p.setNamespace(Namespace::NONE);
@@ -1278,43 +1321,6 @@ namespace vkgen
         }
 
         returnType = createReturnType();
-    }
-
-    void MemberResolverDefault::setOptionalAssignments() {
-        bool assignment = true;
-        for (auto it = cmd->params.rbegin(); it != cmd->params.rend(); it++) {
-            auto &v = it->get();
-            if (v.getIgnoreProto()) {
-                continue;
-            }
-            if (v.getSpecialType() == VariableData::TYPE_DISPATCH) {
-                continue;
-            }
-            if (v.type() == "AllocationCallbacks") {
-                v.setAssignment(" VULKAN_HPP_DEFAULT_ALLOCATOR_ASSIGNMENT");
-                continue;
-            }
-
-            if (v.isOptional()) {
-                if (v.isPointer()) {
-                    v.setAssignment(" VULKAN_HPP_DEFAULT_ARGUMENT_NULLPTR_ASSIGNMENT");
-                } else {
-                    if (v.original.isPointer()) {
-                        v.setAssignment(" VULKAN_HPP_DEFAULT_ARGUMENT_NULLPTR_ASSIGNMENT");
-                    } else {
-                        v.setAssignment(" VULKAN_HPP_DEFAULT_ARGUMENT_ASSIGNMENT");
-                        // if (v->isReference() && !v->isConst())
-                        // integrity check?
-                    }
-                }
-            }
-            if (!assignment) {
-                v.setAssignment("");
-            }
-            if (v.getAssignment().empty()) {
-                assignment = false;
-            }
-        }
     }
 
     std::string MemberResolverDefault::getSuperclassArgument(const String &superclass) const {
@@ -1450,17 +1456,17 @@ namespace vkgen
 
                 std::string init = "data_.first";
                 for (VariableData &v : cmd->outParams) {
-                    v.createLocalReferenceVar("      ", init, output);
+                    v.createLocalReferenceVar(gen, "      ", init, output);
                     init = "data_.second";
                 }
             } else {
                 VariableData &v = cmd->outParams[0];
                 returnId        = v.identifier();
-                v.createLocalVar("      ", dbg ? "/*var def*/" : "", output);
+                v.createLocalVar(gen, "      ", dbg ? "/*var def*/" : "", output);
             }
             for (VariableData *v : countVars) {
                 if (v->getIgnoreProto() && !v->getIgnoreFlag()) {
-                    v->createLocalVar("      ", dbg ? "/*count def*/" : "", output);
+                    v->createLocalVar(gen, "      ", dbg ? "/*count def*/" : "", output);
                 }
             }
 
@@ -1490,7 +1496,7 @@ namespace vkgen
                         downsizeCode += "      " + id + ".confirm( " + arg + " );\n";
                     } else {
                         resizeCode += "          " + id + ".resize( " + arg + " );\n";
-                        downsizeCode += "      if (" + arg + " < " + id + ".size()) {\n";
+                        downsizeCode += "      if (" + arg + " < " + id + ".size()) " + (cfg.gen.branchHint? "VULKAN_HPP_UNLIKELY " : "") + "{\n";
                         downsizeCode += "        " + id + ".resize( " + arg + " );\n";
                         downsizeCode += "      }\n";
                     }
@@ -1508,11 +1514,12 @@ namespace vkgen
                 output += vkgen::format(R"(
     do {{
       {0}
-      if (result == {1} && {2}) {{
+      if (result == {1} && {2}) {3}{{
 )",
                                         callNullptr,
                                         resultSuccess,
-                                        size);
+                                        size,
+                                        cfg.gen.branchHint? "VULKAN_HPP_LIKELY " : "");
 
                 output += resizeCode;
                 output += vkgen::format(R"(
@@ -1547,7 +1554,7 @@ namespace vkgen
                 const auto        &handle = gen.findHandle(v.original.type());
 
                 if (!constructor) {
-                    output += "      " + v.getReturnType() + " _" + id + ";";
+                    output += "      " + v.getReturnType(gen) + " _" + id + ";";
                     if (dbg) {
                         // output += "/*var ref*/";
                     }
@@ -1634,7 +1641,7 @@ for (auto const &{2} : {3}) {
 
         const auto createInternalCall = [&]() {
             auto       &var   = cmd->outParams[0].get();
-            std::string type  = var.namespaceString(true) + var.type();
+            std::string type  = var.namespaceString(gen, true) + var.type();
             std::string ctype = var.original.type();
             var.setIgnorePFN(true);
             var.getLengthVar()->setIgnorePFN(true);
@@ -1673,7 +1680,7 @@ for (auto const &{2} : {3}) {
                         VariableData &var = cmd->outParams[0];
                         output            = "";
                         // output += "// TODO createHandlesRAII \n";
-                        var.createLocalVar("      ", dbg ? "/*var def*/" : "", output, createInternalCall());
+                        var.createLocalVar(gen, "      ", dbg ? "/*var def*/" : "", output, createInternalCall());
                         output += createEmplaceRAII();
                         if (!returnId.empty() && !immediate && !constructor) {
                             output += "      return " + generateReturnValue(returnId) + ";";
@@ -1737,7 +1744,6 @@ for (auto const &{2} : {3}) {
 
     void MemberResolverDefault::generate(UnorderedFunctionOutput &decl, UnorderedFunctionOutput &def) {
         // std::cerr << "MemberResolverDefault::generate  " << cmd->name.original << '\n';
-        setOptionalAssignments();
         MemberResolver::generate(decl, def);
         // std::cerr << "MemberResolverDefault::generate  " << cmd->name.original << "  done " << '\n';
     }
@@ -1801,7 +1807,7 @@ for (auto const &{2} : {3}) {
         int converted = 0;
         for (VariableData &v : cmd->outParams) {
             if (v.isArray()) {
-                const auto &type = v.namespaceString() + v.type();
+                const auto &type = v.namespaceString(gen) + v.type();
 
                 std::string size = "N";
                 if (converted > 0) {
@@ -1846,7 +1852,7 @@ for (auto const &{2} : {3}) {
 
     std::string MemberResolverVectorRAII::generateMemberBody() {
         std::string args = createPassArguments(true);
-        return "      return " + last->namespaceString() + last->type() + "s(" + args + ");\n";
+        return "      return " + last->namespaceString(gen) + last->type() + "s(" + args + ");\n";
     }
 
     MemberResolverCtor::MemberResolverCtor(const Generator &gen, ClassCommand &d, MemberContext &refCtx)
@@ -1859,7 +1865,7 @@ for (auto const &{2} : {3}) {
             hasDependencies = false;
             return;
         }
-
+        /*
         VariableData *parent = &cmd->params.begin()->get();
 
         ownerInParent = false;
@@ -1868,7 +1874,6 @@ for (auto const &{2} : {3}) {
         }
 
         std::string id = parent->identifier();
-
         pfnSourceOverride = id;
         if (ownerInParent) {
             pfnSourceOverride += ".get" + cls->superclass + "()";
@@ -1893,16 +1898,20 @@ for (auto const &{2} : {3}) {
             ownerInParent = false;
         }
 
-        pfnSourceOverride = "/*SRC*/" + src;
+
+        pfnSourceOverride = src;
         if (ownerInParent) {
             pfnSourceOverride += "->getDispatcher()->";
         } else {
             pfnSourceOverride += ".getDispatcher()->";
         }
+        */
 
         superclassSource = getSuperclassSource();
 
         pfnSourceOverride = superclassSource.getDispatcher() + "->";
+
+        src = (cls && cls->isSubclass)? pfnSourceOverride : "*" + superclassSource.getDispatcher();
 
         specifierInline   = true;
         specifierExplicit = true;
@@ -1961,21 +1970,22 @@ for (auto const &{2} : {3}) {
 
         if (!cls->isSubclass && !constructorInterop) {
             const auto &superclass = cls->superclass;
-            std::string dispatcher = ctx.exp ? "m_dispatcher" : "dispatcher";
-
-            bool unique = gen.getConfig().gen.dispatchTableAsUnique;
-            unique &= !(cls->name == "Instance" && gen.getConfig().gen.raii.staticInstancePFN);
-            unique &= !(cls->name == "Device" && gen.getConfig().gen.raii.staticDevicePFN);
+            const auto &cfg = gen.getConfig();
+            bool unique = !cfg.gen.expApi || cfg.gen.dispatchTableAsUnique;
+            unique &= !(cls->name == "Instance" && cfg.gen.raii.staticInstancePFN);
+            unique &= !(cls->name == "Device" && cfg.gen.raii.staticDevicePFN);
 
             if (unique) {
-                output += vkgen::format("      m_dispatcher.reset( new {2}Dispatcher( {1}vkGet{2}ProcAddr, {3} ) );\n",
+                output += vkgen::format("      m_dispatcher.reset( new {2}Dispatcher( {1}, {3} ) );\n",
                                         superclass,
-                                        getDispatchSource(),
+                                        src,
                                         cls->name,
-                                        cls->vkhandle.toArgument());
+                                        cls->vkhandle.toArgument(gen));
             } else {
+                // std::string first = cfg.gen.integrateVma? getDispatchDeref() : getDispatchSource() + "vkGet" + cls->name + "ProcAddr";
                 output += vkgen::format(
-                  "      {0} = {1}Dispatcher( {2}vkGet{1}ProcAddr, {3} );\n", dispatcher, cls->name, getDispatchSource(), cls->vkhandle.toArgument());
+                  // "      m_dispatcher = {0}Dispatcher( {1}vkGet{0}ProcAddr, {2} );\n", cls->name, getDispatchSource(), cls->vkhandle.toArgument(gen));
+                  "      m_dispatcher = {0}Dispatcher( {1}, {2} );\n", cls->name, src, cls->vkhandle.toArgument(gen));
             }
         }
 
@@ -2020,7 +2030,7 @@ for (auto const &{2} : {3}) {
         cls->foreachVars(VariableData::Flags::CLASS_VAR_UNIQUE, [&](const VariableData &v) {
             for (const VariableData &p : vars) {
                 if (p.type() == v.type() || (p.getSpecialType() == VariableData::TYPE_DISPATCH && v.getSpecialType() == VariableData::TYPE_DISPATCH)) {
-                    init.append(v.identifier(), p.toVariable(v));
+                    init.append(v.identifier(), p.toVariable(gen, v));
                 }
             }
         });
@@ -2050,7 +2060,7 @@ for (auto const &{2} : {3}) {
 
         if (last->isArray() && !ctx.returnSingle) {
             return MemberResolverDefault::generateMemberBody();
-        } else if (cls->isSubclass && !returnsSubclass) {
+        } else if (gen.getConfig().gen.expApi && cls->isSubclass && !returnsSubclass) {
             //                        last->setIdentifier("handle");
             //                        last->setAltPFN("std::bit_cast<" + last->original.type() + "*>(&handle)");
             //                        std::string output = "    " + last->type() + " handle;\n";
@@ -2131,11 +2141,11 @@ for (auto const &{2} : {3}) {
                 }
                 std::string args =  //"*this, " +
                   createPassArguments(true);
-                output += "      return " + last->fullType() + "(" + args + ");\n";
+                output += "      return " + last->fullType(gen) + "(" + args + ");\n";
             } else {
                 const std::string &call = generatePFNcall();
                 std::string        id   = last->identifier();
-                output += "      " + last->fullType() + " " + id + ";\n";
+                output += "      " + last->fullType(gen) + " " + id + ";\n";
                 output += "      " + call + "\n";
                 output += generateCheck();
                 returnValue = generateReturnValue(id);
@@ -2181,6 +2191,10 @@ for (auto const &{2} : {3}) {
             return;
         }
 
+//        std::cout << "    // C2: " + m.src->name + " (" + m.src->name.original + ") ";
+//        if (m.src->isIndirect()) std::cout << "INDIRECT";
+//        std::cout <<  "\n";
+
         // out.sFuncs += "    // C: " + m.src->name + " (" + m.src->name.original + ")\n";
 
         if (m.src->canTransform()) {
@@ -2225,6 +2239,7 @@ for (auto const &{2} : {3}) {
                 generateDefault();
                 if (m.src->returnsVector() && gen.cfg.gen.functionsVecAndArray) {
                     ctx.templateVector = false;
+                    ctx.generateInline = false;
                     std::vector<Protect>       protects;
                     MemberResolverStaticVector resolver{ gen, m, ctx };
                     generate(resolver, protects);
@@ -2243,7 +2258,10 @@ for (auto const &{2} : {3}) {
             return;
         }
 
-        // out.sFuncs += "    // C: " + m.src->name + " (" + m.src->name.original + ")\n";
+        // std::cout << m.src->name << "\n";
+        // out.sFuncs += "    // C1: " + m.src->name + " (" + m.src->name.original + ") ";
+        // if (m.src->isIndirect()) out.sFuncs += "INDIRECT";
+        // out.sFuncs +=  "\n";
 
         if (m.src->canTransform()) {
             generate<MemberResolverPass>();

@@ -52,6 +52,13 @@ namespace vkgen
     class GUI : public Window
     {
       public:
+        enum Level
+        {
+            L0,
+            L1,
+            L2,
+        };
+
         struct Renderable
         {
             virtual ~Renderable() {}
@@ -254,6 +261,17 @@ namespace vkgen
             }
         };
 
+
+        template <typename T>
+        struct NestedOption : public T
+        {
+
+            template <typename... Args>
+            NestedOption(Args &&...args) : T(std::forward<Args>(args)...) {}
+
+            void render(GUI &g) override;
+        };
+
         struct BoolDefineGUI : public Renderable
         {
             Define     *data;
@@ -261,11 +279,9 @@ namespace vkgen
 
             bool state;
             bool stateDefine;
+            // NestedOption define;
 
-            BoolDefineGUI(Define *data, const std::string &text) : data(data), text(text) {
-                state       = data->state != Define::DISABLED;
-                stateDefine = data->state == Define::COND_ENABLED;
-            }
+            BoolDefineGUI(Define *data, const std::string &text);
 
             void render(GUI &g) override;
 
@@ -273,37 +289,52 @@ namespace vkgen
             void updateState();
         };
 
-        struct AdvancedBoolGUI : public BoolGUI
-        {
-            AdvancedBoolGUI(bool *data, std::string text) : BoolGUI(data, text) {}
-
-            virtual void render(GUI &g) override {
-                if (GUI::advancedMode) {
-                    GUI::guiBoolOption(*this);
-                } else {
-                    ImGui::Text("%s", text.c_str());
-                }
-            }
-        };
-
-        struct AdvancedOnlyGUI : public BoolGUI
-        {
-            AdvancedOnlyGUI(bool *data, std::string text) : BoolGUI(data, text) {}
-
-            virtual void render(GUI &g) override {
-                if (GUI::advancedMode) {
-                    GUI::guiBoolOption(*this);
-                    ImGui::Text("%s", text.c_str());
-                }
-            }
-        };
-
         struct MacroGUI : public Renderable
+        {
+            Macro *data;
+
+            MacroGUI(Macro *data) : data(data) {}
+
+            void render(GUI &g) override {
+                ImGui::PushID(g.id++);
+                ImGui::Checkbox("", &data->usesDefine);
+                ImGui::SameLine();
+                ImGui::Text("%s", data->define.c_str());
+                ImGui::PopID();
+            }
+        };
+
+        //        struct AdvancedBoolGUI : public BoolGUI
+        //        {
+        //            AdvancedBoolGUI(bool *data, std::string text) : BoolGUI(data, text) {}
+        //
+        //            void render(GUI &g) override {
+        //                if (GUI::advancedMode) {
+        //                    GUI::guiBoolOption(*this);
+        //                } else {
+        //                    ImGui::Text("%s", text.c_str());
+        //                }
+        //            }
+        //        };
+
+        //        struct AdvancedOnlyGUI : public BoolGUI
+        //        {
+        //            AdvancedOnlyGUI(bool *data, std::string text) : BoolGUI(data, text) {}
+        //
+        //            virtual void render(GUI &g) override {
+        //                if (GUI::advancedMode) {
+        //                    GUI::guiBoolOption(*this);
+        //                    ImGui::Text("%s", text.c_str());
+        //                }
+        //            }
+        //        };
+
+        struct EditableMacroGUI : public Renderable
         {
             Macro      *data;
             std::string text;
 
-            MacroGUI(Macro *data, std::string text) : data(data), text(text) {}
+            EditableMacroGUI(Macro *data, std::string text) : data(data), text(text) {}
 
             virtual void render(GUI &g) override {
                 r(g, *data);
@@ -332,6 +363,70 @@ namespace vkgen
 
                 ImGui::SameLine();
                 g.guiInputText(m.value);
+            }
+        };
+
+        struct BitSelector : public Renderable
+        {
+            int        &data;
+            int         mask;
+            bool        state;
+            std::string text;
+
+            BitSelector(int &data, int bit, const std::string &text) : data(data), text(text) {
+                mask  = 1 << bit;
+                state = data & mask;
+            }
+
+            void render(GUI &g) override {
+                if (ImGui::Checkbox(text.c_str(), &state)) {
+                    if (state) {
+                        data |= mask;
+                    } else {
+                        data &= ~mask;
+                    }
+                    std::cout << ">> " << data << "\n";
+                }
+            }
+        };
+
+        struct StandardSelector : public Renderable
+        {
+            Generator &gen;
+            bool       c11 = true;
+            bool       c20 = false;
+
+            StandardSelector(Generator &gen) : gen(gen) {}
+
+            void render(GUI &g) override {
+                ImGui::Text("Minimum standard");
+                if (ImGui::Checkbox("c++11", &c11)) {
+                    c11 = true;
+                    c20 = false;
+                    g.queueRedraw();
+                    gen.cfg.gen.cppStd.data = 11;
+                }
+                if (ImGui::Checkbox("c++20", &c20)) {
+                    c20 = true;
+                    c11 = false;
+                    g.queueRedraw();
+                    gen.cfg.gen.cppStd.data = 20;
+                }
+            }
+        };
+
+        template <typename T>
+        struct LevelRenderable : public T
+        {
+            GUI::Level level;
+
+            template <typename... Args>
+            LevelRenderable(GUI::Level level, Args &&...args) : T(std::forward<Args>(args)...), level(level) {}
+
+            void render(GUI &g) override {
+                if (g.guiLevel >= level) {
+                    T::render(g);
+                }
             }
         };
 
@@ -510,8 +605,7 @@ namespace vkgen
 
         const int MAX_FRAMES_IN_FLIGHT = 3;
 
-        static bool advancedMode;
-
+        Level                    guiLevel{};
         int                      id;
         int                      width, height;
         GLFWwindow              *glfwWindow;
@@ -553,11 +647,13 @@ namespace vkgen
         size_t                   currentFrame = 0;
         uint32_t                 imageIndex   = 0;
 
-        AsyncButton loadRegButton;
+        // AsyncButton loadRegButton;
         AsyncButton unloadRegButton;
         AsyncButton generateButton;
         AsyncButton loadConfigButton;
         AsyncButton saveConfigButton;
+
+        StandardSelector *standardSelector = {};
 
         QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device);
 

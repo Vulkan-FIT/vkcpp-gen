@@ -36,6 +36,7 @@ namespace vkgen
 {
 
     class Registry;
+    class Generator;
 
     enum State
     {  // State used for indexing and FSM
@@ -209,7 +210,7 @@ namespace vkgen
 
         void updateMetaType(const Registry &reg);
 
-        bool check(VariableData &ref, std::stringstream &s) const {
+        bool check(const Generator &gen, VariableData &ref, std::stringstream &s) const {
             std::stringstream ss;
 
             const auto cmp = [&](const std::string &msg, auto &rhs, auto &lhs) {
@@ -227,7 +228,7 @@ namespace vkgen
 
             const auto &str = ss.str();
             if (!str.empty()) {
-                s << " comp var: " << fullType() << '\n';
+                s << " comp var: " << fullType(gen) << '\n';
                 s << str << '\n';
                 return false;
             }
@@ -303,6 +304,14 @@ namespace vkgen
             specialType = type;
         }
 
+        void setNameSuffix(std::string &str) {
+            nameSuffix = str;
+        }
+
+        bool hasNameSuffix() const {
+            return !nameSuffix.empty();
+        }
+
         Type getSpecialType() const {
             return specialType;
         }
@@ -319,7 +328,7 @@ namespace vkgen
 
         std::string getLenAttribRhs() const;
 
-        std::string namespaceString(bool forceNamespace = false) const;
+        std::string namespaceString(const Generator &gen, bool forceNamespace = false) const;
 
         bool isLenAttribIndirect() const;
 
@@ -428,31 +437,11 @@ namespace vkgen
             return arrayVars;
         };
 
-        std::string getReturnType(bool forceNamespace = false) const {
-            std::string type = fullType(forceNamespace);
-            return type;
-        };
+        std::string getReturnType(const Generator &gen, bool forceNamespace = false) const;
 
-        void createLocalReferenceVar(const std::string &indent, const std::string &assignment, std::string &output) {
-            output += indent + getReturnType(true) + " &" + identifier() + " = " + assignment + ";\n";
-            localVar = true;
-        }
+        void createLocalReferenceVar(const Generator &gen, const std::string &indent, const std::string &assignment, std::string &output);
 
-        void createLocalVar(const std::string &indent, const std::string &dbg, std::string &output, const std::string &assignment = "") {
-            output += indent + getReturnType(true) + " " + identifier();
-            if (isArrayOut()) {
-                const auto &init = getLocalInit();
-                if (!init.empty()) {
-                    output += "( " + init + " )";
-                }
-            }
-            if (!assignment.empty()) {
-                output += " = ";
-                output += assignment;
-            }
-            output += ";" + dbg + "\n";
-            localVar = true;
-        }
+        void createLocalVar(const Generator &gen, const std::string &indent, const std::string &dbg, std::string &output, const std::string &assignment = "");
 
         std::string getLocalInit() const {
             std::string output;
@@ -611,16 +600,16 @@ namespace vkgen
             return s.str();
         }
 
-        std::string toClassVar() const;
+        std::string toClassVar(const Generator &gen) const;
 
-        std::string toArgument(bool useOriginal = false) const;
+        std::string toArgument(const Generator &gen, bool useOriginal = false) const;
 
-        std::string toVariable(const VariableData &dst, bool useOriginal = false) const;
+        std::string toVariable(const Generator &gen, const VariableData &dst, bool useOriginal = false) const;
 
-        std::string toStructArgumentWithAssignment() const;
+        std::string toStructArgumentWithAssignment(const Generator &gen) const;
 
         // full type getter
-        std::string fullType(bool forceNamespace = false) const;
+        std::string fullType(const Generator &gen, bool forceNamespace = false) const;
 
         // full type getter
         std::string originalFullType() const {
@@ -628,15 +617,15 @@ namespace vkgen
         }
 
         // getter for all fields combined
-        std::string toString() const;
+        std::string toString(const Generator &gen) const;
 
-        std::string toStructString() const;
+        std::string toStructString(const Generator &gen) const;
 
-        std::string declaration() const;
+        std::string declaration(const Generator &gen) const;
 
-        std::string toStringWithAssignment() const;
+        std::string toStringWithAssignment(const Generator &gen) const;
 
-        std::string toStructStringWithAssignment() const;
+        std::string toStructStringWithAssignment(const Generator &gen) const;
 
         // getter for all fields combined for C version
         std::string originalToString() const;
@@ -689,6 +678,7 @@ namespace vkgen
         VariableData *lenghtVar = {};
         std::string   _assignment;
         std::string   altPFN;
+        std::string   nameSuffix;
         std::string   optionalTemplate;
         std::string   optionalTemplateAssignment;
         std::string   templateDataTypeStr;
@@ -722,9 +712,9 @@ namespace vkgen
 
         std::string createCast(std::string from) const;
 
-        std::string toArgumentDefault(bool useOriginal = false) const;
+        std::string toArgumentDefault(const Generator &gen, bool useOriginal = false) const;
 
-        std::string identifierAsArgument() const;
+        std::string identifierAsArgument(const Generator &gen) const;
 
         void convertToCpp();
 

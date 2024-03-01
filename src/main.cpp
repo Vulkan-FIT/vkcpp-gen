@@ -34,6 +34,9 @@
 #ifdef GENERATOR_GUI
 #    include "Gui.hpp"
 #endif
+#ifdef GENERATOR_EXTENSION
+#include "tool/tool.hpp"
+#endif
 
 static constexpr char const *HELP_TEXT{
     R"(Usage:
@@ -42,28 +45,30 @@ static constexpr char const *HELP_TEXT{
     -c, --config    path to configuration file)"
 };
 
-static void loadDefaultRegistry(vkgen::Generator &gen) {
+static bool loadDefaultRegistry(vkgen::Generator &gen) {
     std::string path = vkgen::Generator::findDefaultRegistryPath();
     if (path.empty()) {
-        throw std::runtime_error("Failed to detect vk.xml. See usage.");
+        std::cerr << "Failed to detect vk.xml. See usage.\n";
+        return false;
     }
-    gen.load(path);
+    return gen.load(path);
 }
 
 int main(int argc, char **argv) {
     using namespace vkgen;
 
     try {
-        ArgOption helpOption{ "-h", "--help" };
-        ArgOption regOption{ "-r", "--reg", true };
-        ArgOption destOption{ "-d", "--dest", true };
-        ArgOption configOption{ "-c", "--config", true };
-        ArgOption rlOption{ "", "--readlog", true };
-        ArgOption resaveOption{ "", "--resave-config" };
-        ArgOption noguiOption{ "", "--nogui" };
-        ArgOption guifpsOption{ "", "--fps" };
-        ArgOption dbgtagOption{ "", "--debug" };
-        ArgParser p({ &helpOption, &regOption, &destOption, &configOption, &noguiOption, &guifpsOption, &rlOption, &resaveOption, &dbgtagOption });
+        ArgParser p;
+        const auto &helpOption = p.add("-h", "--help");
+        const auto &regOption = p.add("-r", "--reg", true );
+        const auto &destOption = p.add("-d", "--dest", true );
+        const auto &configOption = p.add("-c", "--config", true );
+        const auto &rlOption = p.add("", "--readlog", true );
+        const auto &resaveOption = p.add("", "--resave-config" );
+        const auto &noguiOption = p.add("", "--nogui" );
+        const auto &guifpsOption = p.add("", "--fps" );
+        const auto &extensionOption = p.add("", "--ext" );
+        const auto &dbgtagOption = p.add("", "--debug" );
 
         p.parse(argc, argv);
         // help option block
@@ -82,18 +87,26 @@ int main(int argc, char **argv) {
 
         const auto loadRegistry = [&] {
             if (regOption.set) {
-                gen.load(regOption.value);
-            } else {
-                loadDefaultRegistry(gen);
+                return gen.load(regOption.value);
             }
+            return loadDefaultRegistry(gen);
         };
-
+#ifdef GENERATOR_EXTENSION
+        {
+            if (loadRegistry()) {
+                vkgen::tools::test(gen);
+            }
+            return 0;
+        }
+#endif
         const auto generate = [&] {
             // argument check
             if (!destOption.set) {
                 throw std::runtime_error("Missing arguments. See usage.");
             }
-            loadRegistry();
+            if (!loadRegistry()) {
+                return;
+            }
             if (configOption.set) {
                 gen.loadConfigFile(configOption.value);
             }
@@ -110,9 +123,10 @@ int main(int argc, char **argv) {
             if (!configOption.set) {
                 throw std::runtime_error("Missing arguments. See usage.");
             }
-            loadRegistry();
-            gen.loadConfigFile(configOption.value);
-            gen.saveConfigFile(configOption.value);
+            if (loadRegistry()) {
+                gen.loadConfigFile(configOption.value);
+                gen.saveConfigFile(configOption.value);
+            }
             return 0;
         }
 
@@ -126,14 +140,7 @@ int main(int argc, char **argv) {
             if (configOption.set) {
                 gui.setConfigPath(configOption.value);
             }
-            try {
-                loadRegistry();
-            }
-            catch (std::runtime_error &e) {
-                std::cerr << e.what() << std::endl;
-                std::cerr << "warning: registry load failed" << std::endl;
-                gen.unload();
-            }
+            loadRegistry();
             gui.run();
             return 0;
         }

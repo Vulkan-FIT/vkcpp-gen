@@ -29,11 +29,8 @@ namespace vkgen
         NONE,
         VK,
         RAII,
-        EXP,
         STD
     };
-
-    std::string getNamespace(Namespace ns, bool colons = true);
 
     class MetaType
     {

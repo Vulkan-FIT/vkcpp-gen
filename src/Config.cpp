@@ -15,9 +15,9 @@
 // LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
-
 #include "Config.hpp"
 
+#include <cmath>
 #include "Generator.hpp"
 
 namespace vkgen
@@ -379,6 +379,13 @@ namespace vkgen
     }
 
     template <>
+    void ConfigWrapper<int>::xmlExport(tinyxml2::XMLElement *elem) const {
+        // std::cout << "export: " << name << '\n';
+        elem->SetName("int");
+        elem->SetAttribute("value", data);
+    }
+
+    template <>
     void ConfigWrapper<bool>::xmlExport(tinyxml2::XMLElement *elem) const {
         // std::cout << "export: " << name << '\n';
         elem->SetName("bool");
@@ -472,6 +479,28 @@ namespace vkgen
         const char *v = elem->Attribute("value");
         if (v) {
             const_cast<ConfigWrapper<std::string> *>(this)->data = v;
+        }
+        return true;
+    }
+
+    template <>
+    bool ConfigWrapper<int>::xmlImport(tinyxml2::XMLElement *elem) const {
+        // std::cout << "import: " << name << '\n';
+        if (std::string_view{ elem->Value() } != "int") {
+            std::cerr << "[config import] node mismatch" << '\n';
+            return false;
+        }
+
+        const char *v = elem->Attribute("value");
+        if (v) {
+            try {
+                int value                                    = toInt(v);
+                const_cast<ConfigWrapper<int> *>(this)->data = value;
+            }
+            catch (std::runtime_error &) {
+                std::cerr << "[config import] unknown value: " << v << '\n';
+                return false;
+            }
         }
         return true;
     }

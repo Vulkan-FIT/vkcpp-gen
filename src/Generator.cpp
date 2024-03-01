@@ -18,8 +18,9 @@
 
 #include "Generator.hpp"
 
+#include "Format.hpp"
+
 #include <filesystem>
-#include <fmt/format.h>
 #include <sstream>
 
 static constexpr char const *RES_HEADER{
@@ -27,24 +28,26 @@ static constexpr char const *RES_HEADER{
 )"
 };
 
-static constexpr char const *RES_ERRORS{ R"(
+static constexpr char const *RES_ERROR_CAT{ R"(
   class ErrorCategoryImpl : public std::error_category
-  {
+  {{
   public:
     virtual const char * name() const VULKAN_HPP_NOEXCEPT override
-    {
+    {{
       return VULKAN_HPP_NAMESPACE_STRING "::Result";
-    }
+    }}
     virtual std::string message( int ev ) const override
-    {
+    {{
 #  if defined( VULKAN_HPP_NO_TO_STRING )
       return std::to_string( ev );
 #  else
-      return VULKAN_HPP_NAMESPACE::to_string( static_cast<VULKAN_HPP_NAMESPACE::Result>( ev ) );
+      return {0}::to_string( static_cast<{0}::Result>( ev ) );
 #  endif
-    }
-  };
+    }}
+  }};
+)" };
 
+static constexpr char const *RES_ERRORS{ R"(
   class Error
   {
   public:
@@ -634,64 +637,66 @@ VULKAN_HPP_INLINE typename ResultValueType<void>::type createResultValueType( Vk
     return std::move( data );
 #endif
   }
+)" };
 
+static constexpr char const *RES_RESULT_CHECK{ R"(
   VULKAN_HPP_INLINE void resultCheck( Result result, char const * message )
-  {
+  {{
 #ifdef VULKAN_HPP_NO_EXCEPTIONS
     ignore( result );  // just in case VULKAN_HPP_ASSERT_ON_RESULT is empty
     ignore( message );
     VULKAN_HPP_ASSERT_ON_RESULT( result == Result::eSuccess );
 #else
-    if ( result != Result::eSuccess )
-    {
-      throwResultException( result, message );
-    }
+    if ( result != Result::eSuccess ){0}
+    {{
+      detail::throwResultException( result, message );
+    }}
 #endif
-  }
+  }}
 
   VULKAN_HPP_INLINE void resultCheck( Result result, char const * message, std::initializer_list<Result> successCodes )
-  {
+  {{
 #ifdef VULKAN_HPP_NO_EXCEPTIONS
     ignore( result );  // just in case VULKAN_HPP_ASSERT_ON_RESULT is empty
     ignore( message );
     ignore( successCodes );  // just in case VULKAN_HPP_ASSERT_ON_RESULT is empty
     VULKAN_HPP_ASSERT_ON_RESULT( std::find( successCodes.begin(), successCodes.end(), result ) != successCodes.end() );
 #else
-    if ( std::find( successCodes.begin(), successCodes.end(), result ) == successCodes.end() )
-    {
-      throwResultException( result, message );
-    }
+    if ( std::find( successCodes.begin(), successCodes.end(), result ) == successCodes.end() ){0}
+    {{
+      detail::throwResultException( result, message );
+    }}
 #endif
-  }
+  }}
 
   VULKAN_HPP_INLINE void resultCheck( VkResult result, char const * message )
-  {
+  {{
 #ifdef VULKAN_HPP_NO_EXCEPTIONS
     ignore( result );  // just in case VULKAN_HPP_ASSERT_ON_RESULT is empty
     ignore( message );
     VULKAN_HPP_ASSERT_ON_RESULT( result == VK_SUCCESS );
 #else
-    if ( result != VK_SUCCESS )
-    {
-      throwResultException( static_cast<Result>(result), message );
-    }
+    if ( result != VK_SUCCESS ){0}
+    {{
+      detail::throwResultException( static_cast<Result>(result), message );
+    }}
 #endif
-  }
+  }}
 
   VULKAN_HPP_INLINE void resultCheck( VkResult result, char const * message, std::initializer_list<VkResult> successCodes )
-  {
+  {{
 #ifdef VULKAN_HPP_NO_EXCEPTIONS
     ignore( result );  // just in case VULKAN_HPP_ASSERT_ON_RESULT is empty
     ignore( message );
     ignore( successCodes );  // just in case VULKAN_HPP_ASSERT_ON_RESULT is empty
     VULKAN_HPP_ASSERT_ON_RESULT( std::find( successCodes.begin(), successCodes.end(), result ) != successCodes.end() );
 #else
-    if ( std::find( successCodes.begin(), successCodes.end(), result ) == successCodes.end() )
-    {
-      throwResultException( static_cast<Result>(result), message );
-    }
+    if ( std::find( successCodes.begin(), successCodes.end(), result ) == successCodes.end() ){0}
+    {{
+      detail::throwResultException( static_cast<Result>(result), message );
+    }}
 #endif
-  }
+  }}
 )" };
 
 static constexpr char const *RES_ARRAY_PROXY{ R"(
@@ -1695,8 +1700,9 @@ std::string vkgen::Generator::gen(const NDefine &define, std::function<void(std:
 }
 
 std::string vkgen::Generator::genNamespaceMacro(const Macro &m) {
-    std::string output = genMacro(m);
-    if (m.usesDefine) {
+    std::string output    = genMacro(m);
+    const bool  stringify = true;
+    if (m.usesDefine || stringify) {
         output += vkgen::format("#define {0}_STRING  VULKAN_HPP_STRINGIFY({1})\n", m.define, m.value);
     } else {
         output += vkgen::format("#define {0}_STRING  \"{1}\"\n", m.define, m.value);
@@ -1771,10 +1777,37 @@ std::string vkgen::Generator::generateDefines() {
 #  define __has_include( x ) false
 #endif
 
+)";
+    if (cfg.gen.spaceshipOperator) {
+        output += R"(
 #if ( 201907 <= __cpp_lib_three_way_comparison ) && __has_include( <compare> ) && !defined( VULKAN_HPP_NO_SPACESHIP_OPERATOR )
 #  define VULKAN_HPP_HAS_SPACESHIP_OPERATOR
 #endif
 
+)";
+    }
+
+    if (cfg.gen.branchHint) {
+        output += R"(
+#if !defined( VULKAN_HPP_LIKELY )
+#  if defined( __clang__ )
+#    define VULKAN_HPP_LIKELY [[likely]]
+#  else
+#    define VULKAN_HPP_LIKELY
+#  endif
+#endif
+
+#if !defined( VULKAN_HPP_UNLIKELY )
+#  if defined( __clang__ )
+#    define VULKAN_HPP_UNLIKELY [[unlikely]]
+#  else
+#    define VULKAN_HPP_UNLIKELY
+#  endif
+#endif
+)";
+    }
+
+    output += R"(
 #if ( 201803 <= __cpp_lib_span )
 #  define VULKAN_HPP_SUPPORT_SPAN
 #endif
@@ -1944,14 +1977,45 @@ std::string vkgen::Generator::generateDefines() {
 std::string vkgen::Generator::generateHeader() {
     std::string output;
 
-    output += generateDefines();
-
     output += "#include <vulkan/vulkan.h>\n";
 
     output += vkgen::format(R"(
 static_assert(VK_HEADER_VERSION == {0}, "Wrong VK_HEADER_VERSION!");
 )",
                             headerVersion);
+
+    output += generateDefines();
+
+    output += R"(
+#if VULKAN_HPP_ENABLE_DYNAMIC_LOADER_TOOL == 1
+#  if defined( __unix__ ) || defined( __APPLE__ ) || defined( __QNXNTO__ ) || defined( __Fuchsia__ )
+#    include <dlfcn.h>
+#  elif defined( _WIN32 )
+typedef struct HINSTANCE__ * HINSTANCE;
+#    if defined( _WIN64 )
+typedef int64_t( __stdcall * FARPROC )();
+#    else
+typedef int( __stdcall * FARPROC )();
+#    endif
+extern "C" __declspec( dllimport ) HINSTANCE __stdcall LoadLibraryA( char const * lpLibFileName );
+extern "C" __declspec( dllimport ) int __stdcall FreeLibrary( HINSTANCE hLibModule );
+extern "C" __declspec( dllimport ) FARPROC __stdcall GetProcAddress( HINSTANCE hModule, const char * lpProcName );
+#  endif
+#endif
+
+#if defined( __clang__ )
+#include <cassert>
+#else
+#include <assert.h>
+#endif
+)";
+    if (cfg.gen.importStdMacro) {
+        output += R"(
+#ifdef USE_IMPORT_STD
+import std;
+#else
+)";
+    }
 
     output += R"(
 #include <algorithm>
@@ -1971,9 +2035,7 @@ static_assert(VK_HEADER_VERSION == {0}, "Wrong VK_HEADER_VERSION!");
 #  include <system_error>  // std::is_error_code_enum
 #endif
 
-#include <assert.h>
-
-#ifndef VULKAN_HPP_EXPERIMENTAL_NO_STRUCT_COMPARE
+#ifndef VULKAN_HPP_NO_STRUCT_COMPARE
 #if defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )
 #  include <compare>
 #endif
@@ -1982,24 +2044,12 @@ static_assert(VK_HEADER_VERSION == {0}, "Wrong VK_HEADER_VERSION!");
 #if defined( VULKAN_HPP_SUPPORT_SPAN )
 //#  include <span>
 #endif
-
-#if VULKAN_HPP_ENABLE_DYNAMIC_LOADER_TOOL == 1
-#  if defined( __unix__ ) || defined( __APPLE__ ) || defined( __QNXNTO__ ) || defined( __Fuchsia__ )
-#    include <dlfcn.h>
-#  elif defined( _WIN32 )
-typedef struct HINSTANCE__ * HINSTANCE;
-#    if defined( _WIN64 )
-typedef int64_t( __stdcall * FARPROC )();
-#    else
-typedef int( __stdcall * FARPROC )();
-#    endif
-extern "C" __declspec( dllimport ) HINSTANCE __stdcall LoadLibraryA( char const * lpLibFileName );
-extern "C" __declspec( dllimport ) int __stdcall FreeLibrary( HINSTANCE hLibModule );
-extern "C" __declspec( dllimport ) FARPROC __stdcall GetProcAddress( HINSTANCE hModule, const char * lpProcName );
-#  endif
-#endif
-
 )";
+    if (cfg.gen.importStdMacro) {
+        output += R"(
+#endif
+)";
+    }
 
     output += "\n";
     return output;
@@ -2107,6 +2157,8 @@ void vkgen::Generator::generateMainFile(OutputBuffer &output) {
     output += generateErrorClasses();
     output += "\n";
     output += RES_RESULT_VALUE;
+
+    output += vkgen::format(RES_RESULT_CHECK, cfg.gen.branchHint ? "VULKAN_HPP_UNLIKELY" : "");
     output += generateApiConstants();
 
     output += R"(
@@ -2182,7 +2234,6 @@ void vkgen::Generator::generateMainFile(OutputBuffer &output) {
     output += "#include \"vulkan_handles.hpp\"\n";
     output += "#include \"vulkan_structs.hpp\"\n";
     // output += "#  ifndef VULKAN_HPP_EXPERIMENTAL_NO_VK_FUNCS\n";
-    output += "#include \"vulkan_funcs.hpp\"\n";
     // output += "#  endif // VULKAN_HPP_EXPERIMENTAL_NO_VK_FUNCS\n";
 
     std::string ifdef;
@@ -2201,9 +2252,12 @@ void vkgen::Generator::generateMainFile(OutputBuffer &output) {
 #if {0}
 #include "vulkan_platforms.hpp"
 #endif
+
 )",
                                 ifdef);
     }
+
+    output += "#include \"vulkan_funcs.hpp\"\n\n";
 
     // if (cfg.gen.structChain)
     {
@@ -2232,56 +2286,59 @@ static void createPath(const std::filesystem::path &path) {
     }
 }
 
-std::pair<std::string, std::string> vkgen::Generator::generateModuleFunctions(GenOutput &out) {
-    auto &funcs      = out.addFile("_funcs_exp");
-    auto &funcs_impl = out.addFile("_funcs_impl_exp");
-    // auto &mock2 = out.addFile("_mock2");
-
-    const Handle empty{ *this };
-
-    UnorderedFunctionOutputX decl1;
-    UnorderedFunctionOutputX def1;
-
-    for (auto &c : commands) {
-        if (!c.isSuppored()) {
-            continue;
-        }
-
-        /*
-        if (!c.params.empty()) {
-            const VariableData &first = *c.params.begin();
-            if (first.isHandle()) {
-            }
-        }
-        */
-
-        {
-            ClassCommand                data{ this, &empty, c };
-            MemberGeneratorExperimental g{ *this, data, decl1, def1 };
-
-            g.generate();
-        }
-    }
-
-    funcs += std::move(decl1);
-    funcs_impl += std::move(def1);
-
-    std::string outputDecl;
-    std::string outputDef;
-    const auto  append = [&](std::string &output, const std::string &name) { output += "#include \"" + out.getFilename(name) + "\"\n"; };
-    append(outputDecl, "_funcs_exp");
-    append(outputDef, "_funcs_impl_exp");
-
-    return std::make_pair(outputDecl, outputDef);
-}
+//std::pair<std::string, std::string> vkgen::Generator::generateModuleFunctions(GenOutput &out) {
+//    auto &funcs      = out.addFile("_funcs_exp");
+//    auto &funcs_impl = out.addFile("_funcs_impl_exp");
+//    // auto &mock2 = out.addFile("_mock2");
+//
+//    const Handle empty{ *this };
+//
+//    UnorderedFunctionOutputX decl1;
+//    UnorderedFunctionOutputX def1;
+//
+//    for (auto &c : commands) {
+//        if (!c.isSuppored()) {
+//            continue;
+//        }
+//
+//        /*
+//        if (!c.params.empty()) {
+//            const VariableData &first = *c.params.begin();
+//            if (first.isHandle()) {
+//            }
+//        }
+//        */
+//
+//        {
+//            ClassCommand                data{ this, &empty, c };
+//            MemberGeneratorExperimental g{ *this, data, decl1, def1 };
+//
+//            g.generate();
+//        }
+//    }
+//
+//    funcs += std::move(decl1);
+//    funcs_impl += std::move(def1);
+//
+//    std::string outputDecl;
+//    std::string outputDef;
+//    const auto  append = [&](std::string &output, const std::string &name) { output += "#include \"" + out.getFilename(name) + "\"\n"; };
+//    append(outputDecl, "_funcs_exp");
+//    append(outputDef, "_funcs_impl_exp");
+//
+//    return std::make_pair(outputDecl, outputDef);
+//}
 
 void vkgen::Generator::generateModuleEnums(OutputBuffer &output) {
-    output += R"(
+    output += gen(cfg.gen.handleTemplates, [&](std::string &output) {
+        output += vkgen::format(R"(
   //=============
   //=== ENUMs ===
   //=============
-  using VULKAN_HPP_NAMESPACE::CppType;
-)";
+  using {0}::CppType;
+)",
+                                m_ns);
+    });
 
     UnorderedFunctionOutputX out;
 
@@ -2294,8 +2351,9 @@ void vkgen::Generator::generateModuleEnums(OutputBuffer &output) {
         }
 
         const auto *t = find(e.name.original);
-        if (t && !t->canGenerate())
+        if (t && !t->canGenerate()) {
             continue;
+        }
 
         //        const BaseType *base = reinterpret_cast<const BaseType*>(&e);
         //        if (t) {
@@ -2309,12 +2367,12 @@ void vkgen::Generator::generateModuleEnums(OutputBuffer &output) {
             // output += std::move("  // skip: " + e.name + "\n");
             // continue;
         } else {
-            output += std::move("  using VULKAN_HPP_NAMESPACE::" + e.name + ";\n");
+            output += std::move("  using " + m_ns + "::" + e.name + ";\n");
             std::string name = e.name;
             auto        tag  = strRemoveTag(name);
             if (name.ends_with("FlagBits")) {
                 name = std::regex_replace(e.name, std::regex("FlagBits"), "Flags");
-                output += std::move("  using VULKAN_HPP_NAMESPACE::" + name + ";\n");
+                output += std::move("  using " + m_ns + "::" + name + ";\n");
             }
         }
 
@@ -2332,26 +2390,28 @@ void vkgen::Generator::generateModuleHandles(OutputBuffer &output) {
 )";
 
     if (cfg.gen.expApi) {
-        output += "using VULKAN_HPP_NAMESPACE::" + loader.name + ";\n";
+        output += "using " + m_ns + "::" + loader.name + ";\n";
     }
     for (const Handle &e : handles.ordered) {
-        output += genOptional(e, [&](auto &output) { output += "  using VULKAN_HPP_NAMESPACE::" + e.name + ";\n"; });
+        output += genOptional(e, [&](auto &output) { output += "  using " + m_ns + "::" + e.name + ";\n"; });
     }
 
-    output += R"(
+    if (smartHandles()) {
+        output += R"(
   //======================
   //=== UNIQUE HANDLEs ===
   //======================
 #ifndef  VULKAN_HPP_NO_SMART_HANDLE
 )";
 
-    for (const Handle &e : handles.ordered) {
-        if (e.uniqueVariant()) {
-            output += genOptional(e, [&](auto &output) { output += "  using VULKAN_HPP_NAMESPACE::Unique" + e.name + ";\n"; });
+        for (const Handle &e : handles.ordered) {
+            if (e.uniqueVariant()) {
+                output += genOptional(e, [&](auto &output) { output += "  using " + m_ns + "::Unique" + e.name + ";\n"; });
+            }
         }
-    }
 
-    output += "#endif // VULKAN_HPP_NO_SMART_HANDLE\n";
+        output += "#endif // VULKAN_HPP_NO_SMART_HANDLE\n";
+    }
 }
 
 void vkgen::Generator::generateModuleStructs(OutputBuffer &output) {
@@ -2372,7 +2432,7 @@ void vkgen::Generator::generateModuleStructs(OutputBuffer &output) {
 
         protect[0].first = e.getProtect();
         auto &output     = out.get(protect);
-        output += std::move("  using VULKAN_HPP_NAMESPACE::" + e.name + ";\n");
+        output += std::move("  using " + m_ns + "::" + e.name + ";\n");
     }
 
     output += std::move(out);
@@ -2382,8 +2442,6 @@ void vkgen::Generator::generateModules(GenOutput &main, std::filesystem::path pa
     GenOutput outModule{ "vulkan", ".cppm", path };
     auto     &module_output = outModule.addFile("", ".cppm");
 
-    const std::string ns      = getNamespace(Namespace::VK, false);
-    const std::string ns_raii = getNamespace(Namespace::RAII, false);
     /*
     handles += beginNamespace();
 
@@ -2454,7 +2512,7 @@ static_assert(VK_HEADER_VERSION == {0}, "Wrong VK_HEADER_VERSION!");
 
 #include <assert.h>
 
-#ifndef VULKAN_HPP_EXPERIMENTAL_NO_STRUCT_COMPARE
+#ifndef VULKAN_HPP_NO_STRUCT_COMPARE
 #if defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )
 #  include <compare>
 #endif
@@ -2546,7 +2604,7 @@ extern "C" __declspec( dllimport ) FARPROC __stdcall GetProcAddress( HINSTANCE h
     // module_output += "#ifndef VULKAN_HPP_ENABLE_EXP\n";
     // module_output += "#define VULKAN_HPP_ENABLE_EXP\n";
     // module_output += "#endif\n";
-    module_output += "#include <iostream> // current workaround for clang\n";
+    // module_output += "#include <iostream> // current workaround for clang\n";
     module_output += "#include \"" + main.getFilename("") + "\"\n";
     if (cfg.gen.raii.enabled) {
         module_output += "#include \"" + main.getFilename("_raii") + "\"\n";
@@ -2619,7 +2677,7 @@ extern "C" __declspec( dllimport ) FARPROC __stdcall GetProcAddress( HINSTANCE h
 
     module_output += "export " + beginNamespace();
 
-    module_output += format(R"(
+    module_output += vkgen::format(R"(
   //=====================================
   //=== HARDCODED TYPEs AND FUNCTIONs ===
   //=====================================
@@ -2665,15 +2723,15 @@ extern "C" __declspec( dllimport ) FARPROC __stdcall GetProcAddress( HINSTANCE h
   using {0}::SampleMask;
 
 )",
-                            ns);
+                                   m_ns);
 
     generateModuleEnums(module_output);
 
-    module_output += format(R"(
+    module_output += vkgen::format(R"(
   //=========================
   //=== Index Type Traits ===
   //=========================
-  //using VULKAN_HPP_NAMESPACE::IndexTypeValue;
+  //using {0}::IndexTypeValue;
 
   //======================
   //=== ENUM to_string ===
@@ -2688,7 +2746,7 @@ extern "C" __declspec( dllimport ) FARPROC __stdcall GetProcAddress( HINSTANCE h
   //=============================
 #if !defined( VULKAN_HPP_NO_EXCEPTIONS )
 )",
-                            ns);
+                                   m_ns);
 
     std::set<std::string>        errors;
     std::set<const ErrorClass *> platformErrors;
@@ -2705,13 +2763,13 @@ extern "C" __declspec( dllimport ) FARPROC __stdcall GetProcAddress( HINSTANCE h
     errors.insert("LogicError");
     errors.insert("SystemError");
     for (const auto &e : errors) {
-        module_output += "  using " + ns + "::" + e + ";\n";
+        module_output += "  using " + m_ns + "::" + e + ";\n";
     }
     for (const auto &e : platformErrors) {
-        module_output += genOptional(e->value, [&](auto &output) { output += "  using " + ns + "::" + e->name + ";\n"; });
+        module_output += genOptional(e->value, [&](auto &output) { output += "  using " + m_ns + "::" + e->name + ";\n"; });
     }
 
-    module_output += format(R"(#endif /*VULKAN_HPP_NO_EXCEPTIONS*/
+    module_output += vkgen::format(R"(#endif /*VULKAN_HPP_NO_EXCEPTIONS*/
 
   using {0}::createResultValueType;
   using {0}::ignore;
@@ -2723,17 +2781,17 @@ extern "C" __declspec( dllimport ) FARPROC __stdcall GetProcAddress( HINSTANCE h
   //=== CONSTEXPR CONSTANTs AND FUNCTIONs ===
   //=========================================
 )",
-                            ns);
+                                   m_ns);
 
     for (const auto &a : apiConstants) {
-        module_output += genOptional(a, [&](std::string &output) { output += "  using " + ns + "::" + a.name + ";\n"; });
+        module_output += genOptional(a, [&](std::string &output) { output += "  using " + m_ns + "::" + a.name + ";\n"; });
     }
 
-    module_output += format(R"(
+    module_output += vkgen::format(R"(
   //========================
   //=== CONSTEXPR VALUEs ===
   //========================
-  using VULKAN_HPP_NAMESPACE::HeaderVersion;
+  using {0}::HeaderVersion;
 
   //=========================
   //=== CONSTEXPR CALLEEs ===
@@ -2759,7 +2817,7 @@ extern "C" __declspec( dllimport ) FARPROC __stdcall GetProcAddress( HINSTANCE h
   using {0}::HeaderVersionComplete;
 
 )",
-                            ns);
+                                   m_ns);
     // === STRUCTs ===
     generateModuleStructs(module_output);
 
@@ -2787,34 +2845,36 @@ extern "C" __declspec( dllimport ) FARPROC __stdcall GetProcAddress( HINSTANCE h
     //        module_output += std::move(functionsPublic);
     //    }
 
-    module_output += "  namespace VULKAN_HPP_RAII_NAMESPACE {\n";
+    if (cfg.gen.raii.enabled) {
+        module_output += "  namespace VULKAN_HPP_RAII_NAMESPACE {\n";
 
-    module_output += R"(
+        module_output += R"(
   //======================
   //=== RAII HARDCODED ===
   //======================
 )";
-    module_output += format(R"(
+        module_output += vkgen::format(R"(
     using {0}::{1};
   // using {0}::{1}Dispatcher;
   using {0}::DeviceDispatcher;
   using {0}::InstanceDispatcher;
   using {0}::exchange;
   )",
-                            ns_raii,
-                            loader.name);
+                                       m_ns_raii,
+                                       loader.name);
 
-    module_output += R"(
+        module_output += R"(
   //====================
   //=== RAII HANDLEs ===
   //====================
 )";
 
-    for (const Handle &e : this->handles.ordered) {
-        module_output += genOptional(e, [&](auto &output) { output += "  using " + ns_raii + "::" + e.name + ";\n"; });
-    }
+        for (const Handle &e : this->handles.ordered) {
+            module_output += genOptional(e, [&](auto &output) { output += "  using " + m_ns_raii + "::" + e.name + ";\n"; });
+        }
 
-    module_output += "  } // VULKAN_HPP_RAII_NAMESPACE\n";
+        module_output += "  } // VULKAN_HPP_RAII_NAMESPACE\n";
+    }
 
     module_output += endNamespace();
     module_output += "module : private;\n";
@@ -2881,9 +2941,6 @@ void vkgen::Generator::generateFiles(std::filesystem::path path) {
     auto &structs_forward = out.addFile("_structs_forward");
     auto &structs         = out.addFile("_structs");
     auto &funcs           = out.addFile("_funcs");
-    auto &raii            = out.addFile("_raii");
-    auto &raii_forward    = out.addFile("_raii_forward");
-    auto &raii_funcs      = out.addFile("_raii_funcs");
     auto &platforms       = out.addFile("_platforms");
     auto &output          = out.addFile("");
 
@@ -2891,31 +2948,53 @@ void vkgen::Generator::generateFiles(std::filesystem::path path) {
 
     generateForwardHandles(handles_forward);
 
-    generateForwardDeclarations(structs_forward, this->structs.ordered, *this);
+    structs_forward += beginNamespace();
+    for (const Struct &e : this->structs.ordered) {
+        structs_forward += generateStructDecl(e);
+    }
+    structs_forward += endNamespace();
 
     forward += "#include \"" + out.getFilename("_enums_forward") + "\"\n";
     forward += "#include \"" + out.getFilename("_structs_forward") + "\"\n";
     forward += "#include \"" + out.getFilename("_handles_forward") + "\"\n";
 
-    std::string funcs2;
-    generateHandles(handles, smart_handles, out, funcs2);
+    std::string funcsDef, funcsTempl;
+    generateHandles(handles, smart_handles, out, funcsDef, funcsTempl);
 
     structs += generateStructs();
 
     // generatedDestroyOverloads.clear();
 
-    generateRAII(raii, raii_forward, out);
+    if (cfg.gen.raii.enabled) {
+        auto &raii         = out.addFile("_raii");
+        auto &raii_forward = out.addFile("_raii_forward");
+        auto &raii_funcs   = out.addFile("_raii_funcs");
+
+        generateRAII(raii, raii_forward, out);
+        generateFuncsRAII(raii_funcs);
+    }
+
+    if (cfg.gen.cppFiles) {
+        auto &impl       = out.addFile("_impl", ".cpp");
+        impl += beginNamespace();
+        impl += outputFuncs.get(true);
+        impl += "#ifndef VULKAN_HPP_DISABLE_ENHANCED_MODE\n";
+        impl += outputFuncsEnhanced.get(true);
+        impl += "#endif // VULKAN_HPP_DISABLE_ENHANCED_MODE\n";
+        impl += funcsDef;
+        impl += endNamespace();
+    }
 
     funcs += beginNamespace();
-    funcs += outputFuncs.get(false);
-    funcs += "#ifndef VULKAN_HPP_DISABLE_ENHANCED_MODE\n";
-    funcs += outputFuncsEnhanced.get(false);
-    funcs += "#endif // VULKAN_HPP_DISABLE_ENHANCED_MODE\n";
-    funcs += funcs2;
+    if (!cfg.gen.cppFiles) {
+        funcs += outputFuncs.get(true);
+        funcs += "#ifndef VULKAN_HPP_DISABLE_ENHANCED_MODE\n";
+        funcs += outputFuncsEnhanced.get(true);
+        funcs += "#endif // VULKAN_HPP_DISABLE_ENHANCED_MODE\n";
+        funcs += funcsDef;
+    }
+    funcs += funcsTempl;
     funcs += endNamespace();
-    // if (!cfg.gen.cppModules) {
-    generateFuncsRAII(raii_funcs);
-    // }
 
     for (const auto &o : outputFuncs.segments) {
         const auto &key = o.first;
@@ -2945,6 +3024,8 @@ void vkgen::Generator::generateFiles(std::filesystem::path path) {
 
 void vkgen::Generator::generateEnumStr(const Enum &data, std::string &output, std::string &to_string_output) {
     const std::string &name = data.name;
+
+    output += "/*" + name + "*/\n";
 
     UnorderedOutput members{ *this };
     UnorderedOutput to_string{ *this };
@@ -2977,12 +3058,12 @@ void vkgen::Generator::generateEnumStr(const Enum &data, std::string &output, st
     }
 
     if (data.isBitmask) {
-        output += genFlagTraits(data, name, to_string_output);
+         genFlagTraits(data, name, output, to_string_output);
     } else {
-        to_string_output += genOptional(data, [&](std::string &output) {
+        // to_string_output += genOptional(data, [&](std::string &output) {
             std::string str = to_string.get();
             if (str.empty()) {
-                output += vkgen::format(R"(
+                to_string_output += vkgen::format(R"(
   VULKAN_HPP_INLINE std::string to_string({0}) {{
     return {1};
   }}
@@ -2990,11 +3071,9 @@ void vkgen::Generator::generateEnumStr(const Enum &data, std::string &output, st
                                         name,
                                         "\"(void)\"");
             } else {
-                str += R"*(
-  default: return "invalid ( " + VULKAN_HPP_NAMESPACE::toHexString(static_cast<uint32_t>(value))  + " )";
-)*";
+                str += "  default: return \"invalid ( \" + " + m_ns + "::toHexString(static_cast<uint32_t>(value))  + \" )\";";
 
-                output += vkgen::format(R"(
+                to_string_output += vkgen::format(R"(
   VULKAN_HPP_INLINE std::string to_string({0} value) {{
     switch (value) {{
       {1}
@@ -3004,8 +3083,10 @@ void vkgen::Generator::generateEnumStr(const Enum &data, std::string &output, st
                                         name,
                                         str);
             }
-        });
+        // });
     }
+
+    output += "/* */\n";
 }
 
 void vkgen::Generator::generateEnum(const Enum &data, OutputBuffer &output, OutputBuffer &output_forward, OutputBuffer &to_string_output) {
@@ -3017,12 +3098,26 @@ void vkgen::Generator::generateEnum(const Enum &data, OutputBuffer &output, Outp
         output += genOptional(data, [&](std::string &output) { generateEnumStr(data, output, to_string_output.emplace()); });
     }
 
-    output_forward += genOptional(data, [&](std::string &output) { output += "  enum class " + data.name + ";\n"; });
+    output_forward += genOptional(data, [&](std::string &output) {
+        output += "  enum class " + data.name;
+        if (data.isBitmask) {
+            std::string const base = std::regex_replace(data.name.original, std::regex("FlagBits"), "Flags");
+            output += " : " + base;
+        }
+        output += ";\n";
+    });
 }
 
 std::string vkgen::Generator::generateToStringInclude() const {
+    std::string output;
+    if (cfg.gen.importStdMacro) {
+        output += R"(
+#ifndef USE_IMPORT_STD
+)";
+    }
+
     if (cfg.gen.expApi) {
-        return R"(
+        output += R"(
 #ifdef VULKAN_HPP_EXPERIMENTAL_HEX
 #  include <cstdio>   // std::snprintf
 #elif __cpp_lib_format
@@ -3031,15 +3126,23 @@ std::string vkgen::Generator::generateToStringInclude() const {
 #  include <sstream>  // std::stringstream
 #endif
 )";
-    }
-
-    return R"(
+    } else {
+        output += R"(
 #if __cpp_lib_format
 #  include <format>   // std::format
 #else
 #  include <sstream>  // std::stringstream
 #endif
 )";
+    }
+
+    if (cfg.gen.importStdMacro) {
+        output += R"(
+#endif
+)";
+    }
+
+    return output;
 }
 
 void vkgen::Generator::generateEnums(OutputBuffer &output, OutputBuffer &output_forward, OutputBuffer &to_string_output) {
@@ -3052,13 +3155,13 @@ void vkgen::Generator::generateEnums(OutputBuffer &output, OutputBuffer &output_
     output += beginNamespace();
     output_forward += beginNamespace();
 
-    output += expIfndef("VULKAN_HPP_EXPERIMENTAL_NO_TEMPLATES");
-    output += R"(
+    output += gen(cfg.gen.handleTemplates, [&](std::string &output) {
+        output += R"(
   template <typename EnumType, EnumType value>
   struct CppType
   {};
 )";
-    output += expEndif("VULKAN_HPP_EXPERIMENTAL_NO_TEMPLATES");
+    });
 
     if (cfg.gen.expApi) {
         to_string_output += R"(
@@ -3112,8 +3215,7 @@ void vkgen::Generator::generateEnums(OutputBuffer &output, OutputBuffer &output_
     }
 }
 
-std::string vkgen::Generator::genFlagTraits(const Enum &data, std::string inherit, std::string &to_string_output) {
-    std::string output;
+void vkgen::Generator::genFlagTraits(const Enum &data, std::string inherit, std::string &output, std::string &to_string_output) {
 
     std::string name = std::regex_replace(data.name, std::regex("FlagBits"), "Flags");
 
@@ -3144,7 +3246,7 @@ std::string vkgen::Generator::genFlagTraits(const Enum &data, std::string inheri
     }
 
     output += vkgen::format(R"(
-  using {0} = Flags<{1}>;
+  using {0} = Flags<{1}>; /*2*/
 )",
                             name,
                             inherit);
@@ -3166,33 +3268,34 @@ std::string vkgen::Generator::genFlagTraits(const Enum &data, std::string inheri
                             name);
     output += expEndif("VULKAN_HPP_EXPERIMENTAL_NO_FLAG_TRAITS");
 
-    if (str.empty()) {
-        to_string_output += vkgen::format(R"(
+    // to_string_output += genOptional(data, [&](std::string &output) {
+        if (str.empty()) {
+            to_string_output += vkgen::format(R"(
+/*1*/
   VULKAN_HPP_INLINE std::string to_string({0}) {{
     return "{{}}";
   }}
 )",
-                                          name,
-                                          inherit,
-                                          str);
-    } else {
-        to_string_output += vkgen::format(R"(
-  VULKAN_HPP_INLINE std::string to_string({0} value) {{
-    if ( !value )
-      return "{{}}";
+                                              name,
+                                              inherit,
+                                              str);
+        } else {
+            to_string_output += vkgen::format(R"(
+VULKAN_HPP_INLINE std::string to_string({0} value) {{
+if ( !value )
+return "{{}}";
 
-    std::string result;
-    {2}
+std::string result;
+{2}
 
-    return "{{ " + result.substr( 0, result.size() - 3 ) + " }}";
-  }}
+return "{{ " + result.substr( 0, result.size() - 3 ) + " }}";
+}}
 )",
-                                          name,
-                                          inherit,
-                                          str);
-    }
-
-    return output;
+                                              name,
+                                              inherit,
+                                              str);
+        }
+    // });
 }
 
 std::string vkgen::Generator::generateDispatch() {
@@ -3233,35 +3336,38 @@ std::string vkgen::Generator::generateDispatch() {
 #    define VULKAN_HPP_STORAGE_API
 #  endif
 #endif
+)";
 
+    output += vkgen::format(R"(
 #if !defined( VULKAN_HPP_DEFAULT_DISPATCHER )
 #  if VULKAN_HPP_DISPATCH_LOADER_DYNAMIC == 1
-#    define VULKAN_HPP_DEFAULT_DISPATCHER ::VULKAN_HPP_NAMESPACE::defaultDispatchLoaderDynamic
+#    define VULKAN_HPP_DEFAULT_DISPATCHER ::{0}::defaultDispatchLoaderDynamic
 #    define VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE                     \
-      namespace VULKAN_HPP_NAMESPACE                                                        \
-      {                                                                            \
+      namespace {0}                                                        \
+      {{                                                                            \
         VULKAN_HPP_STORAGE_API DispatchLoaderDynamic defaultDispatchLoaderDynamic; \
-      }
+      }}
   extern VULKAN_HPP_STORAGE_API DispatchLoaderDynamic defaultDispatchLoaderDynamic;
 #  else
-  static inline ::VULKAN_HPP_NAMESPACE::DispatchLoaderStatic & getDispatchLoaderStatic()
-  {
-    static ::VULKAN_HPP_NAMESPACE::DispatchLoaderStatic dls;
+  static inline ::{0}::DispatchLoaderStatic & getDispatchLoaderStatic()
+  {{
+    static ::{0}::DispatchLoaderStatic dls;
     return dls;
-  }
-#    define VULKAN_HPP_DEFAULT_DISPATCHER ::VULKAN_HPP_NAMESPACE::getDispatchLoaderStatic()
+  }}
+#    define VULKAN_HPP_DEFAULT_DISPATCHER ::{0}::getDispatchLoaderStatic()
 #    define VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
 #  endif
 #endif
 
 #if !defined( VULKAN_HPP_DEFAULT_DISPATCHER_TYPE )
 #  if VULKAN_HPP_DISPATCH_LOADER_DYNAMIC == 1
-#    define VULKAN_HPP_DEFAULT_DISPATCHER_TYPE ::VULKAN_HPP_NAMESPACE::DispatchLoaderDynamic
+#    define VULKAN_HPP_DEFAULT_DISPATCHER_TYPE ::{0}::DispatchLoaderDynamic
 #  else
-#    define VULKAN_HPP_DEFAULT_DISPATCHER_TYPE ::VULKAN_HPP_NAMESPACE::DispatchLoaderStatic
+#    define VULKAN_HPP_DEFAULT_DISPATCHER_TYPE ::{0}::DispatchLoaderStatic
 #  endif
 #endif
-)";
+)",
+                            m_ns);
     return output;
 }
 
@@ -3291,6 +3397,7 @@ std::string vkgen::Generator::generateApiConstants() {
 
 std::string vkgen::Generator::generateErrorClasses() {
     std::string output;
+    output += vkgen::format(RES_ERROR_CAT, m_ns);
     output += RES_ERRORS;
 
     std::string str;
@@ -3316,15 +3423,16 @@ std::string vkgen::Generator::generateErrorClasses() {
         str += genOptional(e.value, [&](std::string &output) { output += "        case Result::" + e.value.name + ": throw " + e.name + "(message);\n"; });
     }
 
-    output += "  namespace {\n";
+    output += "  namespace detail {\n";
     output += vkgen::format(R"(
-    [[noreturn]] void throwResultException(VULKAN_HPP_NAMESPACE::Result result, char const *message) {{
+    [[noreturn]] void throwResultException({0}::Result result, char const *message) {{
       switch (result) {{
-{0}
+{1}
         default: throw SystemError( make_error_code( result ) );
       }}
     }}
 )",
+                            m_ns,
                             str);
     output += "  } // namespace\n";
 
@@ -3451,7 +3559,9 @@ std::string vkgen::Generator::generateClassString(const std::string &className, 
 
 std::string vkgen::Generator::generateForwardInclude(GenOutput &out) const {
     std::string output;
-    output += "#include \"" + out.getFilename("_handles_forward") + "\"\n";
+    output += "#include \"" + out.getFilename("_forward") + "\"\n";
+    // output += "#include \"" + out.getFilename("_handles_forward") + "\"\n";
+    // output += "#include \"" + out.getFilename("_structs_forward") + "\"\n";
 
     if (cfg.gen.raii.interop) {
         output += "#include \"" + out.getFilename("_raii_forward") + "\"\n";
@@ -3460,7 +3570,7 @@ std::string vkgen::Generator::generateForwardInclude(GenOutput &out) const {
     return output;
 }
 
-void vkgen::Generator::generateHandles(OutputBuffer &output, OutputBuffer &output_smart, GenOutput &out, std::string &out_funcs) {
+void vkgen::Generator::generateHandles(OutputBuffer &output, OutputBuffer &output_smart, GenOutput &out, std::string &out_funcs, std::string &outFuncsTempl) {
     if (verbose) {
         std::cout << "gen handles " << '\n';
     }
@@ -3477,19 +3587,19 @@ void vkgen::Generator::generateHandles(OutputBuffer &output, OutputBuffer &outpu
     output += beginNamespace();
     // }
 
-    for (const Struct &e : structs.ordered) {
-        output += generateStructDecl(e);
-    }
+    //    for (const Struct &e : structs.ordered) {
+    //        output += generateStructDecl(e);
+    //    }
 
-    output += expIfndef("VULKAN_HPP_EXPERIMENTAL_NO_TEMPLATES");
-    output += R"(
+    output += gen(cfg.gen.handleTemplates, [&](std::string &output) {
+        output += R"(
   template <typename Type>
   struct isVulkanHandleType
   {
     static VULKAN_HPP_CONST_OR_CONSTEXPR bool value = false;
   };
 )";
-    output += expEndif("VULKAN_HPP_EXPERIMENTAL_NO_TEMPLATES");
+    });
 
     if (cfg.gen.internalFunctions) {
         std::string spec;
@@ -3557,27 +3667,33 @@ void vkgen::Generator::generateHandles(OutputBuffer &output, OutputBuffer &outpu
         output += out.sPublic.get();
     }
 
-    // UnorderedFunctionOutput funcs{*this};
-    UnorderedFunctionOutputX funcs2{};
-
+    UnorderedFunctionOutputX funcsDef{};
+    UnorderedFunctionOutputX funcsTempl{};
     UnorderedFunctionOutput expfuncs(*this);
+
     for (Handle &e : handles.ordered) {
         // std::cout << "gen class " << e.name << '\n';
         if (cfg.gen.expApi && !e.isSubclass) {
-            output += std::move(generateClassWithPFN(e, outputFuncs, funcs2));
-
+            output += std::move(generateClassWithPFN(e, outputFuncs, funcsDef, funcsTempl));
         } else {
             output += generateClass(e, outputFuncs, outputFuncsEnhanced, expfuncs);
         }
     }
+    {
+        std::stringstream temp;
+        funcsDef.write(temp);
+        // out_funcs += "// FUNCS2 {\n";
+        out_funcs += temp.str();
+        // out_funcs += "// } FUNCS2\n";
+    }
+    {
+        std::stringstream temp;
+        funcsTempl.write(temp);
+        outFuncsTempl += temp.str();
+    }
 
-    std::stringstream temp;
-    funcs2.write(temp);
-    out_funcs += "// FUNCS2 {\n";
-    out_funcs += temp.str();
-    out_funcs += "// } FUNCS2\n";
 
-    if (!cfg.gen.cppModules) {
+    if (smartHandles()) {
         generateUniqueHandles(output_smart);
 
         output += "#ifndef  VULKAN_HPP_NO_SMART_HANDLE\n";
@@ -3657,9 +3773,20 @@ std::string vkgen::Generator::generateStructs(bool exp) {
     out += "#include \"vulkan_structs_forward.hpp\"\n";
     if (!exp) {
         out += '\n';
-        out += expIfndef("VULKAN_HPP_EXPERIMENTAL_NO_STRUCT_COMPARE");
-        out += generateStructsInclude();
-        out += expEndif("VULKAN_HPP_EXPERIMENTAL_NO_STRUCT_COMPARE");
+        if (cfg.gen.importStdMacro) {
+            out += R"(
+#include <string.h> // TODO
+#ifndef USE_IMPORT_STD
+#  ifndef VULKAN_HPP_NO_STRUCT_COMPARE
+#    include <cstring>  // strcmp
+#  endif // VULKAN_HPP_NO_STRUCT_COMPARE
+#endif
+)";
+        } else {
+            // out += expIfndef("VULKAN_HPP_NO_STRUCT_COMPARE");
+            out += gen(cfg.gen.structCompare, [&](std::string &output) { output += generateStructsInclude(); });
+            // out += expEndif("VULKAN_HPP_NO_STRUCT_COMPARE");
+        }
         out += '\n';
     }
     out += beginNamespace();
@@ -3667,7 +3794,15 @@ std::string vkgen::Generator::generateStructs(bool exp) {
     //        out += "extern \"C\" {\n";
     //    }
     for (const Struct &e : structs.ordered) {
-        out += genOptional(e, [&](auto &output) { output += generateStruct(e, exp); });
+
+        auto p = e.getProtect();
+        if (!p.empty()) {
+            // std::cout << "enum with p: " << p << '\n';
+            platformOutput.add(e, [&](std::string &output) { output += generateStruct(e, exp); });
+        } else {
+            out += genOptional(e, [&](auto &output) { output += generateStruct(e, exp); });
+        }
+
     }
     //    if (!cfg.gen.expApi) {
     //        out += "}\n";
@@ -3733,14 +3868,14 @@ bool vkgen::Generator::generateStructConstructor(const Struct &data, bool transf
             if (data.name != "BaseOutStructure" && data.name != "BaseInStructure") {
                 continue;
             }
-            args += p->fullType();
+            args += p->fullType(*this);
             args += " ";
             args += id;
             args += " = ";
-            args += cfg.macro.mNamespace.get();
+            args += m_ns;
             args += "::StructureType::eApplicationInfo";
         } else if (p->identifier() == "pNext") {
-            pNextArg += p->fullType();
+            pNextArg += p->fullType(*this);
             pNextArg += " ";
             pNextArg += id;
             pNextArg += " = nullptr";
@@ -3752,9 +3887,9 @@ bool vkgen::Generator::generateStructConstructor(const Struct &data, bool transf
                     var.setType("T");
                     templ = "    template <typename T>\n";
                 }
-                args += vkgen::format("VULKAN_HPP_NAMESPACE::ArrayProxyNoTemporaries<{0}> const & {1}", var.fullType(), id);
+                args += vkgen::format("{0}::ArrayProxyNoTemporaries<{1}> const & {2}", m_ns, var.fullType(*this), id);
             } else {
-                args += p->fullType();
+                args += p->fullType(*this);
                 args += " ";
                 args += id;
                 if (!transform) {
@@ -3842,9 +3977,6 @@ std::string vkgen::Generator::generateStruct(const Struct &data, bool exp) {
 
     bool containsFloatingPoints = false;
     for (const auto &m : data.members) {
-        if (enums.contains(m->original.type())) {
-            m->setNamespace(Namespace::VK);
-        }
         if (data.isStruct()) {
             std::string assignment = "{}";
             const auto &type       = m->original.type();
@@ -3856,7 +3988,7 @@ std::string vkgen::Generator::generateStruct(const Struct &data, bool exp) {
             }
 
             m->setAssignment(" = " + assignment);
-            members += "    " + m->toStructStringWithAssignment() + ";\n";
+            members += "    " + m->toStructStringWithAssignment(*this) + ";\n";
 
             const auto &s = structs.find(type);
             if (s != structs.end()) {
@@ -3869,7 +4001,7 @@ std::string vkgen::Generator::generateStruct(const Struct &data, bool exp) {
             }
 
         } else {
-            members += "    " + m->toStructString() + ";\n";
+            members += "    " + m->toStructString(*this) + ";\n";
         }
         if (m->hasArrayLength()) {
             m->setSpecialType(VariableData::TYPE_ARRAY);
@@ -3889,7 +4021,7 @@ std::string vkgen::Generator::generateStruct(const Struct &data, bool exp) {
 
                     std::string id   = m->identifier();
                     std::string name = strFirstUpper(id);
-                    std::string arg  = var.toString();
+                    std::string arg  = var.toString(*this);
                     output += vkgen::format(R"(
     VULKAN_HPP_CONSTEXPR_14 {0}& set{1}({2}) VULKAN_HPP_NOEXCEPT {{
       {3} = {4};
@@ -3931,7 +4063,7 @@ std::string vkgen::Generator::generateStruct(const Struct &data, bool exp) {
                             modif = " * sizeof(DataType)";
                         }
 
-                        std::string arg = "ArrayProxyNoTemporaries<" + var.fullType() + "> const &" + var.identifier();
+                        std::string arg = "ArrayProxyNoTemporaries<" + var.fullType(*this) + "> const &" + var.identifier();
                         output += vkgen::format(R"(
     {0}& set{1}({2}) VULKAN_HPP_NOEXCEPT {{
       {4} = static_cast<uint32_t>({3}.size(){6});
@@ -3960,7 +4092,7 @@ std::string vkgen::Generator::generateStruct(const Struct &data, bool exp) {
             output +=
               "    static const bool                               "
               "   allowDuplicate = false;\n";
-            output += "    static VULKAN_HPP_CONST_OR_CONSTEXPR " + format("VULKAN_HPP_NAMESPACE") + "::StructureType structureType = " + structureType + ";\n";
+            output += "    static VULKAN_HPP_CONST_OR_CONSTEXPR " + m_ns + "::StructureType structureType = " + structureType + ";\n";
         }
     }
 
@@ -4012,7 +4144,7 @@ std::string vkgen::Generator::generateStruct(const Struct &data, bool exp) {
                     var.setIdentifier(id + "_");
                     id = m->identifier();
 
-                    std::string arg = var.toString();
+                    std::string arg = var.toString(*this);
                     std::string assignment;
                     if (first) {
                         assignment = " = {}";
@@ -4036,12 +4168,13 @@ std::string vkgen::Generator::generateStruct(const Struct &data, bool exp) {
     {0} & operator=({0} const &rhs) VULKAN_HPP_NOEXCEPT = default;
 
     {0} & operator=({1} const &rhs) VULKAN_HPP_NOEXCEPT {{
-      *this = *reinterpret_cast<VULKAN_HPP_NAMESPACE::{0} const *>(&rhs);
+      *this = *reinterpret_cast<{2}::{0} const *>(&rhs);
       return *this;
     }}
 )",
                                 data.name,
-                                data.name.original);
+                                data.name.original,
+                                m_ns);
     }
 
     output += funcs;
@@ -4065,7 +4198,7 @@ std::string vkgen::Generator::generateStruct(const Struct &data, bool exp) {
         ArgumentBuilder types{ false };
         ArgumentBuilder tie{ false };
         for (const auto &m : data.members) {
-            types.append(m->fullType(), "");
+            types.append(m->fullType(*this), "");
             tie.append("", m->identifier());
         }
         output += vkgen::format(R"(
@@ -4153,10 +4286,10 @@ std::string vkgen::Generator::generateStruct(const Struct &data, bool exp) {
         }
 
         std::string compareBody, spaceshipOperator;
+        const bool  useSpaceship = cfg.gen.spaceshipOperator && !containsFuncPointer(data);
         if (nonDefaultCompare) {
             compareBody = "      return " + compareMembers + ";";
-
-            if (!containsFuncPointer(data)) {
+            if (useSpaceship) {
                 constexpr auto spaceshipOperatorTemplate =
                   R"(    {2} operator<=>( {0} const & rhs ) const VULKAN_HPP_NOEXCEPT
     {{
@@ -4176,7 +4309,7 @@ std::string vkgen::Generator::generateStruct(const Struct &data, bool exp) {
 #endif // VULKAN_HPP_USE_REFLECT)";
             compareBody = vkgen::format(compareBodyTemplate, compareMembers);
 
-            if (!containsFuncPointer(data)) {
+            if (useSpaceship) {
                 spaceshipOperator = "    auto operator<=>( " + data.name + " const & ) const = default;";
             }
         }
@@ -4229,25 +4362,42 @@ std::string vkgen::Generator::generateStruct(const Struct &data, bool exp) {
 }
 
 std::string vkgen::Generator::generateIncludeRAII(GenOutput &out) const {
-    return vkgen::format(R"(
+    std::string output;
+    if (cfg.gen.importStdMacro) {
+        output += R"(
+#ifndef USE_IMPORT_STD
+)";
+    }
+
+    output += R"(
 #include <memory>
 #include <vector>
 #include <utility>  // std::exchange, std::forward
+)";
+
+    if (cfg.gen.importStdMacro) {
+        output += R"(
+#endif
+)";
+    }
+
+    output += vkgen::format(R"(
 #include "{0}"
 #include "{1}"
 )",
-                         out.getFilename(""),
-                         out.getFilename("_raii_forward"));
+                            out.getFilename(""),
+                            out.getFilename("_raii_forward"));
+
+    return output;
 }
 
-std::string vkgen::Generator::generateClassWithPFN(Handle &h, UnorderedFunctionOutput &funcs, UnorderedFunctionOutputX &funcs2) {
+std::string vkgen::Generator::generateClassWithPFN(Handle &h, UnorderedFunctionOutput &funcs, UnorderedFunctionOutputX &funcsDef, UnorderedFunctionOutputX &funcsTempl) {
     const auto       &name     = h.name;
     const std::string dispatch = name + "Dispatcher";
     const std::string handle   = "m_" + strFirstLower(h.name);
     std::string       output;
     output += "  class " + name + " {\n";
     output += "  protected:\n";
-    // output += "    VULKAN_HPP_NAMESPACE::" + name + " " + handle + " = {};\n";
     output += "    Vk" + name + " " + handle + " = {};\n";
     output += "    " + dispatch + " m_dispatcher = {};\n";
     output += "  public:\n";
@@ -4275,8 +4425,12 @@ std::string vkgen::Generator::generateClassWithPFN(Handle &h, UnorderedFunctionO
         resolver.generate(ctors, funcs);
     }
 
+    const bool indirect = cfg.gen.classMethods & 2;
     for (auto &d : h.members) {
-        MemberGeneratorExperimental g{ *this, d, members, funcs2 };
+        if (!indirect && d.src->isIndirect()) {
+            continue;
+        }
+        MemberGeneratorExperimental g{ *this, d, members, funcsDef, funcsTempl };
         g.generate();
     }
 
@@ -4307,7 +4461,7 @@ std::string vkgen::Generator::generateClassWithPFN(Handle &h, UnorderedFunctionO
     output += "      return " + handle + ";\n";
     output += "    }\n";
 
-    output += "    VULKAN_HPP_NODISCARD VULKAN_HPP_INLINE " + dispatch + " const * getDispatcher() const VULKAN_HPP_NOEXCEPT \n";
+    output += "    VULKAN_HPP_INLINE " + dispatch + " const * getDispatcher() const VULKAN_HPP_NOEXCEPT \n";
     output += "    {\n";
     output += "      return &m_dispatcher;\n";
     output += "    }\n";
@@ -4322,8 +4476,13 @@ std::string vkgen::Generator::generateClassWithPFN(Handle &h, UnorderedFunctionO
 }
 
 void vkgen::Generator::generateContext(OutputBuffer &output, UnorderedFunctionOutput &inter) {
+    if (cfg.gen.integrateVma) {
+        output += "#include <vma/vk_mem_alloc.h>\n";
+    }
+
     output += beginNamespace();
     // output += "  namespace exp {\n";
+
     output += R"(
     template <class T, class U = T>
     VULKAN_HPP_CONSTEXPR_14 VULKAN_HPP_INLINE T exchange( T & obj, U && newValue ) {
@@ -4455,10 +4614,10 @@ void vkgen::Generator::generateRAII(OutputBuffer &output, OutputBuffer &output_f
         generateDispatchRAII(output);
         output += generateLoader();
     } else {
-        output += "  using " + cfg.macro.mNamespace.get() + "::" + loader.name + ";\n";
+        output += "  using " + m_ns + "::" + loader.name + ";\n";
         for (const Handle &h : topLevelHandles) {
-            output += "  using " + cfg.macro.mNamespace.get() + "::" + h.name + ";\n";
-            output += "  using " + cfg.macro.mNamespace.get() + "::" + h.name + "Dispatcher;\n";
+            output += "  using " + m_ns + "::" + h.name + ";\n";
+            output += "  using " + m_ns + "::" + h.name + "Dispatcher;\n";
         }
     }
 
@@ -4498,6 +4657,35 @@ void vkgen::Generator::generateFuncsRAII(OutputBuffer &output) {
     output += endNamespace();
 }
 
+static void initVmaMap(std::unordered_map<std::string, std::pair<const char *, bool>> &vma) {
+    vma.emplace("vkGetInstanceProcAddr", std::make_pair(nullptr, false));
+    vma.emplace("vkGetDeviceProcAddr", std::make_pair(nullptr, false));
+    vma.emplace("vkGetPhysicalDeviceProperties", std::make_pair(nullptr, false));
+    vma.emplace("vkGetPhysicalDeviceMemoryProperties", std::make_pair(nullptr, false));
+    vma.emplace("vkAllocateMemory", std::make_pair(nullptr, false));
+    vma.emplace("vkFreeMemory", std::make_pair(nullptr, false));
+    vma.emplace("vkMapMemory", std::make_pair(nullptr, false));
+    vma.emplace("vkUnmapMemory", std::make_pair(nullptr, false));
+    vma.emplace("vkFlushMappedMemoryRanges", std::make_pair(nullptr, false));
+    vma.emplace("vkInvalidateMappedMemoryRanges", std::make_pair(nullptr, false));
+    vma.emplace("vkBindBufferMemory", std::make_pair(nullptr, false));
+    vma.emplace("vkBindImageMemory", std::make_pair(nullptr, false));
+    vma.emplace("vkGetBufferMemoryRequirements", std::make_pair(nullptr, false));
+    vma.emplace("vkGetImageMemoryRequirements", std::make_pair(nullptr, false));
+    vma.emplace("vkCreateBuffer", std::make_pair(nullptr, false));
+    vma.emplace("vkDestroyBuffer", std::make_pair(nullptr, false));
+    vma.emplace("vkCreateImage", std::make_pair(nullptr, false));
+    vma.emplace("vkDestroyImage", std::make_pair(nullptr, false));
+    vma.emplace("vkCmdCopyBuffer", std::make_pair(nullptr, false));
+    vma.emplace("vkGetBufferMemoryRequirements2KHR", std::make_pair("VMA_DEDICATED_ALLOCATION || VMA_VULKAN_VERSION >= 1001000", false));
+    vma.emplace("vkGetImageMemoryRequirements2KHR", std::make_pair("VMA_DEDICATED_ALLOCATION || VMA_VULKAN_VERSION >= 1001000", false));
+    vma.emplace("vkBindBufferMemory2KHR", std::make_pair("VMA_BIND_MEMORY2 || VMA_VULKAN_VERSION >= 1001000", false));
+    vma.emplace("vkBindImageMemory2KHR", std::make_pair("VMA_BIND_MEMORY2 || VMA_VULKAN_VERSION >= 1001000", false));
+    vma.emplace("vkGetPhysicalDeviceMemoryProperties2KHR", std::make_pair("VMA_MEMORY_BUDGET || VMA_VULKAN_VERSION >= 1001000", false));
+    vma.emplace("vkGetDeviceBufferMemoryRequirements", std::make_pair("VMA_KHR_MAINTENANCE4 || VMA_VULKAN_VERSION >= 1003000", false));
+    vma.emplace("vkGetDeviceImageMemoryRequirements", std::make_pair("VMA_KHR_MAINTENANCE4 || VMA_VULKAN_VERSION >= 1003000", false));
+}
+
 void vkgen::Generator::generateDispatchRAII(OutputBuffer &output) {
     auto &instance = findHandle("VkInstance");
     auto &device   = findHandle("VkDevice");
@@ -4517,14 +4705,64 @@ void vkgen::Generator::generateDispatchRAII(OutputBuffer &output) {
             src     = ", " + h.name.original + " " + handle;
         }
 
-        out.sPublic += name + "() = default;\n";
+        const bool                                                     useVma = h.name == "Device" && cfg.gen.integrateVma;
+        std::unordered_map<std::string, std::pair<const char *, bool>> vma;
 
         std::string init;
         std::string init2;
+        if (useVma) {
+            out.inherits += "public VmaVulkanFunctions";
+            initVmaMap(vma);
+            // init += "      vkGetInstanceProcAddr = source.vkGetInstanceProcAddr;\n";
+            init += "      vkGetDeviceProcAddr = source.vkGetDeviceProcAddr;\n";
+
+            for (auto *d : h.filteredMembers) {
+                const std::string &name = d->name.original;
+                auto               it   = vma.find(name);
+                if (it != vma.end()) {
+                    it->second.second = true;
+                }
+            }
+
+            for (auto &v : vma) {
+                if (!v.second.second) {
+                    init += "/**/";
+                    init += vkgen::format("      {0} = source.{0};\n", v.first);
+                } else {
+                    init += "/*" + v.first + "*/\n";
+                }
+            }
+        }
+
         // PFN function pointers
-        for (auto d : h.filteredMembers) {
-            const std::string &name = d->name.original;
-            out.sPublic += genOptional(*d, [&](std::string &output) { output += vkgen::format("    PFN_{0} {0} = {{}};\n", name); });
+        for (auto *d : h.filteredMembers) {
+            const std::string &name     = d->name.original;
+
+            const char        *vmaGuard = nullptr;
+            bool               isVma    = false;
+            if (useVma) {
+                auto it = vma.find(name);
+                if (it != vma.end()) {
+                    isVma    = !it->second.first;
+                    vmaGuard = it->second.first;
+                }
+            }
+
+            if (!isVma) {
+                out.sPublic += genOptional(*d, [&](std::string &output) {
+                    if (vmaGuard) {
+                        // oupuut += "/*G*/\n";
+                        output += "#if !(";
+                        output += vmaGuard;
+                        output += ")\n";
+                    }
+                    output += vkgen::format("    PFN_{0} {0} = {{}};\n", name);
+                    if (vmaGuard) {
+                        output += "#endif\n";
+                    }
+                });
+            }
+
             init +=
               genOptional(*d, [&](std::string &output) { output += vkgen::format("      {0} = PFN_{0}( {1}({2}, \"{0}\") );\n", name, getAddr, handle); });
             out.sPublic += genOptional(*d, [&](std::string &output) {
@@ -4547,23 +4785,60 @@ void vkgen::Generator::generateDispatchRAII(OutputBuffer &output) {
                 }
             });
         }
-        out.sPublic += "    PFN_" + getAddr + " " + getAddr + " = {};\n";
+
+        if (!useVma) {
+            out.sPublic += "    PFN_" + getAddr + " " + getAddr + " = {};\n";
+        }
+        out.sPublic += "\n";
+
+        out.sPublic += "    " + name + "() = default;\n";
+
         if (h.name == "Instance") {
             std::string name = "vkGetDeviceProcAddr";
             out.sPublic += "    PFN_" + name + " " + name + " = {};\n";
             init += vkgen::format("      {0} = PFN_{0}( {1}({2}, \"{0}\") );\n", name, getAddr, handle);
         }
 
-        out.sPublic += vkgen::format(R"(
-    {0} (PFN_{1} getProcAddr{2}) : {1}(getProcAddr) {{
-{3}{4}
+        std::string ctorInit = "VmaVulkanFunctions()";
+        if (!useVma) {
+            ctorInit = getAddr;
+            ctorInit += (h.name == loader.name) ? "(getProcAddr)" : "(source.vkGet" + h.name + "ProcAddr)";
+        }
+
+        if (h.name == loader.name) {
+            out.sPublic += vkgen::format(R"(
+    {0} (PFN_{1} getProcAddr{2}) : {3} {{
+{4}{5}
     }}
 )",
-                                     name,
-                                     getAddr,
-                                     src,
-                                     init,
-                                     init2);
+                                         name,
+                                         getAddr,
+                                         src,
+                                         ctorInit,
+                                         init,
+                                         init2);
+        } else {
+            out.sPublic += vkgen::format(R"(
+    {0} (const {6}Dispatcher &source{2}) : {3} {{
+{4}{5}
+    }}
+)",
+                                         name,
+                                         getAddr,
+                                         src,
+                                         ctorInit,
+                                         init,
+                                         init2,
+                                         h.superclass);
+        }
+
+        if (useVma) {
+            out.sPublic += R"(
+    VULKAN_HPP_NODISCARD const VmaVulkanFunctions* vma() const {
+      return this;
+    }
+)";
+        }
 
         output += generateClassString(name, out, Namespace::RAII);
 
@@ -4670,14 +4945,15 @@ void vkgen::Generator::generateClassMembers(
 {1}{2}
     }}
 
-    inline void {0}::swap(VULKAN_HPP_NAMESPACE::VULKAN_HPP_RAII_NAMESPACE::{0} &rhs) VULKAN_HPP_NOEXCEPT {{
+    inline void {0}::swap({4}::{0} &rhs) VULKAN_HPP_NOEXCEPT {{
 {3}
     }}
 )",
                                 className,
                                 call,
                                 clear,
-                                swap);
+                                swap,
+                                m_ns_raii);
     }
 
     if (!output.empty()) {
@@ -4707,11 +4983,13 @@ void vkgen::Generator::generateClassConstructors(const Handle &data, GenOutputCl
                                  strFirstLower(data.name),
                                  data.vkhandle.identifier());
 
-    // if (data.isSubclass && cfg.gen.expApi) {
-    if (true) {
+    // if (data.isSubclass && ) {
+    if (cfg.gen.expApi) {
         const auto &superclass = data.superclass;
 
         for (auto &m : const_cast<Handle &>(data).ctorCmds) {
+            // auto &def = (m.src->hasProtect()? platformDef : funcs);
+
             if (cfg.dbg.methodTags) {
                 out.sPublic += "    /* exp ctor: " + m.name.original + " */\n";
             }
@@ -4781,16 +5059,8 @@ void vkgen::Generator::generateClassConstructorsRAII(const Handle &data, GenOutp
         //        }
 
         const auto &parent = *m.src->_params.begin()->get();
-        if (parent.original.type() != superclass.original) {
+        if (!data.isSubclass && parent.original.type() != superclass.original) {
             genCtor(m, parent, true);
-
-            if (parent.isHandle()) {
-                const auto &handle = findHandle(parent.original.type());
-                if (handle.superclass.original != superclass.original) {
-                    std::cerr << "ctor: impossible combination" << '\n';
-                    continue;
-                }
-            }
         }
 
         if (parent.isHandle()) {
@@ -4817,11 +5087,11 @@ void vkgen::Generator::generateClassConstructorsRAII(const Handle &data, GenOutp
         std::string dispatcherInit;
         if (!data.isSubclass) {
             if (cfg.gen.raii.staticInstancePFN && data.name == "Instance") {
-                dispatcherInit = "    dispatcher = " + data.name;
+                dispatcherInit = "    /*X*/m_dispatcher = " + data.name;
                 dispatcherInit += "Dispatcher( " + parent;
                 dispatcherInit += ".getDispatcher()->vkGet" + data.name + "ProcAddr, " + handle + " );\n";
             } else if (cfg.gen.raii.staticDevicePFN && data.name == "Device") {
-                dispatcherInit = "    dispatcher = " + data.name;
+                dispatcherInit = "    m_dispatcher = " + data.name;
                 dispatcherInit += "Dispatcher( " + parent;
                 dispatcherInit += ".getDispatcher()->vkGet" + data.name + "ProcAddr, " + handle + " );\n";
             } else {
@@ -4837,34 +5107,30 @@ void vkgen::Generator::generateClassConstructorsRAII(const Handle &data, GenOutp
             init.append(data.secondOwner->identifier(), id);
         }
         if (cfg.gen.allocatorParam && data.creationCat != Handle::CreationCategory::NONE) {
-            argDecl += ", VULKAN_HPP_NAMESPACE::Optional<const VULKAN_HPP_NAMESPACE::AllocationCallbacks> allocator = nullptr";
-            argDef += ", VULKAN_HPP_NAMESPACE::Optional<const VULKAN_HPP_NAMESPACE::AllocationCallbacks> allocator";
-            init.append(cvars.raiiAllocator.identifier(), "static_cast<const VULKAN_HPP_NAMESPACE::AllocationCallbacks *>( allocator )");
+            argDecl += ", " + m_ns + "::Optional<const " + m_ns + "::AllocationCallbacks> allocator = nullptr";
+            argDef += ", " + m_ns + "::Optional<const " + m_ns + "::AllocationCallbacks> allocator";
+            init.append(cvars.raiiAllocator.identifier(), "static_cast<const " + m_ns + "::AllocationCallbacks *>( allocator )");
         }
         if (false) {  // TODO add class var
             init.append("m_dispacher", "& //getDispatcher()");
         }
 
         out.sPublic += vkgen::format(R"(
-    VULKAN_HPP_INLINE {0}( VULKAN_HPP_NAMESPACE::VULKAN_HPP_RAII_NAMESPACE::{1} const & {2},
+    VULKAN_HPP_INLINE {0}( {5}::{1} const & {2},
       Vk{0} {3}{4} );
 )",
                                      data.name,
                                      superclass,
                                      parent,
                                      handle,
-                                     argDecl);
+                                     argDecl,
+                                     m_ns_raii);
 
         funcs.add(
           data,
           [&](std::string &output) {
-              output += vkgen::format("  {0}::{0}( VULKAN_HPP_NAMESPACE::VULKAN_HPP_RAII_NAMESPACE::{1} const & {2}, Vk{0} {3}{4} ){5}\n",
-                                      data.name,
-                                      superclass,
-                                      parent,
-                                      handle,
-                                      argDef,
-                                      init.string());
+              output +=
+                vkgen::format("  {0}::{0}( {6}::{1} const & {2}, Vk{0} {3}{4} ){5}\n", data.name, superclass, parent, handle, argDef, init.string(), m_ns_raii);
               output += "  {\n";
               output += dispatcherInit;
               output += "  }\n";
@@ -4962,7 +5228,7 @@ std::string vkgen::Generator::generateUniqueClassStr(const Handle &data, Unorder
         //        if (v.type() == data.name) {
         //            return;
         //        }
-        out.sPrivate += "    " + v.toClassVar();
+        out.sPrivate += "    " + v.toClassVar(*this);
         assignemntOp += "\n      " + v.identifier() + " = std::move(other." + v.identifier() + ");";
         copyCtor.append(v.identifier(), "std::move(other." + v.identifier() + ")");
     });
@@ -5112,14 +5378,15 @@ std::string vkgen::Generator::generateClassStr(const Handle            &data,
 using CType      = Vk{0};
 using NativeType = Vk{0};
 
-static VULKAN_HPP_CONST_OR_CONSTEXPR VULKAN_HPP_NAMESPACE::ObjectType objectType =
-  VULKAN_HPP_NAMESPACE::ObjectType::e{0};
-static VULKAN_HPP_CONST_OR_CONSTEXPR VULKAN_HPP_NAMESPACE::DebugReportObjectTypeEXT debugReportObjectType =
-  VULKAN_HPP_NAMESPACE::DebugReportObjectTypeEXT::e{1};
+static VULKAN_HPP_CONST_OR_CONSTEXPR {2}::ObjectType objectType =
+  {2}::ObjectType::e{0};
+static VULKAN_HPP_CONST_OR_CONSTEXPR {2}::DebugReportObjectTypeEXT debugReportObjectType =
+  {2}::DebugReportObjectTypeEXT::e{1};
 
 )",
                                  className,
-                                 debugReportValue);
+                                 debugReportValue,
+                                 m_ns);
 
     generateClassConstructors(data, out, funcs);
 
@@ -5225,47 +5492,83 @@ static VULKAN_HPP_CONST_OR_CONSTEXPR VULKAN_HPP_NAMESPACE::DebugReportObjectType
                                  handle,
                                  expIfndef("VULKAN_HPP_EXPERIMENTAL_NO_CLASS_COMPARE"),
                                  expEndif("VULKAN_HPP_EXPERIMENTAL_NO_CLASS_COMPARE"));
-    if (!noFuncs) {
+
+    if (cfg.gen.expApi) {
+        UnorderedFunctionOutputX decl;
+        UnorderedFunctionOutputX def;
+        UnorderedFunctionOutputX templ;
+
+        for (ClassCommand &m : const_cast<Handle &>(data).members) {
+            //            if (!indirect && d.src->isIndirect()) {
+            //                continue;
+            //            }
+
+            //            if (ns == Namespace::VK && m.src->isIndirect()) {
+            //                continue;
+            //            }
+            MemberGeneratorExperimental g{ *this, m, decl, def, templ };
+            g.generate();
+        }
+
+        {
+            std::stringstream temp;
+            decl.write(temp);
+            out.sPublic += temp.str();
+        }
+        {
+            std::stringstream temp;
+            def.write(temp);
+            funcs += temp.str();
+        }
+        {
+            std::stringstream temp;
+            templ.write(temp);
+            funcs += temp.str();
+        }
+
+    } else if (!noFuncs) {
         generateClassMembers(data, out, funcs, funcsEnhanced, Namespace::VK, inlineFuncs);
     }
 
     output += generateClassString(className, out, Namespace::VK);
 
-    output += expIfndef("VULKAN_HPP_EXPERIMENTAL_NO_TEMPLATES");
-    output += vkgen::format(R"(
-template <>
-struct CppType<VULKAN_HPP_NAMESPACE::ObjectType, VULKAN_HPP_NAMESPACE::ObjectType::e{0}>
-{{
-using Type = VULKAN_HPP_NAMESPACE::{0};
-}};
-
-)",
-                            className,
-                            debugReportValue);
-
-    if (debugReportValue != "Unknown") {
+    output += gen(cfg.gen.handleTemplates, [&](std::string &output) {
         output += vkgen::format(R"(
-template <>
-struct CppType<VULKAN_HPP_NAMESPACE::DebugReportObjectTypeEXT,
-             VULKAN_HPP_NAMESPACE::DebugReportObjectTypeEXT::e{1}>
-{{
-using Type = VULKAN_HPP_NAMESPACE::{0};
-}};
+  template <>
+  struct CppType<{0}::ObjectType, {0}::ObjectType::e{1}>
+  {{
+    using Type = {0}::{1};
+  }};
 
 )",
-                                className,
-                                debugReportValue);
-    }
+                                m_ns,
+                                className);
 
-    output += vkgen::format(R"(
-template <>
-struct isVulkanHandleType<VULKAN_HPP_NAMESPACE::{0}>
-{{
-  static VULKAN_HPP_CONST_OR_CONSTEXPR bool value = true;
-}};
+        if (debugReportValue != "Unknown") {
+            output += vkgen::format(R"(
+  template <>
+  struct CppType<{0}::DebugReportObjectTypeEXT,
+                 {0}::DebugReportObjectTypeEXT::e{2}>
+  {{
+    using Type = {0}::{1};
+  }};
+
 )",
-                            className);
-    output += expEndif("VULKAN_HPP_EXPERIMENTAL_NO_TEMPLATES");
+                                    m_ns,
+                                    className,
+                                    debugReportValue);
+        }
+
+        output += vkgen::format(R"(
+  template <>
+  struct isVulkanHandleType<{0}::{1}>
+  {{
+    static VULKAN_HPP_CONST_OR_CONSTEXPR bool value = true;
+  }};
+)",
+                                m_ns,
+                                className);
+    });
 
     return output;
 }
@@ -5277,7 +5580,7 @@ std::string vkgen::Generator::generateClass(const Handle            &data,
     std::string output;
 
     if (!data.getProtect().empty()) {
-        platformOutput.add(data, [&](std::string &output) { output += generateClassStr(data, funcs, funcsEnhanced, expfuncs, true); });
+        platformOutput.add(data, [&](std::string &output) { output += generateClassStr(data, funcs, funcsEnhanced, expfuncs, false); });
     } else {
         output += genOptional(data, [&](std::string &output) { output += generateClassStr(data, funcs, funcsEnhanced, expfuncs, false); });
     }
@@ -5296,7 +5599,7 @@ std::string vkgen::Generator::generateClassStrRAII(const Handle &data, bool exp)
     bool               inherit        = exp && owner.empty();
 
     if (inherit) {
-        out.inherits += "public " + getNamespace(Namespace::VK) + className;
+        out.inherits += "public " + m_ns + "::" + className;
     } else {
         std::string debugReportValue = "Unknown";
         auto        en               = enums.find("VkDebugReportObjectTypeEXT");
@@ -5306,14 +5609,15 @@ std::string vkgen::Generator::generateClassStrRAII(const Handle &data, bool exp)
 
         out.sPublic += " // " + owner + "\n";
         out.sPublic += vkgen::format(R"(
-    using CType      = Vk{0};
+    using CType      = Vk{1};
 
-    static VULKAN_HPP_CONST_OR_CONSTEXPR VULKAN_HPP_NAMESPACE::ObjectType objectType =
-      VULKAN_HPP_NAMESPACE::ObjectType::e{0};
-    static VULKAN_HPP_CONST_OR_CONSTEXPR VULKAN_HPP_NAMESPACE::DebugReportObjectTypeEXT debugReportObjectType =
-      VULKAN_HPP_NAMESPACE::DebugReportObjectTypeEXT::e{1};
+    static VULKAN_HPP_CONST_OR_CONSTEXPR {0}::ObjectType objectType =
+      {0}::ObjectType::e{1};
+    static VULKAN_HPP_CONST_OR_CONSTEXPR {0}::DebugReportObjectTypeEXT debugReportObjectType =
+      {0}::DebugReportObjectTypeEXT::e{2};
 
 )",
+                                     m_ns,
                                      className,
                                      debugReportValue);
     }
@@ -5324,8 +5628,8 @@ std::string vkgen::Generator::generateClassStrRAII(const Handle &data, bool exp)
     std::string        assign = "\n";
 
     if (inherit) {
-        init.append(getNamespace(Namespace::VK) + className + "::" + className, "std::forward<" + className + ">(rhs)");
-        assign += "      " + getNamespace(Namespace::VK) + className + "::operator=(std::forward<" + className + ">(rhs));\n";
+        init.append(m_ns + "::" + className + "::" + className, "std::forward<" + className + ">(rhs)");
+        assign += "      " + m_ns + "::" + className + "::operator=(std::forward<" + className + ">(rhs));\n";
     }
     data.foreachVars(VariableData::Flags::CLASS_VAR_RAII, [&](const VariableData &v) {
         if (inherit && v.type() == className) {
@@ -5335,14 +5639,14 @@ std::string vkgen::Generator::generateClassStrRAII(const Handle &data, bool exp)
             init.append(v.identifier(), vkgen::format("rhs.{0}.release()", v.identifier()));
             assign += vkgen::format("        {0}.reset( rhs.{0}.release() );\n", v.identifier());
         } else {
-            init.append(v.identifier(), vkgen::format("VULKAN_HPP_NAMESPACE::VULKAN_HPP_RAII_NAMESPACE::exchange(rhs.{0}, {{}})", v.identifier()));
-            assign += vkgen::format("        {0} = VULKAN_HPP_NAMESPACE::VULKAN_HPP_RAII_NAMESPACE::exchange(rhs.{0}, {{}});\n", v.identifier());
+            init.append(v.identifier(), vkgen::format("{0}::exchange(rhs.{1}, {{}})", m_ns_raii, v.identifier()));
+            assign += vkgen::format("        {1} = {0}::exchange(rhs.{1}, {{}});\n", m_ns_raii, v.identifier());
         }
     });
 
     if (inherit) {
         out.sPublic += "    explicit " + data.name + "    (std::nullptr_t) VULKAN_HPP_NOEXCEPT\n";
-        out.sPublic += "      : VULKAN_HPP_NAMESPACE::" + data.name + "(nullptr)\n";
+        out.sPublic += "      : " + m_ns + "::" + data.name + "(nullptr)\n";
         out.sPublic += "    {}\n";
     } else {
         out.sPublic += "    explicit " + data.name + "(std::nullptr_t) VULKAN_HPP_NOEXCEPT {}\n";
@@ -5380,29 +5684,33 @@ std::string vkgen::Generator::generateClassStrRAII(const Handle &data, bool exp)
         if (inherit && v.type() == className) {
             return;
         }
-        out.sPrivate += "    " + v.toClassVar();
+        out.sPrivate += "    " + v.toClassVar(*this);
         if (v.identifier() != handle) {
             release += "      " + v.identifier() + " = nullptr;\n";
         }
     });
 
     out.sPublic += vkgen::format(R"(
-    VULKAN_HPP_NAMESPACE::{0} const &operator*() const VULKAN_HPP_NOEXCEPT {{
-        return {1};
+    {0}::{2} const &operator*() const VULKAN_HPP_NOEXCEPT {{
+        return {3};
     }}
     void clear() VULKAN_HPP_NOEXCEPT;
-    void swap(VULKAN_HPP_NAMESPACE::VULKAN_HPP_RAII_NAMESPACE::{0} &) VULKAN_HPP_NOEXCEPT;
+    void swap({1}::{2} &) VULKAN_HPP_NOEXCEPT;
 )",
+                                 m_ns,
+                                 m_ns_raii,
                                  className,
                                  handle);
 
     out.sPublic += vkgen::format(R"(
 
-    VULKAN_HPP_NAMESPACE::{0} release()
+    {0}::{2} release()
     {{
-{1}      return VULKAN_HPP_NAMESPACE::VULKAN_HPP_RAII_NAMESPACE::exchange( {2}, nullptr );
+{3}      return {1}::exchange( {4}, nullptr );
     }}
 )",
+                                 m_ns,
+                                 m_ns_raii,
                                  className,
                                  release,
                                  handle);
@@ -5414,13 +5722,11 @@ std::string vkgen::Generator::generateClassStrRAII(const Handle &data, bool exp)
               std::string dispatchSrc;
               std::string type = data.name;
               if (cfg.gen.raii.staticInstancePFN && data.name.original == "VkInstance") {
-                  dispatchSrc = "      return &VULKAN_HPP_NAMESPACE::VULKAN_HPP_RAII_NAMESPACE::Instance::dispatcher;\n";
-                  out.sPublic += "    inline static " + type + "Dispatcher dispatcher;\n";
-                  //                funcs += "  " + format("VULKAN_HPP_NAMESPACE::VULKAN_HPP_RAII_NAMESPACE::Instance ") + type + "Dispatcher dispatcher;\n";
+                  dispatchSrc = "      return &" + m_ns_raii + "::Instance::m_dispatcher;\n";
+                  out.sPublic += "    inline static " + type + "Dispatcher m_dispatcher;\n";
               } else if (cfg.gen.raii.staticDevicePFN && data.name.original == "VkDevice") {
-                  dispatchSrc = "      return &VULKAN_HPP_NAMESPACE::VULKAN_HPP_RAII_NAMESPACE::Device::dispatcher;\n";
-                  out.sPublic += "    inline static " + type + "Dispatcher dispatcher;\n";
-                  //                funcs += "  " + format("VULKAN_HPP_NAMESPACE::VULKAN_HPP_RAII_NAMESPACE::Device ") + type + "Dispatcher dispatcher;\n";
+                  dispatchSrc = "      return &" + m_ns_raii + "::Device::m_dispatcher;\n";
+                  out.sPublic += "    inline static " + type + "Dispatcher m_dispatcher;\n";
               } else if (data.name.original == "VkInstance" || data.name.original == "VkDevice") {
                   dispatchSrc = "      return &*m_dispatcher;\n";
               } else {
@@ -5435,19 +5741,20 @@ std::string vkgen::Generator::generateClassStrRAII(const Handle &data, bool exp)
                   spec = cfg.macro.mInline.get() + " ";
               }
               out.sPublic += vkgen::format(R"(
-    {2}VULKAN_HPP_NAMESPACE::VULKAN_HPP_RAII_NAMESPACE::{0}Dispatcher const * getDispatcher() const;
+    {2}{0}::{1}Dispatcher const * getDispatcher() const;
     )",
+                                           m_ns_raii,
                                            type,
-                                           dispatchSrc,
                                            spec);
 
               output += vkgen::format(R"(
-    {3}VULKAN_HPP_NAMESPACE::VULKAN_HPP_RAII_NAMESPACE::{0}Dispatcher const * {1}::getDispatcher() const
+    {4}{0}::{1}Dispatcher const * {2}::getDispatcher() const
     {{
       //VULKAN_HPP_ASSERT( m_dispatcher->getVkHeaderVersion() == VK_HEADER_VERSION );
-{2}
+{3}
     }}
     )",
+                                      m_ns_raii,
                                       type,
                                       data.name,
                                       dispatchSrc,
@@ -5458,11 +5765,12 @@ std::string vkgen::Generator::generateClassStrRAII(const Handle &data, bool exp)
 
     if (data.ownerRaii) {
         out.sPublic += vkgen::format(R"(
-    VULKAN_HPP_INLINE VULKAN_HPP_NAMESPACE::VULKAN_HPP_RAII_NAMESPACE::{0} const & get{0}() const
+    VULKAN_HPP_INLINE {0}::{1} const & get{1}() const
     {{
-      return *{1};
+      return *{2};
     }}
 )",
+                                     m_ns_raii,
                                      data.ownerRaii->type(),
                                      data.ownerRaii->identifier());
     }
@@ -5477,7 +5785,7 @@ std::string vkgen::Generator::generateClassStrRAII(const Handle &data, bool exp)
         GenOutputClass out{ *this };
         std::string    name = className + "s";
 
-        out.inherits += vkgen::format("public std::vector<VULKAN_HPP_NAMESPACE::VULKAN_HPP_RAII_NAMESPACE::{0}>", className);
+        out.inherits += vkgen::format("public std::vector<{0}::{1}>", m_ns_raii, className);
 
         // HandleData cls = data;
         // cls.name = name;
@@ -5570,7 +5878,7 @@ std::string vkgen::Generator::generateLoader(bool exp) {
     static constexpr char const* defaultLibpath = "libvulkan.so.1";
 #endif
 )";
-    out.sPublic += format(R"(
+    out.sPublic += vkgen::format(R"(
     {0}() = default;
 
     ~{0}() {{
@@ -5587,8 +5895,8 @@ std::string vkgen::Generator::generateLoader(bool exp) {
       return &*m_dispatcher;
     }}
 )",
-                          loader.name,
-                          dispatcher);
+                                 loader.name,
+                                 dispatcher);
 
     out.sPublic += R"(
     template<typename T>
@@ -5671,15 +5979,15 @@ std::string vkgen::Generator::generateLoader(bool exp) {
 
 std::string vkgen::Generator::genMacro(const Macro &m) {
     std::string out;
-    if (m.usesDefine) {
-        out += vkgen::format(R"(
+    // if (m.usesDefine) {
+    out += vkgen::format(R"(
 #if !defined( {0} )
 #  define {0} {1}
 #endif
 )",
-                             m.define,
-                             m.value);
-    }
+                         m.define,
+                         m.value);
+    // }
     return out;
 }
 
@@ -5749,9 +6057,19 @@ vkgen::Generator::Generator()
     unload();
     // resetConfig();
 
-    namespaces.insert_or_assign(Namespace::VK, &cfg.macro.mNamespace);
-    namespaces.insert_or_assign(Namespace::RAII, &cfg.macro.mNamespaceRAII);
+    namespaces.insert_or_assign(Namespace::VK, &cfg.macro.mNamespace.data);
+    namespaces.insert_or_assign(Namespace::RAII, &cfg.macro.mNamespaceRAII.data);
     namespaces.insert_or_assign(Namespace::STD, &cfg.macro.mNamespaceSTD);
+}
+
+std::string_view vkgen::Generator::getNamespace(Namespace ns) const {
+    using enum vkgen::Namespace;
+    switch (ns) {
+        case VK: return m_ns;
+        case RAII: return m_ns_raii;
+        case STD: return "std";
+        default: return "";
+    }
 }
 
 void vkgen::Generator::resetConfig() {
@@ -5770,17 +6088,29 @@ void vkgen::Generator::setOutputFilePath(const std::string &path) {
     }
 }
 
-void vkgen::Generator::load(const std::string &xmlPath) {
-    auto start = std::chrono::system_clock::now();
-    Registry::load(*this, xmlPath);
+bool vkgen::Generator::load(const std::string &xmlPath) {
+    auto start   = std::chrono::system_clock::now();
+    auto result  = Registry::load(*this, xmlPath);
     auto end     = std::chrono::system_clock::now();
     auto elapsed = std::chrono::duration<double>(end - start);
     std::cout << "loaded in " << elapsed.count() << "s  (" << xmlPath << ")" << std::endl;
 
     // mockTestConfigs();
+    return result;
 }
 
 void vkgen::Generator::generate() {
+    m_ns      = cfg.macro.mNamespace->get();
+    m_ns_raii = m_ns + "::" + cfg.macro.mNamespaceRAII->get();
+
+    if (cfg.gen.cppStd >= 20) {
+        m_constexpr   = cfg.macro.mConstexpr.value;
+        m_constexpr14 = cfg.macro.mConstexpr14.value;
+    } else {
+        m_constexpr   = cfg.macro.mConstexpr.define;
+        m_constexpr14 = cfg.macro.mConstexpr14.define;
+    }
+
     auto start = std::chrono::system_clock::now();
 
     std::string p = outputFilePath;
@@ -5794,16 +6124,17 @@ void vkgen::Generator::generate() {
     std::filesystem::path const path = std::filesystem::absolute(p);
 
     std::cout << "generating to: " << path << '\n';
-    if (!std::filesystem::is_directory(path)) {
-        throw std::runtime_error{ "Output path is not a directory" };
-    }
+    //    if (!std::filesystem::is_directory(path)) {
+    //        throw std::runtime_error{ "Output path is not a directory" };
+    //    }
     createPath(path);
 
     // TODO check existing files?
 
     outputFuncs.clear();
+    outputFuncsEnhanced.clear();
     outputFuncsRAII.clear();
-    outputFuncsInterop.clear();
+    outputFuncsEnhancedRAII.clear();
     platformOutput.clear();
     dispatchLoaderBaseGenerated = false;
 

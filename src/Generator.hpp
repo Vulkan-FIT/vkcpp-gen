@@ -20,7 +20,6 @@
 #define GENERATOR_HPP
 
 #include "Config.hpp"
-#include "Format.hpp"
 #include "Members.hpp"
 #include "Output.hpp"
 #include "Registry.hpp"
@@ -58,14 +57,20 @@ namespace vkgen
         ClassVariables cvars;
         bool           dispatchLoaderBaseGenerated;
 
-        std::string                            outputFilePath;
-        UnorderedFunctionOutput                outputFuncs;
-        UnorderedFunctionOutput                outputFuncsEnhanced;
-        UnorderedFunctionOutput                outputFuncsRAII;
-        UnorderedFunctionOutput                outputFuncsEnhancedRAII;
-        UnorderedFunctionOutput                outputFuncsInterop;
-        UnorderedOutput                        platformOutput;
+        std::string                            m_ns;
+        std::string                            m_ns_raii;
+        std::string                            m_constexpr;
+        std::string                            m_constexpr14;
         std::unordered_map<Namespace, Macro *> namespaces;
+
+        std::string outputFilePath;
+
+        UnorderedFunctionOutput outputFuncs;
+        UnorderedFunctionOutput outputFuncsEnhanced;
+        UnorderedFunctionOutput outputFuncsRAII;
+        UnorderedFunctionOutput outputFuncsEnhancedRAII;
+        UnorderedFunctionOutput outputFuncsInterop;
+        UnorderedOutput         platformOutput;
 
         std::string genWithProtect(const std::string &code, const std::string &protect) const;
 
@@ -90,7 +95,7 @@ namespace vkgen
 
         void generateMainFile(OutputBuffer &);
 
-        std::pair<std::string, std::string> generateModuleFunctions(GenOutput &);
+        // std::pair<std::string, std::string> generateModuleFunctions(GenOutput &);
 
         void generateModuleEnums(OutputBuffer &);
 
@@ -114,7 +119,7 @@ namespace vkgen
 
         void generateEnums(OutputBuffer &output, OutputBuffer &output_forward, OutputBuffer &to_string_output);
 
-        std::string genFlagTraits(const Enum &data, std::string name, std::string &to_string_output);
+        void genFlagTraits(const Enum &data, std::string name, std::string &output, std::string &to_string_output);
 
         std::string generateDispatch();
 
@@ -181,7 +186,7 @@ namespace vkgen
 
         std::string generateForwardInclude(GenOutput &out) const;
 
-        void generateHandles(OutputBuffer &output, OutputBuffer &output_smart, GenOutput &out, std::string &funcs);
+        void generateHandles(OutputBuffer &output, OutputBuffer &output_smart, GenOutput &out, std::string &funcs, std::string &funcsTempl);
 
         void generateUniqueHandles(OutputBuffer &output);
 
@@ -197,7 +202,7 @@ namespace vkgen
 
         std::string generateIncludeRAII(GenOutput &out) const;
 
-        std::string generateClassWithPFN(Handle &h, UnorderedFunctionOutput &funcs, UnorderedFunctionOutputX &funcs2);
+        std::string generateClassWithPFN(Handle &h, UnorderedFunctionOutput &funcs, UnorderedFunctionOutputX &funcsDef, UnorderedFunctionOutputX &funcsTempl);
 
         void generateContext(OutputBuffer &output, UnorderedFunctionOutput &inter);
 
@@ -330,9 +335,11 @@ namespace vkgen
             return outputFilePath;
         }
 
-        void load(const std::string &xmlPath);
+        bool load(const std::string &xmlPath);
 
         void generate();
+
+        std::string_view getNamespace(Namespace ns) const;
 
         Platforms &getPlatforms() {
             return platforms;
@@ -364,6 +371,10 @@ namespace vkgen
 
         const Config &getConfig() const {
             return cfg;
+        }
+
+        bool smartHandles() const {
+            return cfg.gen.smartHandles && !cfg.gen.expApi && !cfg.gen.cppModules;
         }
 
         void saveConfigFile(const std::string &filename);

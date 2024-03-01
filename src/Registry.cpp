@@ -787,6 +787,10 @@ namespace vkgen
         };
 
         sorter.sort("handles", [&](DependencySorter<Handle>::Item &i) {
+            // if (i.data->isSubclass && !i.data->members.empty()) {
+                // i.addDependency(sorter, i.data->superclass.original);
+            // }
+
             for (auto &m : i.data->members) {
                 if (!filter(i, m)) {
                     continue;
@@ -1098,17 +1102,21 @@ namespace vkgen
             std::cout << "Building dependencies done" << '\n';
     }
 
-    void Registry::load(Generator &gen, const std::string &xmlPath) {
+    bool Registry::load(Generator &gen, const std::string &xmlPath) {
         if (isLoaded()) {
             unload();
         }
 
-        loadXML(xmlPath);
+        if (!loadXML(xmlPath)) {
+            unload();
+            return false;
+        }
 
         parseXML(gen);
 
         createErrorClasses();
         disableUnsupportedFeatures();
+
         buildDependencies();
 
         assignCommands(gen);
@@ -1235,6 +1243,7 @@ namespace vkgen
 
         registryPath = xmlPath;
         loadFinished();
+        return true;
     }
 
     void Registry::loadFinished() {
@@ -1295,16 +1304,19 @@ namespace vkgen
         }
     }
 
-    void Registry::loadXML(const std::string &xmlPath) {
+    bool Registry::loadXML(const std::string &xmlPath) {
         const auto err = doc.LoadFile(xmlPath.c_str());
         if (err != tinyxml2::XML_SUCCESS) {
-            throw std::runtime_error("XML load failed: " + std::to_string(err) + " (file: " + xmlPath + ")");
+            std::cerr << "XML load failed: " << std::to_string(err) << " (file: " << xmlPath + ")\n";
+            return false;
         }
 
         root = doc.RootElement();
         if (!root) {
-            throw std::runtime_error("XML file is empty");
+            std::cerr << "XML file is empty\n";
+            return false;
         }
+        return true;
     }
 
     void Registry::parseXML(Generator &gen) {
@@ -1451,8 +1463,18 @@ namespace vkgen::vkr
         if (this == &gen.loader) {
             return;
         }
+
+
         vars.emplace_back(std::ref(vkhandle));
         if (ownerUnique) {
+//            if (gen.getConfig().gen.expApi) {
+//                ownerUnique->setAssignment("");
+//                ownerUnique->setReference(true);
+//            }
+//            else {
+//                ownerUnique->setAssignment(" = {nullptr}");
+//                ownerUnique->setReference(false);
+//            }
             vars.emplace_back(std::ref(*ownerUnique));
         }
         if (ownerRaii) {

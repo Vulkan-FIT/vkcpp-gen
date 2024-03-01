@@ -131,6 +131,8 @@ namespace vkgen
 
         bool isTemplated() const;
 
+        std::string getDispatchDeref() const;
+
         std::string getDispatchSource() const;
 
         std::string getDispatchPFN() const;
@@ -166,6 +168,9 @@ namespace vkgen
         void transformToArray(VariableData &var);
 
         void prepareParams();
+
+
+        void setOptionalAssignments();
 
         bool checkMethod() const;
 
@@ -245,8 +250,6 @@ namespace vkgen
     {
       private:
         void transformMemberArguments();
-
-        void setOptionalAssignments();
 
       protected:
         std::string getSuperclassArgument(const String &superclass) const;
@@ -410,11 +413,12 @@ namespace vkgen
 
     class MemberGeneratorExperimental
     {
-        MemberContext             ctx{};
         const Generator          &gen;
         ClassCommand             &m;
         UnorderedFunctionOutputX &outputDecl;
         UnorderedFunctionOutputX &outputDef;
+        UnorderedFunctionOutputX &outputTemplate;
+        MemberContext             ctx{};
 
         template <typename T>
         void generate(T &res, std::vector<Protect> &protects) {
@@ -422,16 +426,20 @@ namespace vkgen
             if (!protect.empty()) {
                 protects.emplace_back(std::string(protect), true);
             }
+            // bool allowInline = true;
+            // if (m.cls && m.cls->isSubclass) {
+                // allowInline = false;
+            // }
 
             std::string decl;
             std::string def;
-            if (res.isTemplated()) {
-                res.generateX(decl);
-            } else {
+//            if (res.isTemplated()) {
+//                res.generateX(decl);
+//            } else {
                 res.generateX(decl, def);
-            }
+//            }
             if (!def.empty()) {
-                auto &dst = outputDef.get(protects);
+                auto &dst = (res.isTemplated()? outputTemplate : outputDef).get(protects);
                 dst += std::move(def);
             }
             if (!decl.empty()) {
@@ -506,12 +514,15 @@ namespace vkgen
         }
 
       public:
-        MemberGeneratorExperimental(const Generator &gen, ClassCommand &m, UnorderedFunctionOutputX &decl, UnorderedFunctionOutputX &def)
-          : gen(gen), m(m), outputDecl(decl), outputDef(def) {
+        MemberGeneratorExperimental(const Generator &gen, ClassCommand &m, UnorderedFunctionOutputX &decl, UnorderedFunctionOutputX &def, UnorderedFunctionOutputX &templ)
+          : gen(gen), m(m), outputDecl(decl), outputDef(def), outputTemplate(templ) {
             ctx.ns              = Namespace::VK;
             ctx.disableDispatch = true;
             ctx.exp             = true;
             if (m.cls && !m.cls->name.empty()) {
+                if (m.cls->isSubclass) {
+                    ctx.insertSuperclassVar = true;
+                }
             } else {
                 ctx.insertSuperclassVar = true;
                 ctx.isStatic            = true;

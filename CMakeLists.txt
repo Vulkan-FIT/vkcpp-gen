@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.5)
 
-project(generator LANGUAGES CXX)
+project(vkcpp-gen LANGUAGES CXX)
 
 set(CMAKE_VERBOSE_MAKEFILE ON)
 
@@ -68,6 +68,8 @@ SET(SOURCES
 add_executable(${CMAKE_PROJECT_NAME} ${SOURCES} ${HEADERS} ${IMGUI_SOURCES})
 
 target_link_libraries(${CMAKE_PROJECT_NAME} tinyxml2)
+
+set(tinyxml2_BUILD_TESTING OFF CACHE BOOL "Build tests for tinyxml2")
 
 add_subdirectory(tinyxml2)
 add_subdirectory(fmt)

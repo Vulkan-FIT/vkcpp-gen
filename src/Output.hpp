@@ -23,6 +23,8 @@
 #include <list>
 #include <map>
 #include <span>
+#include <variant>
+#include <functional>
 
 namespace vkgen
 {

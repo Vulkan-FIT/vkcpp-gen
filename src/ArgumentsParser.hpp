@@ -26,21 +26,31 @@
 // holds arguments data
 struct ArgOption
 {
-    std::optional<std::string> shortName;
-    std::optional<std::string> longName;
+    std::string shortName;
+    std::string longName;
     bool                       requiredValue = false;  // if true parser loads value with next argument
     bool                       set           = false;  // set to true if argument exists
     std::string                value         = {};
+
+    ArgOption() = default;
+    ArgOption(const std::string &shortName, const std::string &longName, bool required = false)
+        : shortName(shortName), longName(longName), requiredValue(required)
+    {}
 };
 
 // simple class made for parsing command line arguments
 class ArgParser
 {
     using Option = ArgOption;
-    const std::vector<Option *> options;
+    std::vector<std::unique_ptr<Option>> options;
 
   public:
-    ArgParser(std::initializer_list<Option *> list) : options(list) {}
+    // ArgParser(std::initializer_list<Option> list) : options(list) {}
+
+    template <typename... Args>
+    Option& add(Args &&...args) {
+        return *options.emplace_back(std::make_unique<Option>(std::forward<Args>(args)...));
+    }
 
     // parses arguments. throws if there are less arguments than expected
     inline void parse(int argc, char **argv) {
@@ -52,10 +62,10 @@ class ArgParser
         };
 
         for (int i = 0; i < argc; ++i) {
-            for (Option *o : options) {
+            for (const auto &o : options) {
                 std::string_view arg = getArg(i);                                 // fetch current argument
-                if ((o->shortName.has_value() && arg == o->shortName.value()) ||  // compares short name
-                    (o->longName.has_value() && arg == o->longName.value()))      // comapres long name
+                if ((arg == o->shortName) ||  // compares short option
+                    (arg == o->longName))      // comapres long option
                 {
                     if (o->requiredValue) {
                         o->value = getArg(++i);  // try to fetch next argument

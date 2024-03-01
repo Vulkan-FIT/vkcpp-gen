@@ -1,7 +1,9 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-# Vulkan C++ bindings generator
 
-⚠️ **This project is partial WIP and not always up to date!**
+Vulkan C++ bindings generator
+=============================
+
+⚠️ **This project is not always up to date!**
 
 Official C++ bindings: <https://github.com/KhronosGroup/Vulkan-Hpp>
 
@@ -17,17 +19,35 @@ Adding more flexibility and experimental features.
 Configurable via GUI or xml file.
 ![GUI](doc/screenshot.png)
 
-## Requirements
+Requirements
+============
 
-* C++20 capable compiler
+* C++20 capable compiler such as MSVC or clang 
 * Vulkan SDK <https://www.lunarg.com/vulkan-sdk/>
 * CMake <https://cmake.org/>
 
-## Environment
+Build
+=====
 
-Tested on Windows 11, clang 17, Vulkan v1.3.275.
+Obtain copy of repo with dependencies
+```
+git clone --recurse-submodules
+```
+### Compile ###
 
-## License
+```
+cmake -DCMAKE_BUILD_TYPE=Release -B build .
+cmake --build build --config Release
+```
+
+Environment
+===========
+
+Tested on Windows 11, Vulkan v1.3.275.
+Compilers: clang 18.0 and MSVC 19.39.
+
+License
+=======
 Licensed under the MIT License.
 
     https://opensource.org/licenses/MIT

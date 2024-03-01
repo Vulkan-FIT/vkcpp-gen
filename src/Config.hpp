@@ -82,15 +82,15 @@ namespace vkgen
         }
     };
 
-    struct ConfigGroupMacro
+    struct ConfigGroupMacro : public ConfigGroup
     {
-        ConfigGroupMacro() {
-            mNamespaceRAII.parent = &mNamespace;
+        ConfigGroupMacro() : ConfigGroup{ "macro" } {
+            // mNamespaceRAII.data.parent = &mNamespace.data;
         }
 
         Macro mNamespaceSTD{ "", "std", false };
-        Macro mNamespace{ "VULKAN_HPP_NAMESPACE", "vk", true };
-        Macro mNamespaceRAII{ "VULKAN_HPP_RAII_NAMESPACE", "raii", true };
+        ConfigWrapper<Macro> mNamespace{ "namespace", { "VULKAN_HPP_NAMESPACE", "vk", true} };
+        ConfigWrapper<Macro> mNamespaceRAII{ "namespace_raii", { "VULKAN_HPP_RAII_NAMESPACE", "raii", true } };
         Macro mConstexpr{ "VULKAN_HPP_CONSTEXPR", "constexpr", true };
         Macro mConstexpr14{ "VULKAN_HPP_CONSTEXPR_14", "constexpr", true };
         Macro mInline{ "VULKAN_HPP_INLINE", "inline", true };
@@ -98,6 +98,10 @@ namespace vkgen
         Macro mExplicit{ "VULKAN_HPP_TYPESAFE_EXPLICIT", "explicit", true };
         Macro mDispatch{ "VULKAN_HPP_DEFAULT_DISPATCHER_ASSIGNMENT", "", true };
         Macro mDispatchType{ "VULKAN_HPP_DEFAULT_DISPATCHER_TYPE", "DispatchLoaderStatic", true };
+
+        [[nodiscard]] auto reflect() const {
+            return std::tie(mNamespace, mNamespaceRAII);
+        }
     };
 
     struct ConfigGroupRAII : public ConfigGroup
@@ -125,6 +129,8 @@ namespace vkgen
         ConfigWrapper<bool> internalFunctions{ "internal_functions", false };
         ConfigWrapper<bool> internalVkResult{ "internal_vkresult", true };
 
+        ConfigWrapper<bool> smartHandles{ "smart_handles", true };
+
         ConfigWrapper<bool> dispatchParam{ "dispatch_param", true };
         ConfigWrapper<bool> dispatchTemplate{ "dispatch_template", true };
         ConfigWrapper<bool> dispatchLoaderStatic{ "dispatch_loader_static", true };
@@ -138,6 +144,10 @@ namespace vkgen
         ConfigWrapper<NDefine> structConstructors{ "struct_constructors", { "VULKAN_HPP_NO_STRUCT_CONSTRUCTORS", Define::COND_ENABLED } };
         ConfigWrapper<NDefine> structSetters{ "struct_setters", { "VULKAN_HPP_NO_STRUCT_SETTERS", Define::COND_ENABLED } };
         ConfigWrapper<NDefine> structCompare{ "struct_compare", { "VULKAN_HPP_NO_STRUCT_COMPARE", Define::ENABLED } };
+        ConfigWrapper<bool>    spaceshipOperator{ "spaceship_operator", true };
+        ConfigWrapper<bool>    branchHint{ "branch_hint", false };
+        ConfigWrapper<bool>    importStdMacro{ "import_std_macro", false };
+        ConfigWrapper<bool>    integrateVma{ "integrate_vma", false };
 
         ConfigWrapper<Define> structReflect{ "struct_reflect", { "VULKAN_HPP_USE_REFLECT", Define::COND_ENABLED } };
 
@@ -146,7 +156,12 @@ namespace vkgen
 
         ConfigWrapper<NDefine> handleConstructors{ "handles_constructors", { "VULKAN_HPP_NO_HANDLES_CONSTRUCTORS", Define::COND_ENABLED } };
 
+        ConfigWrapper<NDefine> handleTemplates{ "handle_templates", { "VULKAN_HPP_EXPERIMENTAL_NO_TEMPLATES", Define::ENABLED } };
+
         ConfigWrapper<std::string> contextClassName{ "context_class_name", { "Context" } };
+
+        ConfigWrapper<int> classMethods{ "class_methods", { 1 } };
+        ConfigWrapper<int> cppStd{ "cpp_standard", 11 };
 
         ConfigGroupRAII raii;
 
@@ -154,16 +169,23 @@ namespace vkgen
             return std::tie(cppModules,
                             cppFiles,
                             expApi,
+                            cppStd,
                             // internalFunctions,
                             functionsVecAndArray,
                             structConstructors,
                             structSetters,
                             structCompare,
+                            spaceshipOperator,
+                            branchHint,
+                            importStdMacro,
+                            integrateVma,
                             structReflect,
                             unionConstructors,
                             unionSetters,
                             handleConstructors,
+                            handleTemplates,
                             contextClassName,
+                            classMethods,
                             raii);
         }
     };
@@ -198,7 +220,7 @@ namespace vkgen
         }
 
         [[nodiscard]] auto reflect() const {
-            return std::tie(gen);
+            return std::tie(gen, macro);
         }
     };
 
