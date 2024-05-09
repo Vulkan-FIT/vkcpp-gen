@@ -18,6 +18,7 @@
 
 #include "Members.hpp"
 #include "Format.hpp"
+#include "Output.hpp"
 
 #include "Generator.hpp"
 
@@ -141,6 +142,7 @@ namespace vkgen
         return output;
     }
 
+    /*
     void MemberResolver::generate(UnorderedFunctionOutput &decl, UnorderedFunctionOutput &def) {
         // std::cout << "generate: " << dbgtag << '\n';
         setOptionalAssignments();
@@ -164,6 +166,7 @@ namespace vkgen
 
         reset();  // TODO maybe unnecessary
     }
+    */
 
     std::string MemberResolver::createArgumentWithType(const std::string &type) const {
         for (const VariableData &p : cmd->params) {
@@ -946,28 +949,59 @@ namespace vkgen
 
     MemberResolver::~MemberResolver() {}
 
-    void MemberResolver::generateX(std::string &def) {
-        setOptionalAssignments();
-        def += generateDefinition(true);
-    }
+//    void MemberResolver::generateX(std::string &def) {
+//        setOptionalAssignments();
+//        def += generateDefinition(true);
+//    }
+//
+//    void MemberResolver::generateX(std::string &decl, std::string &def) {
+//        setOptionalAssignments();
+//        decl += generateDeclaration();
+//        def += generateDefinition(false);
+//    }
 
-    void MemberResolver::generateX(std::string &decl, std::string &def) {
+    void MemberResolver::generate(UnorderedFunctionOutputX &decl, UnorderedFunctionOutputGroup &def) {
         setOptionalAssignments();
-        decl += generateDeclaration();
-        def += generateDefinition(false);
-    }
 
-    //    template <typename... Args>
-    //    VariableData & MemberResolver::addVar(decltype(cmd->params)::iterator pos, Args &&... args) {
-    //        auto & var = tempVars.emplace_back(std::make_unique<VariableData>(args...));
-    //
-    //        //            std::stringstream s;
-    //        //            s << std::hex << var.get();
-    //        // dbgfield += "    // alloc: <" + s.str() + ">\n";
-    //        cmd->params.insert(pos, std::ref(*var.get()));
-    //        cmd->prepared = false;
-    //        return *var.get();
-    //    }
+        if (gen.getConfig().dbg.methodTags) {
+            for (auto &p : cmd->_params) {
+                dbgfield += p->dbgstr();
+            }
+        }
+
+        std::vector<Protect> protects;
+        if (enhanced) {
+            protects.emplace_back("VULKAN_HPP_DISABLE_ENHANCED_MODE", false);
+        }
+        if (!structChainType.empty()) {
+            protects.emplace_back("VULKAN_HPP_EXPERIMENTAL_NO_STRUCT_CHAIN", false);
+        }
+        const auto &p = cmd->getProtect();
+        if (!guard.empty()) {
+            protects.emplace_back(guard, true);
+        }
+        if (!p.empty()) {
+            protects.emplace_back(p, true);
+        }
+        if (ctx.generateInline) {
+            decl.get(protects) += generateDefinition(true); // TODO move
+        }
+        else {
+            decl.get(protects) += generateDeclaration(); // TODO move
+            auto str = generateDefinition(false);
+            if (!p.empty()) {
+                def.platform.get(protects) += str;
+            }
+            else if (isTemplated()) {
+                def.templ.get(protects) += str;
+            }
+            else {
+                def.def.get(protects) += str;
+            }
+        }
+
+        reset();
+    }
 
     void MemberResolver::disableFirstOptional() {
         for (Var &p : cmd->params) {
@@ -1235,6 +1269,19 @@ namespace vkgen
             }
         }
 
+        if (ctx.structureChain) {
+            for (VariableData &p : params) {
+                if (p.isOutParam() && p.isStruct()) {
+                    structChainType = p.type();
+                    structChainIdentifier = p.identifier();
+                    p.setTemplate("typename X, typename Y, typename... Z");
+                    p.setType("StructureChain<X, Y, Z...>");
+                    p.setIdentifier("structureChain");
+                    break;
+                }
+            }
+        }
+
         if (ctx.ns == Namespace::RAII && cmd->createsHandle()) {
             const auto &var = cmd->getLastHandleVar();
             if (var) {
@@ -1455,6 +1502,10 @@ namespace vkgen
                 output += ";\n";
 
                 std::string init = "data_.first";
+                if (!structChainType.empty()) {
+                    std::string type = gen.m_ns + "::" + structChainType;
+                    init = "\n        data_.first.template get<" + type + ">()";
+                }
                 for (VariableData &v : cmd->outParams) {
                     v.createLocalReferenceVar(gen, "      ", init, output);
                     init = "data_.second";
@@ -1463,6 +1514,12 @@ namespace vkgen
                 VariableData &v = cmd->outParams[0];
                 returnId        = v.identifier();
                 v.createLocalVar(gen, "      ", dbg ? "/*var def*/" : "", output);
+
+                if (!structChainType.empty()) {
+                    std::string type = gen.m_ns + "::" + structChainType;
+                    output += "      " + type + " &" + structChainIdentifier + " =\n";
+                    output += "        structureChain.template get<" + type + ">();\n";
+                }
             }
             for (VariableData *v : countVars) {
                 if (v->getIgnoreProto() && !v->getIgnoreFlag()) {
@@ -1474,6 +1531,8 @@ namespace vkgen
                 output += "      " + declareReturnVar();
             }
         }
+
+
 
         if (arrayVariation && !inputSizeVar) {
             std::string id   = cmd->outParams[0].get().identifier();
@@ -1742,11 +1801,9 @@ for (auto const &{2} : {3}) {
 
     MemberResolverDefault::~MemberResolverDefault() {}
 
-    void MemberResolverDefault::generate(UnorderedFunctionOutput &decl, UnorderedFunctionOutput &def) {
-        // std::cerr << "MemberResolverDefault::generate  " << cmd->name.original << '\n';
-        MemberResolver::generate(decl, def);
-        // std::cerr << "MemberResolverDefault::generate  " << cmd->name.original << "  done " << '\n';
-    }
+//    void MemberResolverDefault::generate(UnorderedFunctionOutput &decl, UnorderedFunctionOutput &def) {
+//        MemberResolver::generate(decl, def);
+//    }
 
     MemberResolverStaticDispatch::MemberResolverStaticDispatch(const Generator &gen, ClassCommand &d, MemberContext &ctx) : MemberResolver(gen, d, ctx) {
         returnType = cmd->type;
@@ -2182,6 +2239,25 @@ for (auto const &{2} : {3}) {
         return output;
     }
 
+    MemberGeneratorExperimental::MemberGeneratorExperimental(const Generator &gen, ClassCommand &m, UnorderedFunctionOutputX     &decl, UnorderedFunctionOutputGroup &out)
+      : gen(gen), m(m), decl(decl), out(out) {
+        ctx.ns              = Namespace::VK;
+        if (gen.getConfig().gen.expApi) {
+            ctx.disableDispatch = true;
+            ctx.exp             = true;
+            //
+        }
+        if (m.cls && !m.cls->name.empty()) {
+            if (m.cls->isSubclass) {
+                ctx.insertSuperclassVar = true;
+            }
+        } else {
+            ctx.insertSuperclassVar = true;
+            ctx.isStatic            = true;
+            ctx.generateInline      = true;
+        }
+    }
+
     void MemberGeneratorExperimental::generate() {
         if (!m.src->canGenerate() || !m.src->top) {
             return;
@@ -2210,6 +2286,15 @@ for (auto const &{2} : {3}) {
         if (gen.getConfig().gen.expApi && last->isOutParam() && last->isHandle() && !gen.findHandle(last->original.type()).isSubclass) {
             // std::cout << "skip C: " << m.name.original << "\n";
             return;
+        }
+
+        if (m.src->isStructChain()) {
+            out.def += "    // Chain: " + m.src->name + " (" + m.src->name.original + ")\n";
+            std::vector<Protect>  protects;
+            ctx.structureChain = true;
+            MemberResolverDefault resolver{ gen, m, ctx };
+            generate(resolver, protects);
+            ctx.structureChain = false;
         }
 
         switch (m.src->nameCat) {
@@ -2247,9 +2332,9 @@ for (auto const &{2} : {3}) {
                 return;
         }
     }
-
+/*
     void MemberGenerator::generate() {
-        // funcs += "// gen: " + m.src->name.original + "\n";
+        funcs += "// gen: " + m.src->name.original + "\n";
 
         if (!m.src->canGenerate()) {
             return;
@@ -2338,5 +2423,5 @@ for (auto const &{2} : {3}) {
             default: generate<MemberResolverDefault>(); return;
         }
     }
-
+*/
 }  // namespace vkgen

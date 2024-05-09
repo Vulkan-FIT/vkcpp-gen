@@ -425,9 +425,9 @@ namespace vkgen
             s.aliases.emplace_back(a.first.data(), true);
         }
         for (auto &e : structextends) {
-            auto &dst = structs[e.first.data()];
-            auto &s   = structs[e.second.data()];
-            dst.extends.emplace_back(&s);
+            auto &src = structs[e.first.data()];
+            auto &dst   = structs[e.second.data()];
+            dst.extends.emplace_back(&src);
         }
 
         handles.addTypes(types);
@@ -1515,7 +1515,7 @@ namespace vkgen::vkr
         return nullptr;
     }
 
-    void Command::init() {
+    void Command::init(const Registry &reg) {
         _params.bind();
 
         initParams();
@@ -1530,10 +1530,16 @@ namespace vkgen::vkr
                         hasHandle = true;
                     }
                 }
+                if (p->isStruct()) {
+                    const auto &s = reg.structs.find(p->original.type());
+                    if (!s->extends.empty()) {
+                        structChain = &*s;
+                    }
+                }
                 canTransform = true;
             }
 
-            auto sizeVar = p->getLengthVar();
+            auto *sizeVar = p->getLengthVar();
             if (sizeVar) {
                 canTransform = true;
             }
@@ -1596,7 +1602,7 @@ namespace vkgen::vkr
             }
         }
 
-        init();
+        init(gen);
     }
 
     Command::Command(const Registry &reg, const vkr::Command &o, const std::string_view alias) : BaseType(MetaType::Command) {
@@ -1613,7 +1619,7 @@ namespace vkgen::vkr
             _params.push_back(std::make_unique<VariableData>(*p));
         }
 
-        init();
+        init(reg);
     }
 
     Command::PFNReturnCategory getPFNReturnCategory(const std::string &type) {

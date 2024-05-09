@@ -200,7 +200,7 @@ namespace vkgen
 
         std::string_view getProtect() const;
 
-        void             setProtect(const std::string_view);
+        void setProtect(const std::string_view);
 
         bool hasProtect() const {
             return !protect.empty();
@@ -393,10 +393,12 @@ namespace vkgen
             }
         };
 
+        struct Struct;
+
         struct Command : public BaseType
         {
           private:
-            void init();
+            void init(const Registry &reg);
 
             void initParams() {
                 if (params.size() != _params.size()) {
@@ -429,13 +431,13 @@ namespace vkgen
 
             enum class CommandFlags : uint8_t
             {
-                NONE,
+                NONE     = 0,
                 ALIAS    = 1,
-                INDIRECT = 2,
+                INDIRECT = 1 << 1,
                 // RAII_ONLY = 4,
-                CREATES_HANDLE     = 8,
-                CPP_VARIANT        = 16,
-                OVERLOADED_DESTROY = 32
+                CREATES_HANDLE     = 1 << 3,
+                CPP_VARIANT        = 1 << 4,
+                OVERLOADED_DESTROY = 1 << 5,
             };
 
             enum class PFNReturnCategory
@@ -456,6 +458,7 @@ namespace vkgen
             PFNReturnCategory        pfnReturn;
             EnumFlag<CommandFlags>   flags{};
             vkr::Handle             *top{};
+            const vkr::Struct             *structChain{};
 
             //  Command(const Generator &gen, xml::Element elem,
             //          const std::string &className) noexcept;
@@ -587,6 +590,10 @@ namespace vkgen
 
             bool createsHandle() const {
                 return flags & CommandFlags::CREATES_HANDLE;
+            }
+
+            bool isStructChain() const {
+                return structChain;
             }
 
             bool getsObject() const {

@@ -34,6 +34,7 @@ namespace vkgen
         return out;
     }
 
+    /*
     std::string UnorderedOutput::get(bool onlyNoProtect) const {
         if (onlyNoProtect) {
             std::string o = segments.at("");
@@ -51,6 +52,7 @@ namespace vkgen
         auto [code, protect] = g.genCodeAndProtect(type, function, bypass);
         segments[protect] += code;
     }
+    */
 
     void UnorderedFunctionOutput::add(const BaseType &type, std::function<void(std::string &)> function, const std::string &guard) {
         if (!type.canGenerate()) {
@@ -60,6 +62,25 @@ namespace vkgen
         auto [code, protect] = g.genCodeAndProtect(type, function, false);
 
         segments[protect].add(guard, code);
+    }
+
+    void UnorderedFunctionOutputX::add(const BaseType &type, std::function<void(std::string &)> function, const std::string &guard) {
+        if (!type.canGenerate()) {
+            return;
+        }
+
+        std::string out;
+        function(out);
+
+        const auto &p = type.getProtect();
+        if (guard.empty()) {
+            std::array<Protect, 1> pro = {Protect(p, true)};
+            get(pro) += out;
+        }
+        else {
+            std::array<Protect, 2> pro = {Protect(guard, true), Protect(p, true)};
+            get(pro) += out;
+        }
     }
 
     std::string UnorderedFunctionOutput::get(bool onlyNoProtect) const {
@@ -108,6 +129,129 @@ namespace vkgen
         }
 
         // std::cout << "Generated: " << p << ", reserved: " << content.size() << "B\n";
+    }
+
+
+    UnorderedFunctionOutputX::UnorderedFunctionOutputX() {
+        output = std::make_unique<OutputBuffer>();
+    }
+
+    void UnorderedFunctionOutputX::clear() {
+        output = std::make_unique<OutputBuffer>(); // TODO
+        segments.clear();
+    }
+
+    size_t UnorderedFunctionOutputX::size() const {
+        size_t s = output->size();
+        for (const auto &k : segments) {
+            s += k.second.size();
+        }
+        return s;
+    }
+
+    std::string UnorderedFunctionOutputX::toString() const {
+        std::stringstream s;
+        write(s);
+        return s.str();
+    }
+
+    OutputBuffer &UnorderedFunctionOutputX::get(const std::span<Protect> protects) {
+        UnorderedFunctionOutputX *output = this;
+        for (const auto &p : protects) {
+            if (!p.first.empty()) {
+                output = &output->get(p.first, p.second);
+            }
+        }
+        return output->get();
+    }
+
+    void UnorderedFunctionOutputX::write(std::ostream &os) const {
+        output->write(os);
+        for (const auto &s : segments) {
+            if (s.second.ifdef) {
+                os << "#ifdef ";
+            } else {
+                os << "#ifndef ";
+            }
+            os << s.first << '\n';
+            s.second.write(os);
+            os << "#endif // " << s.first << '\n';
+        }
+    }
+
+    OutputBuffer::OutputBuffer() {
+        emplace();  // sentinel
+    }
+
+    OutputBuffer::OutputBuffer(std::string &&str) {
+        list.emplace_back(UnmutableString{ std::move(str) });
+    }
+
+    size_t OutputBuffer::size() const {
+        return m_size;
+    }
+
+    std::string &OutputBuffer::emplace() {
+        auto &s = list.emplace_back(std::string{});
+        return std::get<std::string>(s);
+    }
+
+    void OutputBuffer::print() const {
+        std::cout << "-- Out buffer {" << std::endl;
+        for (const auto &l : list) {
+            std::cout << "<" << l.index() << ">";
+            std::visit([&](auto &&arg) { std::cout << ", " << arg.size() << "B"; }, l);
+            std::cout << std::endl;
+        }
+        std::cout << "}" << std::endl;
+
+        //    std::string output;
+        //    for (const auto &l : list) {
+        //        output += l;
+        //    }
+        //    std::cout << output << std::endl;
+    }
+
+    void OutputBuffer::write(std::ostream &stream) const {
+        for (const auto &l : list) {
+            std::visit([&](auto &&arg) { stream << arg; }, l);
+        }
+    }
+
+    OutputBuffer &OutputBuffer::operator+=(const std::string_view str) {
+        list.emplace_back(std::string_view{ str });
+        m_size += str.size();
+        return *this;
+    }
+
+    OutputBuffer &OutputBuffer::operator+=(std::string &&str) {
+        m_size += str.size();
+        list.emplace_back(vkgen::UnmutableString{ std::move(str) });
+        return *this;
+    }
+
+    OutputBuffer &OutputBuffer::operator+=(const std::string &str) {
+        if (list.rbegin()->index() == 0) {
+            std::get<std::string>(*list.rbegin()) += str;
+            m_size += str.size();
+        } else {
+            list.emplace_back(std::string{ str });
+            m_size += str.size();
+        }
+        return *this;
+    }
+
+    OutputBuffer &OutputBuffer::operator+=(const char * const str) {
+        const auto &s = std::string::traits_type::length(str);
+        list.emplace_back(std::string_view{ str, s });
+        m_size += s;
+        return *this;
+    }
+
+    OutputBuffer &OutputBuffer::operator+=(UnorderedFunctionOutputX &&out) {
+        m_size += out.size();
+        list.emplace_back(std::move(out));
+        return *this;
     }
 
 }  // namespace vkgen

@@ -45,6 +45,7 @@ namespace vkgen
         bool      insertSuperclassVar        = {};
         bool      commentOut                 = {};
         bool      templateVector             = {};
+        bool      structureChain             = {};
         bool      exp                        = {};
     };
 
@@ -60,6 +61,8 @@ namespace vkgen
         std::string                                clsname;
         std::string                                pfnSourceOverride;
         std::string                                pfnNameOverride;
+        std::string                                structChainType;
+        std::string                                structChainIdentifier;
         std::map<std::string, std::string>         varSubstitution;
         std::vector<std::unique_ptr<VariableData>> tempVars;
 
@@ -74,6 +77,7 @@ namespace vkgen
         std::string guard;
 
         MemberContext ctx;
+        bool          enhanced             = true;
         bool          constructor          = {};
         bool          constructorInterop   = {};
         bool          specifierInline      = {};
@@ -169,7 +173,6 @@ namespace vkgen
 
         void prepareParams();
 
-
         void setOptionalAssignments();
 
         bool checkMethod() const;
@@ -187,11 +190,13 @@ namespace vkgen
 
         virtual ~MemberResolver();
 
-        virtual void generate(UnorderedFunctionOutput &decl, UnorderedFunctionOutput &def);
+        // virtual void generate(UnorderedFunctionOutput &decl, UnorderedFunctionOutput &def);
 
-        void generateX(std::string &def);
+        // void generateX(std::string &def);
 
-        void generateX(std::string &decl, std::string &def);
+        // void generateX(std::string &decl, std::string &def);
+
+        void generate(UnorderedFunctionOutputX &decl, UnorderedFunctionOutputGroup &def);
 
         template <typename... Args>
         VariableData &addVar(decltype(cmd->params)::iterator pos, Args &&...args) {
@@ -261,7 +266,7 @@ namespace vkgen
 
         virtual ~MemberResolverDefault();
 
-        void generate(UnorderedFunctionOutput &decl, UnorderedFunctionOutput &def) override;
+        // void generate(UnorderedFunctionOutput &decl, UnorderedFunctionOutput &def) override;
     };
 
     class MemberResolverDbg final : public MemberResolverDefault
@@ -271,11 +276,11 @@ namespace vkgen
             dbgtag = "disabled";
         }
 
-        void generate(UnorderedFunctionOutput &decl, UnorderedFunctionOutput &def) override {
-            decl += "/*\n";
-            decl += generateDeclaration();
-            decl += "*/\n";
-        }
+//        void generate(UnorderedFunctionOutput &decl, UnorderedFunctionOutput &def) override {
+//            decl += "/*\n";
+//            decl += generateDeclaration();
+//            decl += "*/\n";
+//        }
     };
 
     class MemberResolverStaticDispatch final : public MemberResolver
@@ -309,6 +314,7 @@ namespace vkgen
       public:
         MemberResolverPass(const Generator &gen, ClassCommand &d, MemberContext &ctx) : MemberResolver(gen, d, ctx) {
             ctx.disableSubstitution = true;
+            enhanced = false;
             dbgtag                  = "pass";
         }
 
@@ -413,44 +419,44 @@ namespace vkgen
 
     class MemberGeneratorExperimental
     {
-        const Generator          &gen;
-        ClassCommand             &m;
-        UnorderedFunctionOutputX &outputDecl;
-        UnorderedFunctionOutputX &outputDef;
-        UnorderedFunctionOutputX &outputTemplate;
-        MemberContext             ctx{};
+        const Generator              &gen;
+        ClassCommand                 &m;
+        UnorderedFunctionOutputX     &decl;
+        UnorderedFunctionOutputGroup &out;
+        MemberContext                 ctx{};
 
         template <typename T>
         void generate(T &res, std::vector<Protect> &protects) {
-            auto protect = m.src->getProtect();
-            if (!protect.empty()) {
-                protects.emplace_back(std::string(protect), true);
-            }
+//            auto protect = m.src->getProtect();
+//            if (!protect.empty()) {
+//                protects.emplace_back(std::string(protect), true);
+//            }
             // bool allowInline = true;
             // if (m.cls && m.cls->isSubclass) {
-                // allowInline = false;
+            // allowInline = false;
             // }
 
-            std::string decl;
-            std::string def;
-//            if (res.isTemplated()) {
-//                res.generateX(decl);
-//            } else {
-                res.generateX(decl, def);
+//            std::string decl;
+//            std::string def;
+            //            if (res.isTemplated()) {
+            //                res.generateX(decl);
+            //            } else {
+            // res.generateX(decl, def);
+            res.generate(decl, out);
+            //            }
+//            if (!def.empty()) {
+//                auto &dst = (res.isTemplated() ? out.templ : out.def).get(protects);
+//                dst += std::move(def);
 //            }
-            if (!def.empty()) {
-                auto &dst = (res.isTemplated()? outputTemplate : outputDef).get(protects);
-                dst += std::move(def);
-            }
-            if (!decl.empty()) {
-                auto &dst = outputDecl.get(protects);
-                dst += std::move(decl);
-            }
+//            if (!decl.empty()) {
+//                auto &dst = this->decl.get(protects);
+//                dst += std::move(decl);
+//            }
         }
 
         void generatePass() {
             std::vector<Protect> protects;
-            protects.emplace_back("VULKAN_HPP_EXPERIMENTAL_CSTYLE", false);
+            // protects.emplace_back("VULKAN_HPP_EXPERIMENTAL_CSTYLE", false);
             MemberResolverPass resolver{ gen, m, ctx };
             generate(resolver, protects);
         }
@@ -514,25 +520,12 @@ namespace vkgen
         }
 
       public:
-        MemberGeneratorExperimental(const Generator &gen, ClassCommand &m, UnorderedFunctionOutputX &decl, UnorderedFunctionOutputX &def, UnorderedFunctionOutputX &templ)
-          : gen(gen), m(m), outputDecl(decl), outputDef(def), outputTemplate(templ) {
-            ctx.ns              = Namespace::VK;
-            ctx.disableDispatch = true;
-            ctx.exp             = true;
-            if (m.cls && !m.cls->name.empty()) {
-                if (m.cls->isSubclass) {
-                    ctx.insertSuperclassVar = true;
-                }
-            } else {
-                ctx.insertSuperclassVar = true;
-                ctx.isStatic            = true;
-                ctx.generateInline      = true;
-            }
-        }
+        MemberGeneratorExperimental(const Generator &gen, ClassCommand &m, UnorderedFunctionOutputX     &decl, UnorderedFunctionOutputGroup &out);
 
         void generate();
     };
 
+    /*
     class MemberGenerator
     {
         Generator               &gen;
@@ -654,7 +647,7 @@ namespace vkgen
 
         void generate();
     };
-
+    */
 }  // namespace vkgen
 
 #endif  // GENERATOR_MEMBERS_HPP

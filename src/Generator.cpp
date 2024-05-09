@@ -17,7 +17,7 @@
 // SOFTWARE.
 
 #include "Generator.hpp"
-
+#include "Registry.hpp"
 #include "Format.hpp"
 
 #include <filesystem>
@@ -1486,117 +1486,7 @@ static constexpr char const *RES_RAII{ R"(
 
 // static constexpr char const *RES_{R"()"};
 
-vkgen::UnorderedFunctionOutputX::UnorderedFunctionOutputX() {
-    output = std::make_unique<OutputBuffer>();
-}
-
-size_t vkgen::UnorderedFunctionOutputX::size() const {
-    size_t s = output->size();
-    for (const auto &k : segments) {
-        s += k.second.size();
-    }
-    return s;
-}
-
-vkgen::OutputBuffer &vkgen::UnorderedFunctionOutputX::get(const std::span<Protect> protects) {
-    UnorderedFunctionOutputX *output = this;
-    for (const auto &p : protects) {
-        if (!p.first.empty()) {
-            output = &output->get(p.first, p.second);
-        }
-    }
-    return output->get();
-}
-
-void vkgen::UnorderedFunctionOutputX::write(std::ostream &os) const {
-    output->write(os);
-    for (const auto &s : segments) {
-        if (s.second.ifdef) {
-            os << "#ifdef ";
-        } else {
-            os << "#ifndef ";
-        }
-        os << s.first << '\n';
-        s.second.write(os);
-        os << "#endif // " << s.first << '\n';
-    }
-}
-
-vkgen::OutputBuffer::OutputBuffer() {
-    emplace();  // sentinel
-}
-
-vkgen::OutputBuffer::OutputBuffer(std::string &&str) {
-    list.emplace_back(UnmutableString{ std::move(str) });
-}
-
-size_t vkgen::OutputBuffer::size() const {
-    return m_size;
-}
-
-std::string &vkgen::OutputBuffer::emplace() {
-    auto &s = list.emplace_back(std::string{});
-    return std::get<std::string>(s);
-}
-
-void vkgen::OutputBuffer::print() const {
-    std::cout << "-- Out buffer {" << std::endl;
-    for (const auto &l : list) {
-        std::cout << "<" << l.index() << ">";
-        std::visit([&](auto &&arg) { std::cout << ", " << arg.size() << "B"; }, l);
-        std::cout << std::endl;
-    }
-    std::cout << "}" << std::endl;
-
-    //    std::string output;
-    //    for (const auto &l : list) {
-    //        output += l;
-    //    }
-    //    std::cout << output << std::endl;
-}
-
-void vkgen::OutputBuffer::write(std::ostream &stream) const {
-    for (const auto &l : list) {
-        std::visit([&](auto &&arg) { stream << arg; }, l);
-    }
-}
-
-vkgen::OutputBuffer &vkgen::OutputBuffer::operator+=(const std::string_view str) {
-    list.emplace_back(std::string_view{ str });
-    m_size += str.size();
-    return *this;
-}
-
-vkgen::OutputBuffer &vkgen::OutputBuffer::operator+=(std::string &&str) {
-    m_size += str.size();
-    list.emplace_back(vkgen::UnmutableString{ std::move(str) });
-    return *this;
-}
-
-vkgen::OutputBuffer &vkgen::OutputBuffer::operator+=(const std::string &str) {
-    if (list.rbegin()->index() == 0) {
-        std::get<std::string>(*list.rbegin()) += str;
-        m_size += str.size();
-    } else {
-        list.emplace_back(std::string{ str });
-        m_size += str.size();
-    }
-    return *this;
-}
-
-vkgen::OutputBuffer &vkgen::OutputBuffer::operator+=(const char * const str) {
-    const auto &s = std::string::traits_type::length(str);
-    list.emplace_back(std::string_view{ str, s });
-    m_size += s;
-    return *this;
-}
-
-vkgen::OutputBuffer &vkgen::OutputBuffer::operator+=(UnorderedFunctionOutputX &&out) {
-    m_size += out.size();
-    list.emplace_back(std::move(out));
-    return *this;
-}
-
+/*
 [[deprecated]] static std::string
   regex_replace(const std::string &input, const std::regex &regex, std::function<std::string(std::smatch const &match)> format) {
     std::string                       output;
@@ -1614,6 +1504,9 @@ vkgen::OutputBuffer &vkgen::OutputBuffer::operator+=(UnorderedFunctionOutputX &&
     }
     return output;
 }
+*/
+
+namespace vkgen {
 
 std::string vkgen::Generator::genWithProtect(const std::string &code, const std::string &protect) const {
     std::string output;
@@ -1661,42 +1554,43 @@ std::string vkgen::Generator::genOptional(const BaseType &type, std::function<vo
     return genWithProtect(code, protect);
 }
 
-std::string vkgen::Generator::gen(const Define &define, std::function<void(std::string &)> function) const {
-    std::string output;
-    if (define.state == Define::DISABLED) {
-        return output;
+std::string vkgen::Generator::genPlatform(const BaseType &type, std::function<void(std::string &)> function, bool bypass) {
+    const auto &p = type.getProtect();
+    if (!p.empty()) {
+        outputFuncs.platform.add(type, function);
+        return "";
     }
-    if (define.state == Define::COND_ENABLED) {
-        std::string inner;
-        function(inner);
-        if (!inner.empty()) {
-            output += "#if !defined( " + define.define + " )\n";
-            output += inner;
-            output += "#endif // " + define.define + "\n";
-        }
-    } else {
-        function(output);
-    }
-    return output;
+    return genOptional(type, function);
 }
 
-std::string vkgen::Generator::gen(const NDefine &define, std::function<void(std::string &)> function) const {
-    std::string output;
-    if (define.state == Define::DISABLED) {
+static std::string genDefine(const std::string &define, const Define::State state, const bool neg, std::function<void(std::string &)> function) {
+    if (state == Define::DISABLED) {
+        return "";
+    }
+    std::string code;
+    function(code);
+    if (state == Define::COND_ENABLED) {
+        std::string output;
+        if (!code.empty()) {
+            output += "#if ";
+            if (neg) {
+                output += '!';
+            }
+            output += "defined( " + define + " )\n";
+            output += code;
+            output += "#endif // " + define + "\n";
+        }
         return output;
     }
-    if (define.state == Define::COND_ENABLED) {
-        std::string inner;
-        function(inner);
-        if (!inner.empty()) {
-            output += "#if !defined( " + define.define + " )\n";
-            output += inner;
-            output += "#endif // " + define.define + "\n";
-        }
-    } else {
-        function(output);
-    }
-    return output;
+    return code;
+}
+
+std::string Generator::gen(const Define &define, std::function<void(std::string &)> function) const {
+    return genDefine(define.define, define.state, false, function);
+}
+
+std::string Generator::gen(const NDefine &define, std::function<void(std::string &)> function) const {
+    return genDefine(define.define, define.state, true, function);
 }
 
 std::string vkgen::Generator::genNamespaceMacro(const Macro &m) {
@@ -1709,6 +1603,8 @@ std::string vkgen::Generator::genNamespaceMacro(const Macro &m) {
     }
     return output;
 }
+
+} // vkgen
 
 std::string vkgen::Generator::generateDefines() {
     std::string output;
@@ -2237,12 +2133,14 @@ void vkgen::Generator::generateMainFile(OutputBuffer &output) {
     // output += "#  endif // VULKAN_HPP_EXPERIMENTAL_NO_VK_FUNCS\n";
 
     std::string ifdef;
-    for (const auto &k : platformOutput.segments) {
-        const std::string &protect = k.first;
-        const std::string &content = k.second;
+    for (const auto &p : platforms) {
+        const auto &protect = p.protect;
+        // const std::string &content = k.second;
 
-        if (!protect.empty() && !content.empty()) {
-            ifdef += "    defined( " + protect + " ) ||\\\n";
+        if (!protect.empty()) {
+            ifdef += "    defined( ";
+            ifdef += protect;
+            ifdef += " ) ||\\\n";
         }
     }
     if (!ifdef.empty()) {
@@ -2286,48 +2184,48 @@ static void createPath(const std::filesystem::path &path) {
     }
 }
 
-//std::pair<std::string, std::string> vkgen::Generator::generateModuleFunctions(GenOutput &out) {
-//    auto &funcs      = out.addFile("_funcs_exp");
-//    auto &funcs_impl = out.addFile("_funcs_impl_exp");
-//    // auto &mock2 = out.addFile("_mock2");
+// std::pair<std::string, std::string> vkgen::Generator::generateModuleFunctions(GenOutput &out) {
+//     auto &funcs      = out.addFile("_funcs_exp");
+//     auto &funcs_impl = out.addFile("_funcs_impl_exp");
+//     // auto &mock2 = out.addFile("_mock2");
 //
-//    const Handle empty{ *this };
+//     const Handle empty{ *this };
 //
-//    UnorderedFunctionOutputX decl1;
-//    UnorderedFunctionOutputX def1;
+//     UnorderedFunctionOutputX decl1;
+//     UnorderedFunctionOutputX def1;
 //
-//    for (auto &c : commands) {
-//        if (!c.isSuppored()) {
-//            continue;
-//        }
+//     for (auto &c : commands) {
+//         if (!c.isSuppored()) {
+//             continue;
+//         }
 //
-//        /*
-//        if (!c.params.empty()) {
-//            const VariableData &first = *c.params.begin();
-//            if (first.isHandle()) {
-//            }
-//        }
-//        */
+//         /*
+//         if (!c.params.empty()) {
+//             const VariableData &first = *c.params.begin();
+//             if (first.isHandle()) {
+//             }
+//         }
+//         */
 //
-//        {
-//            ClassCommand                data{ this, &empty, c };
-//            MemberGeneratorExperimental g{ *this, data, decl1, def1 };
+//         {
+//             ClassCommand                data{ this, &empty, c };
+//             MemberGeneratorExperimental g{ *this, data, decl1, def1 };
 //
-//            g.generate();
-//        }
-//    }
+//             g.generate();
+//         }
+//     }
 //
-//    funcs += std::move(decl1);
-//    funcs_impl += std::move(def1);
+//     funcs += std::move(decl1);
+//     funcs_impl += std::move(def1);
 //
-//    std::string outputDecl;
-//    std::string outputDef;
-//    const auto  append = [&](std::string &output, const std::string &name) { output += "#include \"" + out.getFilename(name) + "\"\n"; };
-//    append(outputDecl, "_funcs_exp");
-//    append(outputDef, "_funcs_impl_exp");
+//     std::string outputDecl;
+//     std::string outputDef;
+//     const auto  append = [&](std::string &output, const std::string &name) { output += "#include \"" + out.getFilename(name) + "\"\n"; };
+//     append(outputDecl, "_funcs_exp");
+//     append(outputDef, "_funcs_impl_exp");
 //
-//    return std::make_pair(outputDecl, outputDef);
-//}
+//     return std::make_pair(outputDecl, outputDef);
+// }
 
 void vkgen::Generator::generateModuleEnums(OutputBuffer &output) {
     output += gen(cfg.gen.handleTemplates, [&](std::string &output) {
@@ -2927,7 +2825,7 @@ void vkgen::Generator::generateFiles(std::filesystem::path path) {
     // std::cout << "gen files " << '\n';
 
     std::string const prefix = "vulkan";
-    std::string       ext    = ".hpp";
+    std::string const ext    = ".hpp";
 
     GenOutput out{ prefix, ext, path };
 
@@ -2958,8 +2856,7 @@ void vkgen::Generator::generateFiles(std::filesystem::path path) {
     forward += "#include \"" + out.getFilename("_structs_forward") + "\"\n";
     forward += "#include \"" + out.getFilename("_handles_forward") + "\"\n";
 
-    std::string funcsDef, funcsTempl;
-    generateHandles(handles, smart_handles, out, funcsDef, funcsTempl);
+    generateHandles(handles, smart_handles, out);
 
     structs += generateStructs();
 
@@ -2974,37 +2871,21 @@ void vkgen::Generator::generateFiles(std::filesystem::path path) {
         generateFuncsRAII(raii_funcs);
     }
 
+    funcs += beginNamespace();
     if (cfg.gen.cppFiles) {
-        auto &impl       = out.addFile("_impl", ".cpp");
+        auto &impl = out.addFile("_impl", ".cpp");
         impl += beginNamespace();
-        impl += outputFuncs.get(true);
-        impl += "#ifndef VULKAN_HPP_DISABLE_ENHANCED_MODE\n";
-        impl += outputFuncsEnhanced.get(true);
-        impl += "#endif // VULKAN_HPP_DISABLE_ENHANCED_MODE\n";
-        impl += funcsDef;
+        funcs += std::move(outputFuncs.def);
         impl += endNamespace();
     }
-
-    funcs += beginNamespace();
-    if (!cfg.gen.cppFiles) {
-        funcs += outputFuncs.get(true);
-        funcs += "#ifndef VULKAN_HPP_DISABLE_ENHANCED_MODE\n";
-        funcs += outputFuncsEnhanced.get(true);
-        funcs += "#endif // VULKAN_HPP_DISABLE_ENHANCED_MODE\n";
-        funcs += funcsDef;
+    else {
+        funcs += std::move(outputFuncs.def);
     }
-    funcs += funcsTempl;
+    funcs += std::move(outputFuncs.templ);
     funcs += endNamespace();
 
-    for (const auto &o : outputFuncs.segments) {
-        const auto &key = o.first;
-        if (key.empty()) {
-            continue;
-        }
-        platformOutput.segments[key] += o.second.get(*this);
-    }
     platforms += beginNamespace();
-    platforms += platformOutput.get();
+    platforms += std::move(outputFuncs.platform);
     platforms += endNamespace();
 
     generateMainFile(output);
@@ -3027,8 +2908,8 @@ void vkgen::Generator::generateEnumStr(const Enum &data, std::string &output, st
 
     output += "/*" + name + "*/\n";
 
-    UnorderedOutput members{ *this };
-    UnorderedOutput to_string{ *this };
+    UnorderedFunctionOutputX members;
+    UnorderedFunctionOutputX to_string;
 
     for (const auto &m : data.members) {
         members.add(m, [&](std::string &output) { output += "    " + m.name + " = " + m.name.original + ",\n"; });
@@ -3050,7 +2931,7 @@ void vkgen::Generator::generateEnumStr(const Enum &data, std::string &output, st
 
     output += " {\n";
     // strStripSuffix(output, ",\n");
-    output += members.get();
+    output += members.toString();
     output += "\n  };\n";
 
     for (const auto &a : data.aliases) {
@@ -3058,31 +2939,31 @@ void vkgen::Generator::generateEnumStr(const Enum &data, std::string &output, st
     }
 
     if (data.isBitmask) {
-         genFlagTraits(data, name, output, to_string_output);
+        genFlagTraits(data, name, output, to_string_output);
     } else {
         // to_string_output += genOptional(data, [&](std::string &output) {
-            std::string str = to_string.get();
-            if (str.empty()) {
-                to_string_output += vkgen::format(R"(
+        std::string str = to_string.toString();
+        if (str.empty()) {
+            to_string_output += vkgen::format(R"(
   VULKAN_HPP_INLINE std::string to_string({0}) {{
     return {1};
   }}
 )",
-                                        name,
-                                        "\"(void)\"");
-            } else {
-                str += "  default: return \"invalid ( \" + " + m_ns + "::toHexString(static_cast<uint32_t>(value))  + \" )\";";
+                                              name,
+                                              "\"(void)\"");
+        } else {
+            str += "  default: return \"invalid ( \" + " + m_ns + "::toHexString(static_cast<uint32_t>(value))  + \" )\";";
 
-                to_string_output += vkgen::format(R"(
+            to_string_output += vkgen::format(R"(
   VULKAN_HPP_INLINE std::string to_string({0} value) {{
     switch (value) {{
       {1}
     }}
   }}
 )",
-                                        name,
-                                        str);
-            }
+                                              name,
+                                              str);
+        }
         // });
     }
 
@@ -3090,10 +2971,11 @@ void vkgen::Generator::generateEnumStr(const Enum &data, std::string &output, st
 }
 
 void vkgen::Generator::generateEnum(const Enum &data, OutputBuffer &output, OutputBuffer &output_forward, OutputBuffer &to_string_output) {
+
     auto p = data.getProtect();
     if (!p.empty()) {
         // std::cout << "enum with p: " << p << '\n';
-        platformOutput.add(data, [&](std::string &output) { generateEnumStr(data, output, output); });
+        outputFuncs.platform.add(data, [&](std::string &output) { generateEnumStr(data, output, output); });
     } else {
         output += genOptional(data, [&](std::string &output) { generateEnumStr(data, output, to_string_output.emplace()); });
     }
@@ -3216,7 +3098,6 @@ void vkgen::Generator::generateEnums(OutputBuffer &output, OutputBuffer &output_
 }
 
 void vkgen::Generator::genFlagTraits(const Enum &data, std::string inherit, std::string &output, std::string &to_string_output) {
-
     std::string name = std::regex_replace(data.name, std::regex("FlagBits"), "Flags");
 
     std::string flags;
@@ -3269,18 +3150,18 @@ void vkgen::Generator::genFlagTraits(const Enum &data, std::string inherit, std:
     output += expEndif("VULKAN_HPP_EXPERIMENTAL_NO_FLAG_TRAITS");
 
     // to_string_output += genOptional(data, [&](std::string &output) {
-        if (str.empty()) {
-            to_string_output += vkgen::format(R"(
+    if (str.empty()) {
+        to_string_output += vkgen::format(R"(
 /*1*/
   VULKAN_HPP_INLINE std::string to_string({0}) {{
     return "{{}}";
   }}
 )",
-                                              name,
-                                              inherit,
-                                              str);
-        } else {
-            to_string_output += vkgen::format(R"(
+                                          name,
+                                          inherit,
+                                          str);
+    } else {
+        to_string_output += vkgen::format(R"(
 VULKAN_HPP_INLINE std::string to_string({0} value) {{
 if ( !value )
 return "{{}}";
@@ -3291,10 +3172,10 @@ std::string result;
 return "{{ " + result.substr( 0, result.size() - 3 ) + " }}";
 }}
 )",
-                                              name,
-                                              inherit,
-                                              str);
-        }
+                                          name,
+                                          inherit,
+                                          str);
+    }
     // });
 }
 
@@ -3467,7 +3348,6 @@ std::string vkgen::Generator::generateDispatchLoaderBase() {
   };
 
 )";
-    dispatchLoaderBaseGenerated = true;
     return output;
 }
 
@@ -3526,12 +3406,18 @@ std::string vkgen::Generator::generateClassString(const std::string &className, 
     }
     output += " {\n";
 
-    const auto addSection = [&](const std::string &visibility, const std::string &s) {
-        if (!s.empty()) {
-            output += "  " + visibility + ":\n" + s;
+    const auto addSection = [&](const std::string &visibility, const UnorderedFunctionOutputX &segment) {
+        std::stringstream tmp;
+        segment.write(tmp);
+        if (!tmp.str().empty()) {
+            if (!visibility.empty()) {
+                output += "  " + visibility + ":\n";
+            }
+            output += tmp.str();
         }
     };
 
+    /*
     std::string funcs;
     if (ns == Namespace::VK) {
         std::string const temp = from.sFuncs.get();
@@ -3549,10 +3435,12 @@ std::string vkgen::Generator::generateClassString(const std::string &className, 
         funcs += funcsEnhanced;
         funcs += expEndif("VULKAN_HPP_DISABLE_ENHANCED_MODE");
     }
+    */
 
-    addSection("public", from.sPublic.get() + funcs);
-    addSection("private", from.sPrivate.get());
-    addSection("protected", from.sProtected.get());
+    addSection("public", from.sPublic);
+    addSection("", from.sFuncs);
+    addSection("private", from.sPrivate);
+    addSection("protected", from.sProtected);
     output += "  };\n";
     return output;
 }
@@ -3570,7 +3458,7 @@ std::string vkgen::Generator::generateForwardInclude(GenOutput &out) const {
     return output;
 }
 
-void vkgen::Generator::generateHandles(OutputBuffer &output, OutputBuffer &output_smart, GenOutput &out, std::string &out_funcs, std::string &outFuncsTempl) {
+void vkgen::Generator::generateHandles(OutputBuffer &output, OutputBuffer &output_smart, GenOutput &out) {
     if (verbose) {
         std::cout << "gen handles " << '\n';
     }
@@ -3656,42 +3544,41 @@ void vkgen::Generator::generateHandles(OutputBuffer &output, OutputBuffer &outpu
 
     if (!cfg.gen.expApi) {
         // static commands
-
+        // TODO refactor
         const Handle   empty{ *this };
-        GenOutputClass out{ *this };
+        GenOutputClass out;
         for (auto &c : staticCommands) {
             ClassCommand  d{ this, &empty, c };
             MemberContext ctx{ .ns = Namespace::VK, .isStatic = true };
-            generateClassMember(d, ctx, out, outputFuncs, outputFuncsEnhanced);
+            generateClassMember(d, ctx, out, outputFuncs);
         }
-        output += out.sPublic.get();
+        output += std::move(out.sPublic);
     }
 
-    UnorderedFunctionOutputX funcsDef{};
-    UnorderedFunctionOutputX funcsTempl{};
-    UnorderedFunctionOutput expfuncs(*this);
+    //    UnorderedFunctionOutputX funcsDef{};
+    //    UnorderedFunctionOutputX funcsTempl{};
+    //    UnorderedFunctionOutput expfuncs(*this);
 
     for (Handle &e : handles.ordered) {
         // std::cout << "gen class " << e.name << '\n';
         if (cfg.gen.expApi && !e.isSubclass) {
-            output += std::move(generateClassWithPFN(e, outputFuncs, funcsDef, funcsTempl));
+            output += std::move(generateClassWithPFN(e));
         } else {
-            output += generateClass(e, outputFuncs, outputFuncsEnhanced, expfuncs);
+            output += generateClass(e);
         }
     }
-    {
-        std::stringstream temp;
-        funcsDef.write(temp);
-        // out_funcs += "// FUNCS2 {\n";
-        out_funcs += temp.str();
-        // out_funcs += "// } FUNCS2\n";
-    }
-    {
-        std::stringstream temp;
-        funcsTempl.write(temp);
-        outFuncsTempl += temp.str();
-    }
-
+    //    {
+    //        std::stringstream temp;
+    //        funcsDef.write(temp);
+    //        // out_funcs += "// FUNCS2 {\n";
+    //        out_funcs += temp.str();
+    //        // out_funcs += "// } FUNCS2\n";
+    //    }
+    //    {
+    //        std::stringstream temp;
+    //        funcsTempl.write(temp);
+    //        outFuncsTempl += temp.str();
+    //    }
 
     if (smartHandles()) {
         generateUniqueHandles(output_smart);
@@ -3741,7 +3628,7 @@ void vkgen::Generator::generateUniqueHandles(OutputBuffer &output) {
     // output += "#ifndef  VULKAN_HPP_NO_SMART_HANDLE\n";
     for (Handle const &e : handles.ordered) {
         if (e.uniqueVariant()) {
-            output += generateUniqueClass(e, outputFuncs);
+            output += generateUniqueClass(e);
         }
     }
     // output += "#endif // VULKAN_HPP_NO_SMART_HANDLE\n";
@@ -3794,15 +3681,7 @@ std::string vkgen::Generator::generateStructs(bool exp) {
     //        out += "extern \"C\" {\n";
     //    }
     for (const Struct &e : structs.ordered) {
-
-        auto p = e.getProtect();
-        if (!p.empty()) {
-            // std::cout << "enum with p: " << p << '\n';
-            platformOutput.add(e, [&](std::string &output) { output += generateStruct(e, exp); });
-        } else {
-            out += genOptional(e, [&](auto &output) { output += generateStruct(e, exp); });
-        }
-
+        out += genPlatform(e, [&](auto &output) { output += generateStruct(e, exp); });
     }
     //    if (!cfg.gen.expApi) {
     //        out += "}\n";
@@ -3814,7 +3693,7 @@ std::string vkgen::Generator::generateStructs(bool exp) {
 }
 
 void vkgen::Generator::generateStructChains(vkgen::OutputBuffer &output) {
-    UnorderedOutput out{ *this };
+    UnorderedFunctionOutputX out;
     for (const Struct &s : structs.ordered) {
         if (s.extends.empty()) {
             continue;
@@ -3822,8 +3701,11 @@ void vkgen::Generator::generateStructChains(vkgen::OutputBuffer &output) {
         auto p = s.getProtect();
         //        if (!p.empty())
         //            out += "//1: " + std::string{p} + "\n";
-        out += genOptional(s, [&](std::string &output) {
+        out.add(s, [&](std::string &output) {
             for (const auto &e : s.extends) {
+                if (!e->canGenerate()) {
+                    continue;
+                }
                 auto p2 = e->getProtect();
                 //                if (!p2.empty())
                 //                    output += "//2: " + std::string{p2} + "\n";
@@ -3832,7 +3714,7 @@ void vkgen::Generator::generateStructChains(vkgen::OutputBuffer &output) {
                   *e,
                   [&](std::string &output) {
                       output += "template <>\n";
-                      output += "struct StructExtends<" + s.name + ", " + e->name + ">\n";
+                      output += "struct StructExtends<" + e->name + ", " + s.name + ">\n";
                       output += R"(
  {
    enum
@@ -3846,7 +3728,7 @@ void vkgen::Generator::generateStructChains(vkgen::OutputBuffer &output) {
             }
         });
     }
-    output += out.get();
+    output += out.toString();
 }
 
 bool vkgen::Generator::generateStructConstructor(const Struct &data, bool transform, std::string &output) {
@@ -4391,7 +4273,7 @@ std::string vkgen::Generator::generateIncludeRAII(GenOutput &out) const {
     return output;
 }
 
-std::string vkgen::Generator::generateClassWithPFN(Handle &h, UnorderedFunctionOutput &funcs, UnorderedFunctionOutputX &funcsDef, UnorderedFunctionOutputX &funcsTempl) {
+std::string vkgen::Generator::generateClassWithPFN(Handle &h) {
     const auto       &name     = h.name;
     const std::string dispatch = name + "Dispatcher";
     const std::string handle   = "m_" + strFirstLower(h.name);
@@ -4404,7 +4286,8 @@ std::string vkgen::Generator::generateClassWithPFN(Handle &h, UnorderedFunctionO
 
     output += "    explicit " + name + "(std::nullptr_t) VULKAN_HPP_NOEXCEPT {}\n";
 
-    UnorderedFunctionOutput  ctors{ *this };
+    UnorderedFunctionOutputX ctors;
+    // UnorderedFunctionOutput  funcs{ *this };
     UnorderedFunctionOutputX members{};
 
     for (auto &d : h.ctorCmds) {
@@ -4422,19 +4305,25 @@ std::string vkgen::Generator::generateClassWithPFN(Handle &h, UnorderedFunctionO
                       << '\n';
             continue;
         }
-        resolver.generate(ctors, funcs);
+        resolver.generate(ctors, outputFuncs);
     }
+    // outputFuncs.def.get({}) += funcs.get(); // TODO
 
     const bool indirect = cfg.gen.classMethods & 2;
     for (auto &d : h.members) {
         if (!indirect && d.src->isIndirect()) {
             continue;
         }
-        MemberGeneratorExperimental g{ *this, d, members, funcsDef, funcsTempl };
+        MemberGeneratorExperimental g{ *this, d, members, outputFuncs };
         g.generate();
     }
 
-    output += ctors.get();
+    // output += ctors.get();
+    {
+        std::stringstream temp;
+        ctors.write(temp);  // TODO
+        output += temp.str();
+    }
 
     output += "    " + name + "() = delete;\n";
     output += "    " + name + "(" + name + " const&) = delete;\n";
@@ -4465,11 +4354,12 @@ std::string vkgen::Generator::generateClassWithPFN(Handle &h, UnorderedFunctionO
     output += "    {\n";
     output += "      return &m_dispatcher;\n";
     output += "    }\n";
-
-    std::stringstream temp;
-    members.write(temp);
-    // std::cout << ">>> S: " << tempstr.size() << "\n";
-    output += temp.str();
+    {
+        std::stringstream temp;
+        members.write(temp);
+        // std::cout << ">>> S: " << tempstr.size() << "\n";
+        output += temp.str();  // TODO
+    }
 
     output += "  };\n";
     return output;
@@ -4644,14 +4534,14 @@ void vkgen::Generator::generateRAII(OutputBuffer &output, OutputBuffer &output_f
 void vkgen::Generator::generateFuncsRAII(OutputBuffer &output) {
     output += beginNamespace();
     output += "  " + beginNamespaceRAII();
-    output += outputFuncsRAII.get();
+    // output += outputFuncsRAII.get();
     output += "#ifndef VULKAN_HPP_DISABLE_ENHANCED_MODE\n";
-    output += outputFuncsEnhancedRAII.get();
+    // output += outputFuncsEnhancedRAII.get();
     output += "#endif // VULKAN_HPP_DISABLE_ENHANCED_MODE\n";
     output += "  " + endNamespaceRAII();
     if (cfg.gen.raii.interop) {
         output += "#ifndef VULKAN_HPP_EXPERIMENTAL_NO_INTEROP\n";
-        output += outputFuncsInterop.get();
+        // output += outputFuncsInterop.get();
         output += "#endif // VULKAN_HPP_EXPERIMENTAL_NO_INTEROP\n";
     }
     output += endNamespace();
@@ -4691,7 +4581,7 @@ void vkgen::Generator::generateDispatchRAII(OutputBuffer &output) {
     auto &device   = findHandle("VkDevice");
 
     const auto gen = [&](const Handle &h) {
-        GenOutputClass out{ *this };
+        GenOutputClass out;
         std::string    name   = h.name + "Dispatcher";
         std::string    handle = "NULL";
 
@@ -4736,10 +4626,10 @@ void vkgen::Generator::generateDispatchRAII(OutputBuffer &output) {
 
         // PFN function pointers
         for (auto *d : h.filteredMembers) {
-            const std::string &name     = d->name.original;
+            const std::string &name = d->name.original;
 
-            const char        *vmaGuard = nullptr;
-            bool               isVma    = false;
+            const char *vmaGuard = nullptr;
+            bool        isVma    = false;
             if (useVma) {
                 auto it = vma.find(name);
                 if (it != vma.end()) {
@@ -4890,14 +4780,34 @@ vkgen::vkr::Command::NameCategory vkgen::Generator::evalNameCategory(const std::
     return UNKNOWN;
 }
 
-void vkgen::Generator::generateClassMember(
-  ClassCommand &m, MemberContext &ctx, GenOutputClass &out, UnorderedFunctionOutput &funcs, UnorderedFunctionOutput &funcsEnhanced, bool inlineFuncs) {
-    MemberGenerator g{ *this, m, ctx, out, funcs, funcsEnhanced };
+void vkgen::Generator::generateClassMember(ClassCommand &m, MemberContext &ctx, GenOutputClass &out, UnorderedFunctionOutputGroup &outFuncs, bool inlineFuncs) {
+    // MemberGenerator g{ *this, m, ctx, out, funcs, funcsEnhanced };
+    // g.generate();
+    // UnorderedFunctionOutputGroup tmp;
+
+    UnorderedFunctionOutputX tmp;
+
+    MemberGeneratorExperimental g{ *this, m, tmp, outFuncs };
     g.generate();
+
+    {
+        std::stringstream str;
+        tmp.write(str);
+        out.sFuncs += str.str();
+    }
+    //    {
+    //        std::stringstream str;
+    //        tmp.def.write(str);
+    //        funcs += str.str();
+    //    }
+    //    {
+    //        std::stringstream str;
+    //        tmp.templ.write(str);
+    //        funcs += str.str();
+    //    }
 }
 
-void vkgen::Generator::generateClassMembers(
-  const Handle &data, GenOutputClass &out, UnorderedFunctionOutput &funcs, UnorderedFunctionOutput &funcsEnhanced, Namespace ns, bool inlineFuncs) {
+void vkgen::Generator::generateClassMembers(const Handle &data, GenOutputClass &out, UnorderedFunctionOutputGroup &outFuncs, Namespace ns, bool inlineFuncs) {
     std::string output;
     if (ns == Namespace::RAII) {
         const auto        &className = data.name;
@@ -4957,7 +4867,7 @@ void vkgen::Generator::generateClassMembers(
     }
 
     if (!output.empty()) {
-        funcs += genOptional(data, [&](std::string &out) { out += output; });
+        outputFuncsRAII.def.get({}) += genOptional(data, [&](std::string &out) { out += output; });
     }
 
     // wrapper functions
@@ -4966,11 +4876,11 @@ void vkgen::Generator::generateClassMembers(
             continue;
         }
         MemberContext ctx{ .ns = ns };
-        generateClassMember(m, ctx, out, funcs, funcsEnhanced, inlineFuncs);
+        generateClassMember(m, ctx, out, outFuncs, inlineFuncs);
     }
 }
 
-void vkgen::Generator::generateClassConstructors(const Handle &data, GenOutputClass &out, UnorderedFunctionOutput &funcs) {
+void vkgen::Generator::generateClassConstructors(const Handle &data, GenOutputClass &out) {
     const std::string &superclass = data.superclass;
 
     out.sPublic += vkgen::format(R"(
@@ -4984,6 +4894,8 @@ void vkgen::Generator::generateClassConstructors(const Handle &data, GenOutputCl
                                  data.vkhandle.identifier());
 
     // if (data.isSubclass && ) {
+    // UnorderedFunctionOutput funcs{*this};
+
     if (cfg.gen.expApi) {
         const auto &superclass = data.superclass;
 
@@ -5008,7 +4920,7 @@ void vkgen::Generator::generateClassConstructors(const Handle &data, GenOutputCl
                     return;
                 }
 
-                resolver.generate(out.sPublic, funcs);
+                resolver.generate(out.sPublic, outputFuncs);
             };
 
             //            const auto &parent = *m.src->_params.begin()->get();
@@ -5031,13 +4943,17 @@ void vkgen::Generator::generateClassConstructors(const Handle &data, GenOutputCl
             genCtor(m);
         }
     }
+
+    // outputFuncs.def.get({}) += funcs.get(); // TODO
 }
 
-void vkgen::Generator::generateClassConstructorsRAII(const Handle &data, GenOutputClass &out, UnorderedFunctionOutput &funcs) {
+void vkgen::Generator::generateClassConstructorsRAII(const Handle &data, GenOutputClass &out) {
     static constexpr Namespace ns = Namespace::RAII;
 
     const auto        &superclass = data.superclass;
     const std::string &owner      = data.ownerhandle;
+
+    // UnorderedFunctionOutput funcs{*this};
 
     const auto genCtor = [&](ClassCommand &d, auto &parent, bool insert = false) {
         MemberContext ctx{ .ns = ns };
@@ -5050,7 +4966,7 @@ void vkgen::Generator::generateClassConstructorsRAII(const Handle &data, GenOutp
             return;
         }
 
-        resolver.generate(out.sPublic, funcs);
+        resolver.generate(out.sPublic, outputFuncsRAII);
     };
 
     for (auto &m : const_cast<Handle &>(data).ctorCmds) {
@@ -5126,7 +5042,7 @@ void vkgen::Generator::generateClassConstructorsRAII(const Handle &data, GenOutp
                                      argDecl,
                                      m_ns_raii);
 
-        funcs.add(
+        outputFuncsRAII.def.add(
           data,
           [&](std::string &output) {
               output +=
@@ -5137,16 +5053,18 @@ void vkgen::Generator::generateClassConstructorsRAII(const Handle &data, GenOutp
           },
           "");
     }
+
+    // outputFuncsRAII.def.get({}) += funcs.get();
 }
 
-std::string vkgen::Generator::generateUniqueClassStr(const Handle &data, UnorderedFunctionOutput &funcs, bool inlineFuncs) {
+std::string vkgen::Generator::generateUniqueClassStr(const Handle &data, bool inlineFuncs) {
     std::string output;
     if (!data.dtorCmd) {
         std::cerr << "class has no destructor info!" << '\n';
         return "";
     }
 
-    GenOutputClass     out{ *this };
+    GenOutputClass     out;
     const std::string &base       = data.name;
     const std::string &className  = "Unique" + base;
     const std::string &handle     = data.vkhandle.identifier();
@@ -5236,7 +5154,9 @@ std::string vkgen::Generator::generateUniqueClassStr(const Handle &data, Unorder
     out.sPublic += "    " + className + "() = default;\n";
 
     // out.sPublic += "/*\n";
-    r.generate(out.sPublic, funcs);
+    // UnorderedFunctionOutput tmp{*this};
+
+    r.generate(out.sPublic, outputFuncs);
     // out.sPublic += "*/\n";
 
     out.sPublic += vkgen::format(R"(
@@ -5340,25 +5260,20 @@ std::string vkgen::Generator::generateUniqueClassStr(const Handle &data, Unorder
     return output;
 }
 
-std::string vkgen::Generator::generateUniqueClass(const Handle &data, UnorderedFunctionOutput &funcs) {
+std::string vkgen::Generator::generateUniqueClass(const Handle &data) {
     std::string output;
     if (!data.getProtect().empty()) {
         // std::cout << "class " << data.name << " to " << data.getProtect() << '\n';
-        platformOutput.add(data, [&](std::string &output) { output += generateUniqueClassStr(data, funcs, true); });
+        outputFuncs.platform.add(data, [&](std::string &output) { output += generateUniqueClassStr(data, true); });
     } else {
-        output += genOptional(data, [&](std::string &output) { output += generateUniqueClassStr(data, funcs, false); });
+        output += genOptional(data, [&](std::string &output) { output += generateUniqueClassStr(data, false); });
     }
     return output;
 }
 
-std::string vkgen::Generator::generateClassStr(const Handle            &data,
-                                               UnorderedFunctionOutput &funcs,
-                                               UnorderedFunctionOutput &funcsEnhanced,
-                                               UnorderedFunctionOutput &expfuncs,
-                                               bool                     inlineFuncs,
-                                               bool                     noFuncs) {
+std::string vkgen::Generator::generateClassStr(const Handle &data, bool inlineFuncs, bool noFuncs) {
     std::string    output;
-    GenOutputClass out{ *this };
+    GenOutputClass out;
 
     const std::string &className      = data.name;
     const std::string &classNameLower = strFirstLower(className);
@@ -5388,7 +5303,7 @@ static VULKAN_HPP_CONST_OR_CONSTEXPR {2}::DebugReportObjectTypeEXT debugReportOb
                                  debugReportValue,
                                  m_ns);
 
-    generateClassConstructors(data, out, funcs);
+    generateClassConstructors(data, out);
 
     if (cfg.gen.raii.interop && false) {
         const auto &superclass = data.superclass;
@@ -5406,9 +5321,9 @@ static VULKAN_HPP_CONST_OR_CONSTEXPR {2}::DebugReportObjectTypeEXT debugReportOb
             }
 
             out.sPublic += "// INTER:\n";
-            resolver.guard              = "VULKAN_HPP_EXPERIMENTAL_NO_INTEROP";
+            resolver.guard              = "VULKAN_HPP_EXPERIMENTAL_INTEROP";
             resolver.constructorInterop = true;
-            resolver.generate(out.sPublic, outputFuncsInterop);
+            resolver.generate(out.sPublic, outputFuncsRAII);
         };
 
         for (auto &m : const_cast<Handle &>(data).ctorCmds) {
@@ -5495,8 +5410,8 @@ static VULKAN_HPP_CONST_OR_CONSTEXPR {2}::DebugReportObjectTypeEXT debugReportOb
 
     if (cfg.gen.expApi) {
         UnorderedFunctionOutputX decl;
-        UnorderedFunctionOutputX def;
-        UnorderedFunctionOutputX templ;
+        //        UnorderedFunctionOutputX def;
+        //        UnorderedFunctionOutputX templ;
 
         for (ClassCommand &m : const_cast<Handle &>(data).members) {
             //            if (!indirect && d.src->isIndirect()) {
@@ -5506,7 +5421,7 @@ static VULKAN_HPP_CONST_OR_CONSTEXPR {2}::DebugReportObjectTypeEXT debugReportOb
             //            if (ns == Namespace::VK && m.src->isIndirect()) {
             //                continue;
             //            }
-            MemberGeneratorExperimental g{ *this, m, decl, def, templ };
+            MemberGeneratorExperimental g{ *this, m, decl, outputFuncs };
             g.generate();
         }
 
@@ -5515,19 +5430,19 @@ static VULKAN_HPP_CONST_OR_CONSTEXPR {2}::DebugReportObjectTypeEXT debugReportOb
             decl.write(temp);
             out.sPublic += temp.str();
         }
-        {
-            std::stringstream temp;
-            def.write(temp);
-            funcs += temp.str();
-        }
-        {
-            std::stringstream temp;
-            templ.write(temp);
-            funcs += temp.str();
-        }
+        //        {
+        //            std::stringstream temp;
+        //            def.write(temp);
+        //            funcs += temp.str();
+        //        }
+        //        {
+        //            std::stringstream temp;
+        //            templ.write(temp);
+        //            funcs += temp.str();
+        //        }
 
     } else if (!noFuncs) {
-        generateClassMembers(data, out, funcs, funcsEnhanced, Namespace::VK, inlineFuncs);
+        generateClassMembers(data, out, outputFuncs, Namespace::VK, inlineFuncs);
     }
 
     output += generateClassString(className, out, Namespace::VK);
@@ -5573,22 +5488,12 @@ static VULKAN_HPP_CONST_OR_CONSTEXPR {2}::DebugReportObjectTypeEXT debugReportOb
     return output;
 }
 
-std::string vkgen::Generator::generateClass(const Handle            &data,
-                                            UnorderedFunctionOutput &funcs,
-                                            UnorderedFunctionOutput &funcsEnhanced,
-                                            UnorderedFunctionOutput &expfuncs) {
-    std::string output;
-
-    if (!data.getProtect().empty()) {
-        platformOutput.add(data, [&](std::string &output) { output += generateClassStr(data, funcs, funcsEnhanced, expfuncs, false); });
-    } else {
-        output += genOptional(data, [&](std::string &output) { output += generateClassStr(data, funcs, funcsEnhanced, expfuncs, false); });
-    }
-    return output;
+std::string vkgen::Generator::generateClass(const Handle &data) {
+    return genPlatform(data, [&](std::string &output) { output += generateClassStr(data, false); });
 }
 
 std::string vkgen::Generator::generateClassStrRAII(const Handle &data, bool exp) {
-    GenOutputClass out{ *this };
+    GenOutputClass out;
     std::string    output;
 
     const std::string &className      = data.name;
@@ -5622,7 +5527,7 @@ std::string vkgen::Generator::generateClassStrRAII(const Handle &data, bool exp)
                                      debugReportValue);
     }
     // if (!exp) {
-    generateClassConstructorsRAII(data, out, outputFuncsRAII);
+    generateClassConstructorsRAII(data, out);
 
     InitializerBuilder init("        ");
     std::string        assign = "\n";
@@ -5716,7 +5621,7 @@ std::string vkgen::Generator::generateClassStrRAII(const Handle &data, bool exp)
                                  handle);
 
     if (!exp) {
-        outputFuncsRAII.add(
+        outputFuncsRAII.def.add(
           data,
           [&](std::string &output) {
               std::string dispatchSrc;
@@ -5776,13 +5681,15 @@ std::string vkgen::Generator::generateClassStrRAII(const Handle &data, bool exp)
     }
 
     if (!exp) {
-        generateClassMembers(data, out, outputFuncsRAII, outputFuncsEnhancedRAII, Namespace::RAII);
+        generateClassMembers(data, out, outputFuncsRAII, Namespace::RAII);
     }
 
     output += generateClassString(className, out, Namespace::RAII);
 
+    // UnorderedFunctionOutput funcs{*this};
+
     if (!exp && !data.vectorCmds.empty()) {
-        GenOutputClass out{ *this };
+        GenOutputClass out;
         std::string    name = className + "s";
 
         out.inherits += vkgen::format("public std::vector<{0}::{1}>", m_ns_raii, className);
@@ -5830,6 +5737,8 @@ std::string vkgen::Generator::generateClassStrRAII(const Handle &data, bool exp)
         }
     }
 
+    // outputFuncsRAII.def.get({}) += funcs.get(); // TODO
+
     return output;
 }
 
@@ -5859,10 +5768,10 @@ std::string vkgen::Generator::generatePFNs(const Handle &data, GenOutputClass &o
 }
 
 std::string vkgen::Generator::generateLoader(bool exp) {
-    GenOutputClass out{ *this };
+    GenOutputClass out;
 
-    UnorderedFunctionOutput funcs{ *this };
-    UnorderedFunctionOutput funcsEnhanced{ *this };
+    //    UnorderedFunctionOutput funcs{ *this };
+    //    UnorderedFunctionOutput funcsEnhanced{ *this };
 
     const std::string dispatcher = loader.name + "Dispatcher";
 
@@ -5951,7 +5860,7 @@ std::string vkgen::Generator::generateLoader(bool exp) {
             if (m.src->nameCat == Command::NameCategory::CREATE) {
                 ctx.insertClassVar = true;
             }
-            generateClassMember(m, ctx, out, funcs, funcsEnhanced);
+            generateClassMember(m, ctx, out, outputFuncsRAII);
         }
     }
 
@@ -5969,10 +5878,10 @@ std::string vkgen::Generator::generateLoader(bool exp) {
     //    }
     //    output += loader.name + " defaultContext;\n\n";
 
-    if (!exp) {
-        outputFuncsRAII += funcs.get();
-        outputFuncsEnhancedRAII += funcsEnhanced.get();
-    }
+    //    if (!exp) {
+    //        outputFuncsRAII += funcs.get();
+    //        outputFuncsEnhancedRAII += funcsEnhanced.get();
+    //    }
 
     return output;
 }
@@ -6048,18 +5957,12 @@ vkgen::Generator::Generator()
                                                               .ns          = Namespace::NONE,
                                                               .flag        = VariableData::Flags::CLASS_VAR_UNIQUE,
                                                               .specialType = VariableData::TYPE_DISPATCH } } } }
-  , outputFuncs{ *this }
-  , outputFuncsEnhanced{ *this }
-  , outputFuncsRAII{ *this }
-  , outputFuncsEnhancedRAII{ *this }
-  , outputFuncsInterop{ *this }
-  , platformOutput{ *this } {
+{
     unload();
-    // resetConfig();
 
-    namespaces.insert_or_assign(Namespace::VK, &cfg.macro.mNamespace.data);
-    namespaces.insert_or_assign(Namespace::RAII, &cfg.macro.mNamespaceRAII.data);
-    namespaces.insert_or_assign(Namespace::STD, &cfg.macro.mNamespaceSTD);
+//    namespaces.insert_or_assign(Namespace::VK, &cfg.macro.mNamespace.data);
+//    namespaces.insert_or_assign(Namespace::RAII, &cfg.macro.mNamespaceRAII.data);
+//    namespaces.insert_or_assign(Namespace::STD, &cfg.macro.mNamespaceSTD);
 }
 
 std::string_view vkgen::Generator::getNamespace(Namespace ns) const {
@@ -6132,11 +6035,8 @@ void vkgen::Generator::generate() {
     // TODO check existing files?
 
     outputFuncs.clear();
-    outputFuncsEnhanced.clear();
     outputFuncsRAII.clear();
-    outputFuncsEnhancedRAII.clear();
-    platformOutput.clear();
-    dispatchLoaderBaseGenerated = false;
+    // platformOutput.clear();
 
     const auto &contextClassName = cfg.gen.contextClassName.data;
     if (contextClassName.empty()) {

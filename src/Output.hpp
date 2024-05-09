@@ -20,11 +20,11 @@
 #define GENERATOR_OUTPUT_HPP
 
 #include <filesystem>
+#include <functional>
 #include <list>
 #include <map>
 #include <span>
 #include <variant>
-#include <functional>
 
 namespace vkgen
 {
@@ -88,11 +88,41 @@ namespace vkgen
       public:
         UnorderedFunctionOutputX();
 
+        OutputBuffer &operator*() {
+            return *output;
+        }
+
+        template <typename T>
+        UnorderedFunctionOutputX &operator+=(T &&v) {
+            *output += std::forward<T>(v);
+            return *this;
+        }
+
         size_t size() const;
 
-        OutputBuffer &get(const std::span<Protect> protects);
+        void clear();
+
+        void add(const BaseType &type, std::function<void(std::string &)> function, const std::string &guard = "");
+
+        OutputBuffer &get(std::span<Protect> protects);
 
         void write(std::ostream &os) const;
+
+        std::string toString() const;
+    };
+
+    struct UnorderedFunctionOutputGroup
+    {
+        UnorderedFunctionOutputX def;
+        UnorderedFunctionOutputX templ;
+        UnorderedFunctionOutputX platform;
+
+        void clear() {
+            def.clear();
+            templ.clear();
+            platform.clear();
+        }
+
     };
 
     inline std::ostream &operator<<(std::ostream &os, const vkgen::UnorderedFunctionOutputX &s) {
@@ -120,6 +150,7 @@ namespace vkgen
     //     return os;
     // }
 
+    /*
     class UnorderedOutput
     {
         const Generator &g;
@@ -142,6 +173,7 @@ namespace vkgen
             return *this;
         }
     };
+    */
 
     class OutputBuffer
     {
@@ -160,13 +192,13 @@ namespace vkgen
 
         void write(std::ostream &stream) const;
 
-        OutputBuffer &operator+=(const std::string_view str);
+        OutputBuffer &operator+=(std::string_view str);
 
         OutputBuffer &operator+=(std::string &&str);
 
         OutputBuffer &operator+=(const std::string &str);
 
-        OutputBuffer &operator+=(const char * const str);
+        OutputBuffer &operator+=(const char *str);
 
         OutputBuffer &operator+=(UnorderedFunctionOutputX &&);
 
@@ -193,14 +225,15 @@ namespace vkgen
 
     struct GenOutputClass
     {
-        GenOutputClass(const Generator &gen) : sFuncs(gen), sFuncsEnhanced(gen), sPublic(gen), sPrivate(gen), sProtected(gen) {}
+        // GenOutputClass(const Generator &gen)
+        //: sFuncs(gen), sFuncsEnhanced(gen), sPublic(gen), sPrivate(gen), sProtected(gen)
+        // {}
 
-        UnorderedFunctionOutput sFuncs;
-        UnorderedFunctionOutput sFuncsEnhanced;
-        UnorderedFunctionOutput sPublic;
-        UnorderedFunctionOutput sPrivate;
-        UnorderedFunctionOutput sProtected;
-        std::string             inherits;
+        UnorderedFunctionOutputX sFuncs;
+        UnorderedFunctionOutputX sPublic;
+        UnorderedFunctionOutputX sPrivate;
+        UnorderedFunctionOutputX sProtected;
+        std::string              inherits;
     };
 
     struct GenOutput

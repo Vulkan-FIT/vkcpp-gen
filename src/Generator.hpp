@@ -55,22 +55,20 @@ namespace vkgen
 
         Config         cfg;
         ClassVariables cvars;
-        bool           dispatchLoaderBaseGenerated;
+        // bool           dispatchLoaderBaseGenerated;
 
         std::string                            m_ns;
         std::string                            m_ns_raii;
         std::string                            m_constexpr;
         std::string                            m_constexpr14;
-        std::unordered_map<Namespace, Macro *> namespaces;
+        // std::unordered_map<Namespace, Macro *> namespaces;
 
         std::string outputFilePath;
 
-        UnorderedFunctionOutput outputFuncs;
-        UnorderedFunctionOutput outputFuncsEnhanced;
-        UnorderedFunctionOutput outputFuncsRAII;
-        UnorderedFunctionOutput outputFuncsEnhancedRAII;
-        UnorderedFunctionOutput outputFuncsInterop;
-        UnorderedOutput         platformOutput;
+        UnorderedFunctionOutputGroup outputFuncs;
+        UnorderedFunctionOutputGroup outputFuncsRAII;
+        // UnorderedFunctionOutput      outputFuncsInterop;
+        // UnorderedOutput              platformOutput;
 
         std::string genWithProtect(const std::string &code, const std::string &protect) const;
 
@@ -80,6 +78,7 @@ namespace vkgen
           genCodeAndProtect(const BaseType &type, const std::function<void(std::string &)> &function, bool bypass = false) const;
 
         std::string genOptional(const BaseType &type, std::function<void(std::string &)> function, bool bypass = false) const;
+        std::string genPlatform(const BaseType &type, std::function<void(std::string &)> function, bool bypass = false);
 
         std::string gen(const Define &define, std::function<void(std::string &)> function) const;
 
@@ -186,7 +185,7 @@ namespace vkgen
 
         std::string generateForwardInclude(GenOutput &out) const;
 
-        void generateHandles(OutputBuffer &output, OutputBuffer &output_smart, GenOutput &out, std::string &funcs, std::string &funcsTempl);
+        void generateHandles(OutputBuffer &output, OutputBuffer &output_smart, GenOutput &out);
 
         void generateUniqueHandles(OutputBuffer &output);
 
@@ -202,7 +201,7 @@ namespace vkgen
 
         std::string generateIncludeRAII(GenOutput &out) const;
 
-        std::string generateClassWithPFN(Handle &h, UnorderedFunctionOutput &funcs, UnorderedFunctionOutputX &funcsDef, UnorderedFunctionOutputX &funcsTempl);
+        std::string generateClassWithPFN(Handle &h);
 
         void generateContext(OutputBuffer &output, UnorderedFunctionOutput &inter);
 
@@ -253,32 +252,27 @@ namespace vkgen
         void generateClassMember(ClassCommand            &m,
                                  MemberContext           &ctx,
                                  GenOutputClass          &out,
-                                 UnorderedFunctionOutput &funcs,
-                                 UnorderedFunctionOutput &funcsEnhanced,
+                                 UnorderedFunctionOutputGroup &outFuncs,
                                  bool                     inlineFuncs = false);
 
         void generateClassMembers(const Handle            &data,
                                   GenOutputClass          &out,
-                                  UnorderedFunctionOutput &funcs,
-                                  UnorderedFunctionOutput &funcsEnhanced,
+                                  UnorderedFunctionOutputGroup &outFuncs,
                                   Namespace                ns,
                                   bool                     inlineFuncs = false);
 
-        void generateClassConstructors(const Handle &data, GenOutputClass &out, UnorderedFunctionOutput &funcs);
+        void generateClassConstructors(const Handle &data, GenOutputClass &out);
 
-        void generateClassConstructorsRAII(const Handle &data, GenOutputClass &out, UnorderedFunctionOutput &funcs);
+        void generateClassConstructorsRAII(const Handle &data, GenOutputClass &out);
 
-        std::string generateUniqueClassStr(const Handle &data, UnorderedFunctionOutput &funcs, bool inlineFuncs);
+        std::string generateUniqueClassStr(const Handle &data, bool inlineFuncs);
 
-        std::string generateUniqueClass(const Handle &data, UnorderedFunctionOutput &funcs);
+        std::string generateUniqueClass(const Handle &data);
 
         std::string
-          generateClass(const Handle &data, UnorderedFunctionOutput &funcs, UnorderedFunctionOutput &funcsEnhanced, UnorderedFunctionOutput &expfuncs);
+          generateClass(const Handle &data);
 
         std::string generateClassStr(const Handle            &data,
-                                     UnorderedFunctionOutput &funcs,
-                                     UnorderedFunctionOutput &funcsEnhanced,
-                                     UnorderedFunctionOutput &expfuncs,
                                      bool                     inlineFuncs,
                                      bool                     noFuncs = false);
 
