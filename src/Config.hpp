@@ -129,8 +129,6 @@ namespace vkgen
         ConfigWrapper<bool> internalFunctions{ "internal_functions", false };
         ConfigWrapper<bool> internalVkResult{ "internal_vkresult", true };
 
-        ConfigWrapper<bool> smartHandles{ "smart_handles", true };
-
         ConfigWrapper<bool> dispatchParam{ "dispatch_param", true };
         ConfigWrapper<bool> dispatchTemplate{ "dispatch_template", true };
         ConfigWrapper<bool> dispatchLoaderStatic{ "dispatch_loader_static", true };
@@ -148,6 +146,10 @@ namespace vkgen
         ConfigWrapper<bool>    branchHint{ "branch_hint", false };
         ConfigWrapper<bool>    importStdMacro{ "import_std_macro", false };
         ConfigWrapper<bool>    integrateVma{ "integrate_vma", false };
+        ConfigWrapper<bool>    proxyPassByCopy{ "proxy_pass_by_copy", false };
+        ConfigWrapper<bool>    unifiedException{ "unified_exception", true };
+
+        ConfigWrapper<NDefine> smartHandles{ "smart_handles", {"VULKAN_HPP_NO_SMART_HANDLE", Define::COND_ENABLED} };
 
         ConfigWrapper<Define> structReflect{ "struct_reflect", { "VULKAN_HPP_USE_REFLECT", Define::COND_ENABLED } };
 
@@ -179,6 +181,8 @@ namespace vkgen
                             branchHint,
                             importStdMacro,
                             integrateVma,
+                            proxyPassByCopy,
+                            unifiedException,
                             structReflect,
                             unionConstructors,
                             unionSetters,

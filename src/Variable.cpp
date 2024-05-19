@@ -245,13 +245,26 @@ void vkgen::VariableData::convertToOptionalWrapper() {
     specialType = TYPE_OPTIONAL;
 }
 
-void vkgen::VariableData::convertToStdVector() {
+void vkgen::VariableData::convertToStdVector(const Generator &gen) {
     specialType = TYPE_VECTOR;
     auto &s     = fields[PREFIX];
     auto  pos   = s.find("const");
     if (pos != std::string::npos) {
         s.erase(pos, 5);
     }
+
+    if (!optionalTemplate.empty()) {
+        optionalTemplate += ", ";
+    }
+    optionalAllocator = strFirstUpper(type()) + "Allocator";
+    optionalTemplate += "typename " + optionalAllocator;
+    optionalTemplateAssignment = " = std::allocator<";
+    if (ns == Namespace::VK) {
+        optionalTemplateAssignment += gen.m_ns;
+        optionalTemplateAssignment += "::";
+    }
+    optionalTemplateAssignment += type();
+    optionalTemplateAssignment += ">";
 }
 
 bool vkgen::VariableData::removeLastAsterisk() {
@@ -350,7 +363,7 @@ std::string vkgen::VariableData::toArgument(const Generator &gen, bool useOrigin
         case TYPE_EXP_VECTOR:
         case TYPE_EXP_ARRAY:
         case TYPE_ARRAY_PROXY:
-        case TYPE_ARRAY_PROXY_NO_TEMPORARIES: return toArgumentArrayProxy();
+        case TYPE_ARRAY_PROXY_NO_TEMPORARIES: return toArgumentArrayProxy(gen);
         default: return toArgumentDefault(gen, useOriginal);
     }
 }
@@ -373,7 +386,7 @@ std::string vkgen::VariableData::toVariable(const Generator &gen, const Variable
     if (t != type()) {
         std::string cast = "static_cast";
         if (strContains(s, "*")) {
-            cast = "std::bit_cast";
+            cast = gen.m_cast;
         }
         std::string f = useOriginal ? dst.originalFullType() : dst.fullType(gen);
 
@@ -422,9 +435,15 @@ std::string vkgen::VariableData::fullType(const Generator &gen, bool forceNamesp
                 out += " const &";
                 return out;
             }
-        case TYPE_ARRAY_PROXY: return "ArrayProxy<" + type + "> const &";
+        case TYPE_ARRAY_PROXY:
+            if (gen.getConfig().gen.proxyPassByCopy) {
+                return "const ArrayProxy<" + type + "> ";
+            }
+            else {
+                return "ArrayProxy<" + type + "> const &";
+            }
         case TYPE_ARRAY_PROXY_NO_TEMPORARIES: return "ArrayProxyNoTemporaries<" + type + "> const &";
-        case TYPE_VECTOR: return "std::vector<" + type + ">";
+        case TYPE_VECTOR: return "std::vector<" + type + (optionalAllocator.empty()? "" : ", " + optionalAllocator) + ">";
         case TYPE_OPTIONAL: return "Optional<" + type + ">";
         default: return type;
     }
@@ -529,18 +548,18 @@ std::string vkgen::VariableData::optionalArraySuffix() const {
     return "";
 }
 
-std::string vkgen::VariableData::toArgumentArrayProxy() const {
+std::string vkgen::VariableData::toArgumentArrayProxy(const Generator &gen) const {
     std::string out = fields[IDENTIFIER] + ".data()";
     if (fields[TYPE] == original.type()) {
         return out;
     }
-    return "std::bit_cast<" + originalFullType() + ">(" + out + ")";
+    return gen.m_cast + "<" + originalFullType() + ">(" + out + ")";
 }
 
-std::string vkgen::VariableData::createCast(std::string from) const {
+std::string vkgen::VariableData::createCast(const Generator &gen, std::string from) const {
     std::string cast = "static_cast";
     if ((strContains(original.suffix(), "*") || hasArrayLength())) {
-        cast = "std::bit_cast";
+        cast = gen.m_cast;
     }
     return cast + "<" + originalFullType() + (hasArrayLength() ? "*" : "") + ">(" + from + ")";
 }
@@ -553,6 +572,21 @@ std::string vkgen::VariableData::getReturnType(const Generator &gen, bool forceN
 void vkgen::VariableData::createLocalReferenceVar(const Generator &gen, const std::string &indent, const std::string &assignment, std::string &output) {
     output += indent + getReturnType(gen, true) + " &" + identifier() + " = " + assignment + ";\n";
     localVar = true;
+}
+
+std::string vkgen::VariableData::generateVectorReserve(const Generator &gen, const std::string &indent) {
+    std::string output;
+    if (isArrayOut()) {
+        const auto &init = getLocalInit();
+        if (!init.empty()) {
+            output = indent;
+            output += identifier();
+            output += ".reserve( ";
+            output += init;
+            output += " );\n";
+        }
+    }
+    return output;
 }
 
 void vkgen::VariableData::createLocalVar(
@@ -588,7 +622,7 @@ std::string vkgen::VariableData::toArgumentDefault(const Generator &gen, bool us
     if ((same && specialType != TYPE_OPTIONAL) || useOriginal) {
         return id;
     }
-    return createCast(id);
+    return createCast(gen, id);
 }
 
 std::string vkgen::VariableData::toArrayProxySize() const {

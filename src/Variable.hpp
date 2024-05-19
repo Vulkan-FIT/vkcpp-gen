@@ -196,6 +196,12 @@ namespace vkgen
         VariableData(const VariableData &o) : VariableBase2(o) {
             // std::cout << "VariableData copy ctor " << this << '\n';
             _assignment = o._assignment;
+            lenghtVar = o.lenghtVar;
+
+            optionalTemplate = o.optionalTemplate;
+            optionalAllocator = o.optionalAllocator;
+            optionalTemplateAssignment = o.optionalTemplateAssignment;
+            stdAllocatorIdentifier = o.stdAllocatorIdentifier;
             setMetaType(o.metaType());
         }
 
@@ -252,6 +258,7 @@ namespace vkgen
             altPFN.clear();
             _assignment.clear();
             optionalTemplate.clear();
+            optionalAllocator.clear();
             optionalTemplateAssignment.clear();
             stdAllocatorIdentifier.clear();
             dbgTag.clear();
@@ -443,6 +450,8 @@ namespace vkgen
 
         void createLocalVar(const Generator &gen, const std::string &indent, const std::string &dbg, std::string &output, const std::string &assignment = "");
 
+        std::string generateVectorReserve(const Generator &gen, const std::string &indent);
+
         std::string getLocalInit() const {
             std::string output;
             if (isArray() && specialType != VariableData::TYPE_EXP_ARRAY) {
@@ -497,6 +506,10 @@ namespace vkgen
             stdAllocatorIdentifier = id;
         }
 
+        std::string getAllocatorType() const {
+            return optionalAllocator;
+        }
+
         void convertToReturn();
 
         void convertToReference();
@@ -505,7 +518,7 @@ namespace vkgen
 
         void convertToOptionalWrapper();
 
-        void convertToStdVector();
+        void convertToStdVector(const Generator &gen);
 
         bool removeLastAsterisk();
 
@@ -669,7 +682,7 @@ namespace vkgen
         std::string                         toArrayProxyData() const;
         std::pair<std::string, std::string> toArrayProxyRhs() const;
 
-        std::string toArgumentArrayProxy() const;
+        std::string toArgumentArrayProxy(const Generator &gen) const;
 
         void evalFlags();
 
@@ -681,6 +694,7 @@ namespace vkgen
         std::string   nameSuffix;
         std::string   optionalTemplate;
         std::string   optionalTemplateAssignment;
+        std::string   optionalAllocator;
         std::string   templateDataTypeStr;
         std::string   stdAllocatorIdentifier;
         std::string   dbgTag;
@@ -710,7 +724,7 @@ namespace vkgen
 
         std::string optionalArraySuffix() const;
 
-        std::string createCast(std::string from) const;
+        std::string createCast(const Generator &gen, std::string from) const;
 
         std::string toArgumentDefault(const Generator &gen, bool useOriginal = false) const;
 

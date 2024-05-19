@@ -351,6 +351,7 @@ namespace vkgen
             std::vector<ClassCommand>   vectorCmds;
 
             std::vector<std::reference_wrapper<const VariableData>> vars;
+            bool poolFlag = false;
 
             void foreachVars(VariableData::Flags flags, std::function<void(const VariableData &var)> f) const {
                 for (const VariableData &v : vars) {
@@ -379,6 +380,8 @@ namespace vkgen
             void init(Generator &gen);
 
             void prepare(const Generator &gen);
+
+            void setParent(const Registry &reg, Handle *h);
 
             void addCommand(const Generator &gen, vkr::Command &cmd, bool raiiOnly = false);
 
@@ -834,6 +837,10 @@ namespace vkgen
             ENABLED,
             COND_ENABLED
         } state = {};
+
+        bool enabled() const {
+            return state != State::DISABLED;
+        }
     };
 
     struct NDefine : public Define
@@ -962,6 +969,14 @@ namespace vkgen
             }
 
             T &operator[](const std::string_view name) {
+                auto it = map.find(name);
+                if (it == map.end()) {
+                    throw std::runtime_error("Error: " + std::string{ name } + " not found in Container<" + std::string{ typeid(T).name() } + ">");
+                }
+                return items[it->second];
+            }
+
+            const T &operator[](const std::string_view name) const {
                 auto it = map.find(name);
                 if (it == map.end()) {
                     throw std::runtime_error("Error: " + std::string{ name } + " not found in Container<" + std::string{ typeid(T).name() } + ">");

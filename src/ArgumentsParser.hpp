@@ -22,6 +22,7 @@
 #include <optional>
 #include <stdexcept>
 #include <vector>
+#include <memory>
 
 // holds arguments data
 struct ArgOption

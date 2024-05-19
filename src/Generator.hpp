@@ -61,6 +61,7 @@ namespace vkgen
         std::string                            m_ns_raii;
         std::string                            m_constexpr;
         std::string                            m_constexpr14;
+        std::string                            m_cast;
         // std::unordered_map<Namespace, Macro *> namespaces;
 
         std::string outputFilePath;
@@ -211,6 +212,8 @@ namespace vkgen
 
         void generateFuncsRAII(OutputBuffer &output);
 
+        void generateContextMembers(const Handle &h, bool vma, OutputBuffer &output, std::string &init);
+
         void generateDispatchRAII(OutputBuffer &output);
 
         void evalCommand(Command &ctx) const;
@@ -272,11 +275,13 @@ namespace vkgen
         std::string
           generateClass(const Handle &data);
 
+        std::string generateClassTypeInfo(const std::string &className, GenOutputClass &out);
+
         std::string generateClassStr(const Handle            &data,
                                      bool                     inlineFuncs,
                                      bool                     noFuncs = false);
 
-        std::string generateClassStrRAII(const Handle &data, bool exp = false);
+        std::string generateClassStrRAII(const Handle &data, bool asUnique = false);
 
         std::string generateClassRAII(const Handle &data, bool exp = false);
 
@@ -367,9 +372,9 @@ namespace vkgen
             return cfg;
         }
 
-        bool smartHandles() const {
-            return cfg.gen.smartHandles && !cfg.gen.expApi && !cfg.gen.cppModules;
-        }
+//        bool smartHandles() const {
+//            return cfg.gen.smartHandles && !cfg.gen.expApi && !cfg.gen.cppModules;
+//        }
 
         void saveConfigFile(const std::string &filename);
 

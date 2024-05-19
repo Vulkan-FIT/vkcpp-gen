@@ -141,6 +141,9 @@ int main(int argc, char **argv) {
                 gui.setConfigPath(configOption.value);
             }
             loadRegistry();
+            if (configOption.set) {
+                gen.loadConfigFile(configOption.value);
+            }
             gui.run();
             return 0;
         }

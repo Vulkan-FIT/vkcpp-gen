@@ -397,7 +397,7 @@ namespace vkgen
         addHandles.finalize();
         for (auto &h : handles.items) {
             if (!h.superclass.empty()) {
-                h.parent = &handles[h.superclass];
+                h.setParent(*this, &handles[h.superclass]);
             }
         }
         for (auto &h : handles.items) {
@@ -559,6 +559,7 @@ namespace vkgen
             const auto &name    = a.first;
             const auto &alias   = a.second;
             auto       &command = commands[alias];
+            command.aliases.emplace_back(name);
             commands.items.emplace_back(gen, command, name);
         });
         commands.prepare();
@@ -1116,7 +1117,6 @@ namespace vkgen
 
         createErrorClasses();
         disableUnsupportedFeatures();
-
         buildDependencies();
 
         assignCommands(gen);
@@ -1364,7 +1364,8 @@ namespace vkgen::vkr
       : BaseType(MetaType::Handle, elem.getNested("name"), true)
       , superclass(std::string{ elem.optional("parent").value_or("") })
       , vkhandle(VariableDataInfo{ .vktype     = this->name.original,
-                                   .identifier = "m_" + strFirstLower(this->name),
+                                   // .identifier = "m_" + strFirstLower(this->name),
+                                   .identifier = "m_handle",
                                    .assigment  = " = {}",
                                    .ns         = Namespace::VK,
                                    .flag       = VariableData::Flags::CLASS_VAR_VK | VariableData::Flags::CLASS_VAR_RAII,
@@ -1418,6 +1419,15 @@ namespace vkgen::vkr
                                                                            .ns         = Namespace::VK,
                                                                            .flag = VariableData::Flags::CLASS_VAR_RAII | VariableData::Flags::CLASS_VAR_UNIQUE,
                                                                            .metaType = MetaType::Handle });
+        }
+    }
+
+    void Handle::setParent(const Registry &reg, Handle *h) {
+        parent = h;
+        std::string name = h->name;
+        reg.strRemoveTag(name);
+        if (name.ends_with("Pool")) {
+            poolFlag = true;
         }
     }
 

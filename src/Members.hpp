@@ -43,6 +43,7 @@ namespace vkgen
         bool      returnSingle               = {};
         bool      insertClassVar             = {};
         bool      insertSuperclassVar        = {};
+        bool      addVectorAllocator         = {};
         bool      commentOut                 = {};
         bool      templateVector             = {};
         bool      structureChain             = {};
@@ -190,13 +191,7 @@ namespace vkgen
 
         virtual ~MemberResolver();
 
-        // virtual void generate(UnorderedFunctionOutput &decl, UnorderedFunctionOutput &def);
-
-        // void generateX(std::string &def);
-
-        // void generateX(std::string &decl, std::string &def);
-
-        void generate(UnorderedFunctionOutputX &decl, UnorderedFunctionOutputGroup &def);
+        void generate(UnorderedFunctionOutputX &decl, UnorderedFunctionOutputGroup &def, const std::span<Protect> protects = {});
 
         template <typename... Args>
         VariableData &addVar(decltype(cmd->params)::iterator pos, Args &&...args) {
@@ -259,28 +254,16 @@ namespace vkgen
       protected:
         std::string getSuperclassArgument(const String &superclass) const;
 
+        VariableData *generateVariables(std::string &output, std::string &returnId, bool &returnsRAII, bool dbg = false);
+
+        void generateMemberBodyArray(std::string &output, std::string &returnId, bool &returnsRAII, VariableData *vectorSizeVar, bool dbg = false);
+
         std::string generateMemberBody() override;
 
       public:
         MemberResolverDefault(const Generator &gen, ClassCommand &d, MemberContext &ctx, bool constructor = {});
 
         virtual ~MemberResolverDefault();
-
-        // void generate(UnorderedFunctionOutput &decl, UnorderedFunctionOutput &def) override;
-    };
-
-    class MemberResolverDbg final : public MemberResolverDefault
-    {
-      public:
-        MemberResolverDbg(const Generator &gen, ClassCommand &d, MemberContext &ctx) : MemberResolverDefault(gen, d, ctx) {
-            dbgtag = "disabled";
-        }
-
-//        void generate(UnorderedFunctionOutput &decl, UnorderedFunctionOutput &def) override {
-//            decl += "/*\n";
-//            decl += generateDeclaration();
-//            decl += "*/\n";
-//        }
     };
 
     class MemberResolverStaticDispatch final : public MemberResolver
@@ -314,7 +297,7 @@ namespace vkgen
       public:
         MemberResolverPass(const Generator &gen, ClassCommand &d, MemberContext &ctx) : MemberResolver(gen, d, ctx) {
             ctx.disableSubstitution = true;
-            enhanced = false;
+            enhanced                = false;
             dbgtag                  = "pass";
         }
 
@@ -402,17 +385,19 @@ namespace vkgen
     class MemberResolverCreate : public MemberResolverDefault
     {
       public:
-        MemberResolverCreate(Generator &gen, ClassCommand &d, MemberContext &refCtx);
+        MemberResolverCreate(const Generator &gen, ClassCommand &d, MemberContext &refCtx);
 
         std::string generateMemberBody() override;
     };
 
     class MemberResolverCreateUnique final : public MemberResolverCreate
     {
+        std::string poolSource;
+        std::unique_ptr<VariableData> uniqueVector;
         bool isSubclass = {};
 
       public:
-        MemberResolverCreateUnique(Generator &gen, ClassCommand &d, MemberContext &refCtx);
+        MemberResolverCreateUnique(const Generator &gen, ClassCommand &d, MemberContext &refCtx);
 
         std::string generateMemberBody() override;
     };
@@ -426,228 +411,35 @@ namespace vkgen
         MemberContext                 ctx{};
 
         template <typename T>
-        void generate(T &res, std::vector<Protect> &protects) {
-//            auto protect = m.src->getProtect();
-//            if (!protect.empty()) {
-//                protects.emplace_back(std::string(protect), true);
-//            }
-            // bool allowInline = true;
-            // if (m.cls && m.cls->isSubclass) {
-            // allowInline = false;
-            // }
-
-//            std::string decl;
-//            std::string def;
-            //            if (res.isTemplated()) {
-            //                res.generateX(decl);
-            //            } else {
-            // res.generateX(decl, def);
-            res.generate(decl, out);
-            //            }
-//            if (!def.empty()) {
-//                auto &dst = (res.isTemplated() ? out.templ : out.def).get(protects);
-//                dst += std::move(def);
-//            }
-//            if (!decl.empty()) {
-//                auto &dst = this->decl.get(protects);
-//                dst += std::move(decl);
-//            }
-        }
-
-        void generatePass() {
-            std::vector<Protect> protects;
-            // protects.emplace_back("VULKAN_HPP_EXPERIMENTAL_CSTYLE", false);
-            MemberResolverPass resolver{ gen, m, ctx };
-            generate(resolver, protects);
-        }
-
-        void generateDefault() {
-            std::vector<Protect>  protects;
-            MemberResolverDefault resolver{ gen, m, ctx };
-            generate(resolver, protects);
-        }
-
-        void generateDestroyOverload(ClassCommand &m, MemberContext &ctx, const std::string &name) {
-            generateDefault();
-
-            const auto &orig = m.src->name.original;
-            if (orig != "vkDestroyInstance" && orig != "vkDestroyDevice" && m.src->hasOverloadedDestroy()) {
-                // std::cerr << "skip generate destroy overload: " << m.src->name.original << '\n';
-                return;
-            }
-
-            const auto &type = m.cls->name;
-
-            m.src->prepare();
-#ifndef NDEBUG
-            bool ok;
-            m.src->check(ok);
-#endif
-            auto last = m.src->getLastHandleVar();
-            if (!last) {
-                std::cerr << "no last handle: " << m.src->name.original << '\n';
-                return;
-            }
-
-            const auto &lastType = last->type();
-            // deprecated if
-            if (last->original.type() == m.src->name.original) {
-                std::cerr << "can't generate destroy: " << last->original.type() << " != " << m.src->name.original << '\n';
-                return;
-            }
-
-            auto second = MemberResolverDefault{ gen, m, ctx };
-            // TODO move to ctx
-            const auto getFirst = [&]() -> VariableData * {
-                const auto &vars = second.getFilteredProtoVars();
-                if (vars.empty()) {
-                    return nullptr;
-                }
-                return &vars.begin()->get();
-            };
-            auto first = getFirst();
-            if (!first || !first->isHandle()) {
-                // std::cerr << "can't generate destroy: drop  " << m.cls->name << ": " << last->type() << "  " << m.src->name.original << '\n';
-                return;
-            }
-            first->setOptional(false);
-
-            second.name   = name;
-            second.dbgtag = "d. overload";
-
-            std::vector<Protect> protects;
-            generate(second, protects);
-        }
-
-      public:
-        MemberGeneratorExperimental(const Generator &gen, ClassCommand &m, UnorderedFunctionOutputX     &decl, UnorderedFunctionOutputGroup &out);
-
-        void generate();
-    };
-
-    /*
-    class MemberGenerator
-    {
-        Generator               &gen;
-        vkr::ClassCommand       &m;
-        MemberContext           &ctx;
-        GenOutputClass          &out;
-        UnorderedFunctionOutput &funcs;
-        UnorderedFunctionOutput &funcsEnhanced;
-        std::vector<Signature>   generated;
-
-        enum class MemberGuard
-        {
-            NONE,
-            UNIQUE
-        };
-
-        void generate(MemberResolver &resolver, MemberGuard g = MemberGuard::NONE, bool dbg = false) {
-            const auto &sig = resolver.createSignature();
-            for (const auto &g : generated) {
-                if (g == sig) {
-                    if (dbg) {
-                        std::cerr << "generate(): signature conflict: " << sig.name << "(" << sig.args << ")" << '\n';
-                    }
-                    return;
-                }
-            }
-
-            if (g != MemberGuard::NONE) {
-                static const std::array<std::string, 2> guards{ "", "VULKAN_HPP_NO_SMART_HANDLE" };
-
-                resolver.guard = guards[static_cast<int>(g)];
-            } else {
-                if (resolver.ctx.ns == Namespace::RAII) {
-                    if (resolver.cmd->createsHandle()) {
-                        resolver.guard = "VULKAN_HPP_EXPERIMENTAL_NO_RAII_CREATE_CMDS";
-                    } else if (resolver._indirect || resolver._indirect2) {
-                        if (resolver.cls->isSubclass) {
-                            resolver.guard = "VULKAN_HPP_EXPERIMENTAL_NO_RAII_INDIRECT_SUB";
-                        } else {
-                            resolver.guard = "VULKAN_HPP_EXPERIMENTAL_NO_RAII_INDIRECT";
-                        }
-                    }
-                }
-            }
-            if (generated.empty()) {
-                resolver.generate(out.sFuncs, funcs);
-            } else {
-                resolver.generate(out.sFuncsEnhanced, funcsEnhanced);
-            }
-
-            generated.push_back(sig);
-            // std::cout << "generated: " << resolver.dbgtag << '\n';
+        void generate(T &resolver, const std::span<Protect> protects = {}) {
+            resolver.generate(decl, out, protects);
         }
 
         template <typename T>
-        void generate(MemberGuard g = MemberGuard::NONE) {
+        void generate(const std::span<Protect> protects = {}) {
             T resolver{ gen, m, ctx };
-            generate(resolver, g);
-
-            //            if (resolver->returnsVector()) {
-            //                // std::cout << "> returns vector: " << ctx.name << '\n';
-            //                resolver->addStdAllocators();
-            //                gen(*resolver);
-            //            }
+            generate(resolver, protects);
         }
 
-        void generateDestroyOverload(ClassCommand &m, MemberContext &ctx, const std::string &name) {
-            generate<MemberResolverDefault>(MemberGuard::NONE);
-
-            if (m.src->hasOverloadedDestroy()) {
-                // std::cerr << "skip generate destroy overload: " << m.src->name.original << '\n';
-                return;
-            }
-
-            const auto &type = m.cls->name;
-
-            m.src->prepare();
-#ifndef NDEBUG
-            bool ok;
-            m.src->check(ok);
-#endif
-            auto last = m.src->getLastHandleVar();
-            if (!last) {
-                return;
-            }
-
-            const auto &lastType = last->type();
-            // deprecated if
-            if (last->original.type() == m.src->name.original) {
-                std::cerr << "can't generate destroy: " << last->original.type() << " != " << m.src->name.original << '\n';
-                return;
-            }
-
-            auto second = MemberResolverDefault{ gen, m, ctx };
-            // TODO move to ctx
-            const auto getFirst = [&]() -> VariableData * {
-                const auto &vars = second.getFilteredProtoVars();
-                if (vars.empty()) {
-                    return nullptr;
-                }
-                return &vars.begin()->get();
-            };
-            auto first = getFirst();
-            if (!first || !first->isHandle()) {
-                std::cerr << "can't generate destroy: drop  " << m.cls->name << ": " << last->type() << "  " << m.src->name.original << '\n';
-                return;
-            }
-            first->setOptional(false);
-
-            second.name   = name;
-            second.dbgtag = "d. overload";
-            generate(second);
+        void generatePass() {
+            // protects.emplace_back("VULKAN_HPP_EXPERIMENTAL_CSTYLE", false);
+            generate<MemberResolverPass>();
         }
+
+        void generateStructChain();
+
+        void generateDefault();
+
+        void generateCreate();
+
+        void generateDestroy(ClassCommand &m, MemberContext &ctx, const std::string &name);
 
       public:
-        MemberGenerator(
-          Generator &gen, ClassCommand &m, MemberContext &ctx, GenOutputClass &out, UnorderedFunctionOutput &funcs, UnorderedFunctionOutput &funcsEnhanced)
-          : gen(gen), m(m), ctx(ctx), out(out), funcs(funcs), funcsEnhanced(funcsEnhanced) {}
+        MemberGeneratorExperimental(const Generator &gen, ClassCommand &m, UnorderedFunctionOutputX &decl, UnorderedFunctionOutputGroup &out, bool isStatic = false);
 
         void generate();
     };
-    */
-}  // namespace vkgen
+
+} // namespace vkgen
 
 #endif  // GENERATOR_MEMBERS_HPP

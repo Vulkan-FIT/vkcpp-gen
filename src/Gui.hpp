@@ -385,7 +385,6 @@ namespace vkgen
                     } else {
                         data &= ~mask;
                     }
-                    std::cout << ">> " << data << "\n";
                 }
             }
         };
