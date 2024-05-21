@@ -2233,13 +2233,13 @@ import std;
 
         std::string generate() {
             GenOutputClass out;
-            std::string    ownerType = exp ? "const OwnerType&" : "OwnerType";
+            std::string    ownerType = exp ? "OwnerType*" : "OwnerType";
 
             out.sPublic += "    " + name + "() = default;\n";
 
             ArgumentBuilder args(false);
             if (owner) {
-                args.append(ownerType, " owner", "", "m_owner");
+                args.append( exp ? "OwnerType&" : "OwnerType", " owner", "", "m_owner", exp);
                 out.sPrivate += "    " + ownerType + " m_owner = {};\n";
             }
             if (pool) {
@@ -2290,7 +2290,8 @@ import std;
                 std::string code = "      ";
                 if (owner) {
                     assert += "m_owner";
-                    code += "m_owner.";
+                    code += "m_owner";
+                    code += exp? "->" : ".";
                 } else {
                     code += "t.";
                 }
@@ -3317,8 +3318,9 @@ import std;
         funcs += beginNamespace();
         if (cfg.gen.cppFiles) {
             auto &impl = out.addFile("_impl", ".cpp");
+            impl += "#include \"vulkan.hpp\"\n";
             impl += beginNamespace();
-            funcs += std::move(outputFuncs.def);
+            impl += std::move(outputFuncs.def);
             impl += endNamespace();
         } else {
             funcs += std::move(outputFuncs.def);
@@ -4498,6 +4500,18 @@ return "{{ " + result.substr( 0, result.size() - 3 ) + " }}";
                         generateStructConstructor(data, true, output);
                         output += "#  endif // VULKAN_HPP_DISABLE_ENHANCED_MODE \n";
                     }
+
+                    output += vkgen::format(R"(
+    VULKAN_HPP_CONSTEXPR {0}( {0} const & rhs ) VULKAN_HPP_NOEXCEPT = default;
+
+    {0}( Vk{0} const & rhs ) VULKAN_HPP_NOEXCEPT
+      : {0}( *reinterpret_cast<{0} const *>( &rhs ) )
+    {{
+    }}
+
+)", data.name);
+    // {0} & operator=( {0} const & rhs ) VULKAN_HPP_NOEXCEPT = default;
+
                 });
             } else {
                 output += gen(cfg.gen.unionConstructors, [&](std::string &output) {

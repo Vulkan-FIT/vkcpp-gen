@@ -967,6 +967,9 @@ namespace vkgen
         if (!p.empty()) {
             protects.emplace_back(p, true);
         }
+        if (gen.getConfig().gen.cppFiles && !isTemplated()) {
+            specifierInline = false;
+        }
         if (ctx.generateInline) {
             decl.get(protects) += generateDefinition(true); // TODO move
         }
@@ -1897,9 +1900,28 @@ for (auto const &{2} : {3}) {
                 }
                 auto temp = v.getTemplate();
                 if (!temp.empty()) {
-                    temp += ", ";
+                    // std::cout << temp << "\n";
+                    auto pos = temp.find(", ");
+                    std::string t2;
+                    if (pos != std::string::npos) {
+                        std::string t1 = temp.substr(0, pos);
+                        t2 = temp.substr(pos);
+                        temp = t1;
+                        temp += ", ";
+                        // std::cout << "  " << t1 << "--" << t2 << "\n";
+                    }
+                    else {
+
+                        t2 = ", " + temp;
+                        temp = "";
+                    }
+                    temp += "size_t " + size;
+                    temp += t2;
                 }
-                temp += "size_t " + size;
+                else {
+                    temp += "size_t " + size;
+                }
+
                 v.setTemplate(temp);
 
                 converted++;
