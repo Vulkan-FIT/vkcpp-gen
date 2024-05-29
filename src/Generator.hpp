@@ -41,6 +41,71 @@ namespace vkgen
 
     using namespace Utils;
 
+    class FunctionGenerator
+    {
+      protected:
+        using ArgVar = std::variant<Argument, const VariableData*>;
+        struct ArgInit {
+            std::string dst;
+            std::string src;
+        };
+
+        const Generator &gen;
+        std::vector<ArgVar> arguments;
+        std::vector<ArgInit> inits;
+
+        std::string getTemplate() const;
+
+        void generatePrefix(std::string &output, bool declaration, bool isInline = false);
+
+        void generateSuffix(std::string &output, bool declaration);
+
+        void generateArguments(std::string &output, bool declaration);
+
+        void generateArgument(std::string &output, const Argument &arg, bool declaration);
+
+        void generateArgument(std::string &output, const VariableData *var, bool declaration);
+
+        void generatePrototype(std::string &output, bool declaration, bool isInline = false);
+
+        std::string generate(bool declaration, bool isInline = false);
+
+      public:
+        explicit FunctionGenerator(const Generator &gen) noexcept : gen(gen) {}
+
+        FunctionGenerator(const Generator &gen, const std::string &type, const std::string &name) noexcept
+          : gen(gen), type(type), name(name)
+        {}
+
+        std::string generate();
+
+        std::string generate(UnorderedFunctionOutputGroup &impl);
+
+        Argument& add(const std::string &type, const std::string &id, const std::string &assignment = "") {
+            return get<Argument>(arguments.emplace_back(Argument{type, id, assignment}));
+        }
+
+        void addInit(const std::string &dst, const std::string &src) {
+            inits.emplace_back(dst, src);
+        }
+
+        std::string      type;
+        std::string      name;
+        std::string      code;
+        std::string      className;
+        std::string      additonalTemplate;
+        std::string      indent = "    ";
+        Protect          optionalProtect;
+        const BaseType *base = nullptr;
+        bool          allowInline          = true;
+        bool          specifierInline      = {};
+        bool          specifierExplicit    = {};
+        bool          specifierNoexcept    = {};
+        bool          specifierConst       = {};
+        bool          specifierConstexpr   = {};
+        bool          specifierConstexpr14 = {};
+    };
+
     class Generator : public Registry
     {
       public:
@@ -119,7 +184,7 @@ namespace vkgen
 
         void generateEnums(OutputBuffer &output, OutputBuffer &output_forward, OutputBuffer &to_string_output);
 
-        void genFlagTraits(const Enum &data, std::string name, std::string &output, std::string &to_string_output);
+        void genFlagTraits(const Enum &data, std::string name, std::string &output, std::string &to_string_code);
 
         std::string generateDispatch();
 

@@ -26,6 +26,8 @@
 
 using namespace ImGui;
 
+float nestPosX = 0.0;
+
 namespace vkgen
 {
     Generator *GUI::gen;
@@ -617,7 +619,7 @@ void vkgen::GUI::initImgui() {
     };
 
     ImGuiIO &io = GetIO();
-    font        = io.Fonts->AddFontFromMemoryCompressedBase85TTF(Poppins_compressed_data_base85, 24.0);
+    font        = io.Fonts->AddFontFromMemoryCompressedBase85TTF(Poppins_compressed_data_base85, 26.0);
     if (!font) {
         std::cerr << "font load error" << '\n';
     } else {
@@ -701,9 +703,9 @@ void vkgen::GUI::initImguiStyle() {
     ImGuiStyle &style = GetStyle();
 
     ImVec4 col_text = ImVec4(1.f, 1.f, 1.f, 1.f);
-    ImVec4 col_main = ImVec4(0.18f, 0.f, 0.f, 1.f);
-    ImVec4 col_back = ImVec4(0.01f, 0.01f, 0.01f, 1.f);
-    ImVec4 col_area = ImVec4(0.15f, 0.f, 0.f, 1.f);
+    ImVec4 col_main = ImVec4(0.3f, 0.f, 0.f, 1.f);
+    ImVec4 col_back = ImVec4(0.025f, 0.025f, 0.025f, 1.f);
+    ImVec4 col_area = ImVec4(0.3f, 0.f, 0.f, 1.f);
 
     style.Colors[ImGuiCol_Text]                 = ImVec4(col_text.x, col_text.y, col_text.z, 1.00f);
     style.Colors[ImGuiCol_TextDisabled]         = ImVec4(col_text.x, col_text.y, col_text.z, 0.58f);
@@ -757,14 +759,26 @@ void vkgen::GUI::guiInputText(std::string &data) {
 
 
 static void renderNestedOption(const std::function<void()> content) {
-    SetWindowFontScale(0.8f);
+
     auto size = CalcTextSize("");
-    ImGui::Dummy({ size.y * 2, 0 });
-    ImVec2 p1 = GetCursorPos();
-    p1.x += size.y;
+    size.y += 3.0;
+    ImGui::Dummy({ 0.0, 0.0 });
     ImGui::SameLine();
 
+    ImVec2 p1 = GetCursorPos();
+    p1.x += size.y / 2;
+
+    // nestPosX = p1.x;
+
+    ImGui::Dummy({ size.y, 0 });
+    ImGui::SameLine();
+
+    SetWindowFontScale(0.8f);
+
     content();
+
+    SetWindowFontScale(1.f);
+    // nestPosX = 0.0;
 
     ImGuiWindow *window = ImGui::GetCurrentWindow();
 
@@ -772,45 +786,48 @@ static void renderNestedOption(const std::function<void()> content) {
     auto width = 2.f;
 
     ImVec2 p2 = { p1.x, p1.y + size.y / 2 };
-    ImVec2 p3 = { p2.x + size.y, p2.y };
+    ImVec2 p3 = { p2.x + size.y / 2, p2.y };
 
     window->DrawList->AddLine(p1, p2, color, width);
     window->DrawList->AddLine(p2, p3, color, width);
 
-    SetWindowFontScale(1.f);
 }
 
 
 template <typename T>
 void vkgen::GUI::NestedOption<T>::render(GUI &g) {
-    SetWindowFontScale(0.8f);
 
-    auto space = 60;
     auto size = CalcTextSize("");
-    size.x = 20;
+    size.y += 3.0;
+    // ImGui::Dummy({ 0.0, 0.0 });
+    // ImGui::SameLine();
+
     ImVec2 p1 = GetCursorPos();
-    p1.x += space;
+    p1.x += size.y / 2;
+    // p1.x -= 7;
 
-    ImGui::Dummy({ space + size.x, 0 });
+    // nestPosX = p1.x;
 
-    // p1.x += size.y * ;
+    ImGui::Dummy({ size.y, 0 });
     ImGui::SameLine();
 
+    SetWindowFontScale(0.8f);
+
     T::render(g);
+
+    SetWindowFontScale(1.f);
+    // nestPosX = 0.0;
 
     ImGuiWindow *window = ImGui::GetCurrentWindow();
 
     auto color = ImGui::GetColorU32(ImVec4(1.0, 1.0, 1.0, 1.0));
     auto width = 2.f;
 
-
     ImVec2 p2 = { p1.x, p1.y + size.y / 2 };
-    ImVec2 p3 = { p2.x + size.x, p2.y };
+    ImVec2 p3 = { p2.x + size.y / 2, p2.y };
 
     window->DrawList->AddLine(p1, p2, color, width);
     window->DrawList->AddLine(p2, p3, color, width);
-
-    SetWindowFontScale(1.f);
 }
 
 // void vkgen::GUI::NestedOption::render(GUI &g) {
@@ -996,13 +1013,13 @@ vkgen::GUI::GUI(vkgen::Generator &gen) {
       std::make_unique<RenderableColumn<12>>(
         0,
         std::make_unique<RenderableText>("Code generation"),
-        make_config_option(0, BoolGUI{ &cfg.gen.cppModules.data, "C++ modules" }, "generate c++20 modules"),
+        make_config_option(0, BoolGUI{ &cfg.gen.cppModules.data, "C++ modules" }, "Generate C++20 module (vulkan.cppm)"),
         // make_config_option(0, BoolGUI{&cfg.gen.exceptions.data, "exceptions"}, "enable vulkan exceptions"),
-        make_config_option(0, BoolGUI{ &cfg.gen.raii.enabled.data, "RAII header" }, "generate vk::raii"),
-        make_config_option(0, BoolGUI{ &cfg.gen.expApi.data, "Dynamic PFN linking" }, "PFN pointers will be added to Device and Instance"),
-        make_config_option(Level::L2, 0, NestedOption<BoolGUI>{ &cfg.gen.integrateVma.data, "Integrate VMA" }, ""),
-        make_config_option(Level::L2, 0, BoolGUI{ &cfg.gen.proxyPassByCopy.data, "Pass ArrayProxy as copy" }, ""),
-        make_config_option(Level::L2, 0, BoolGUI{ &cfg.gen.unifiedException.data, "Unified exception" }, ""),
+        make_config_option(0, BoolGUI{ &cfg.gen.raii.enabled.data, "RAII header" }, "Generate vk::raii header (vulkan_raii.hpp)"),
+        make_config_option(0, BoolGUI{ &cfg.gen.expApi.data, "Dynamic PFN linking" }, "PFN dispatcher will be embedded to Device and Instance"),
+        make_config_option(Level::L2, 0, NestedOption<BoolGUI>{ &cfg.gen.integrateVma.data, "Integrate VMA" }, "PFN dispatcher can be used with VMA"),
+        make_config_option(Level::L2, 0, BoolGUI{ &cfg.gen.proxyPassByCopy.data, "Pass ArrayProxy as copy" }, "Pass ArrayProxy parameter as copy instead of reference"),
+        make_config_option(Level::L2, 0, BoolGUI{ &cfg.gen.unifiedException.data, "Unified exception" }, "Generates only vk::Error exeption"),
         make_config_option(Level::L2, 0, BoolGUI{ &cfg.gen.branchHint.data, "Branch hints" }, "Add compiler C++20 hints (likely, unlikely)"),
         std::make_unique<RenderableText>("Macros"),
         make_config_option(0, MacroGUI{ &cfg.macro.mNamespace.data }, ""),
@@ -1011,24 +1028,24 @@ vkgen::GUI::GUI(vkgen::Generator &gen) {
       std::make_unique<RenderableColumn<9>>(
         1,
         std::make_unique<RenderableText>("Handles"),
-        make_config_option(0, BoolDefineGUI(&cfg.gen.handleConstructors.data, "constructors"), "TODO description"),
-        make_config_option(0, BoolDefineGUI(&cfg.gen.smartHandles.data, "smart handles"), "TODO description"),
-        make_config_option(Level::L1, 0, BoolDefineGUI(&cfg.gen.handleTemplates.data, "template helpers"), "TODO description"),
+        make_config_option(0, BoolDefineGUI(&cfg.gen.handleConstructors.data, "constructors"), "Removes handle constructors"),
+        make_config_option(0, BoolDefineGUI(&cfg.gen.smartHandles.data, "smart handles"), "Removes smart (unique) handles"),
+        make_config_option(Level::L1, 0, BoolDefineGUI(&cfg.gen.handleTemplates.data, "type traits"), "Removes CppType and isVulkanHandleType"),
         std::make_unique<RenderableText>("Functions"),
-        make_config_option(0, BoolGUI{ &cfg.gen.dispatchParam.data, "Dispatch parameter" }, "TODO description"),
-        make_config_option(0, BoolGUI{ &cfg.gen.allocatorParam.data, "Allocator parameter" }, "TODO description"),
-        make_config_option(0, BoolGUI{ &cfg.gen.functionsVecAndArray.data, "Array & small vector variant" }, "TODO description"),
-        make_config_option(Level::L1, 0, BitSelector{ cfg.gen.classMethods.data, 1, "Methods from subobjects" }, "")),
+        make_config_option(0, BoolGUI{ &cfg.gen.dispatchParam.data, "Dispatch parameter" }, "Removes dispatch from handles and functions"),
+        make_config_option(0, BoolGUI{ &cfg.gen.allocatorParam.data, "Allocator parameter" }, "Removes allocationcallbacks from handles and functions"),
+        make_config_option(0, BoolGUI{ &cfg.gen.functionsVecAndArray.data, "Array & small vector variant" }, "Functions returning vector will also return vk::Vector or std::array"),
+        make_config_option(Level::L1, 0, BitSelector{ cfg.gen.classMethods.data, 1, "Methods from subobjects" }, "Methods from subobjects will be added to top level handle")),
       std::make_unique<RenderableColumn<8>>(
         2,
         std::make_unique<RenderableText>("Structs & Unions"),
-        make_config_option(0, BoolDefineGUI(&cfg.gen.structConstructors.data, "struct constructors"), "TODO description"),
-        make_config_option(0, BoolDefineGUI(&cfg.gen.unionConstructors.data, "union constructors"), "TODO description"),
-        make_config_option(0, BoolDefineGUI(&cfg.gen.structSetters.data, "struct setters"), "TODO description"),
-        make_config_option(0, BoolDefineGUI(&cfg.gen.unionSetters.data, "union setters"), "TODO description"),
-        make_config_option(Level::L1, 0, BoolDefineGUI(&cfg.gen.structCompare.data, "compares"), "TODO description"),
-        make_config_option(Level::L1, 0, NestedOption<BoolGUI>{ &cfg.gen.spaceshipOperator.data, "spaceship operator" }, "Enable conditional spaceship operator"),
-        make_config_option(Level::L1, 0, BoolDefineGUI(&cfg.gen.structReflect.data, "reflect"), "TODO description")));
+        make_config_option(0, BoolDefineGUI(&cfg.gen.structConstructors.data, "struct constructors"), "Removes struct constructors"),
+        make_config_option(0, BoolDefineGUI(&cfg.gen.unionConstructors.data, "union constructors"), "Removes union constructors"),
+        make_config_option(0, BoolDefineGUI(&cfg.gen.structSetters.data, "struct setters"), "Removes struct setter functions"),
+        make_config_option(0, BoolDefineGUI(&cfg.gen.unionSetters.data, "union setters"), "Removes union setter functions"),
+        make_config_option(Level::L1, 0, BoolDefineGUI(&cfg.gen.structCompare.data, "compares"), "Removes struct compare operator"),
+        make_config_option(Level::L1, 0, NestedOption<BoolGUI>{ &cfg.gen.spaceshipOperator.data, "spaceship operator" }, "Removes spaceship operator from API"),
+        make_config_option(Level::L1, 0, BoolDefineGUI(&cfg.gen.structReflect.data, "reflect"), "Removes struct reflection")));
 }
 
 void vkgen::GUI::init() {
@@ -1127,14 +1144,15 @@ void vkgen::GUI::mainScreen() {
     static std::string output{ gen->getOutputFilePath() };
     // static bool outputPathBad = !gen->isOuputFilepathValid();
     id = 0;
-    Dummy(ImVec2(0.0f, 4.0f));
+    float spacing = 1;
+    ImGui::Dummy({0, spacing});
     unloadRegButton.draw();
     SameLine();
     std::string loadedText = "Current registry: " + gen->getRegistryPath();
     showHelpMarker(loadedText.c_str(), "i");
     SameLine();
 
-    Dummy(ImVec2(0.0f, 4.0f));
+    ImGui::Dummy({0, spacing});
     SameLine();
     generateButton.draw();
     SameLine();
@@ -1154,8 +1172,7 @@ void vkgen::GUI::mainScreen() {
     //        if (outputBadFlag) {
     //            PopStyleColor();
     //        }
-
-    Dummy(ImVec2(0.0f, 10.0f));
+    ImGui::Dummy({0, spacing});
     loadConfigButton.draw();
     SameLine();
     saveConfigButton.draw();
@@ -1167,11 +1184,11 @@ void vkgen::GUI::mainScreen() {
     if (InputText("", &configPath)) {
     }
     PopID();
-
-    Dummy(ImVec2(0.0f, 10.0f));
+    ImGui::Dummy({ 0, spacing });
 
     SetWindowFontScale(1.f);
     if (CollapsingHeader("Configuration")) {
+        ImGui::Dummy({ 0, 4 });
         if (Button("Simple")) {
             guiLevel = Level::L0;
             queueRedraw();
@@ -1212,8 +1229,10 @@ void vkgen::GUI::mainScreen() {
         PopID();
 
         if (guiLevel >= Level::L1) {
-            ImGui::Dummy({ 0, 16 });
-            InputText("vk::Context class name", &cfg.gen.contextClassName.data);
+            ImGui::Dummy({ 0, 4 });
+            InputText("Namespace", &cfg.macro.mNamespace.data.value);
+            InputText("vk::Context name", &cfg.gen.contextClassName.data);
+            InputText("Module name", &cfg.gen.moduleName.data);
         }
 
         if (Button("Load VulkanHPP preset")) {
@@ -1222,6 +1241,8 @@ void vkgen::GUI::mainScreen() {
 
         ImGui::Dummy({ 0, 4 });
     }
+
+    ImGui::Dummy({ 0, spacing });
 
     ImGuiTableFlags containerTableFlags = 0;
     containerTableFlags |= ImGuiTableFlags_Resizable;
@@ -1233,7 +1254,7 @@ void vkgen::GUI::mainScreen() {
             TableNextRow();
             TableSetColumnIndex(0);
 
-            Dummy(ImVec2(0, 10));
+            ImGui::Dummy({0, 4});
             PushID(id++);
             Text("Filter");
             SameLine();

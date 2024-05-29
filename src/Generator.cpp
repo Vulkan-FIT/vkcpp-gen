@@ -1247,7 +1247,6 @@ static constexpr char const *RES_ARRAY_WRAPPER{ R"(
 )" };
 
 static constexpr char const *RES_VECTOR{ R"(
-#ifdef VULKAN_HPP_ENABLE_EXP
 
 namespace detail {
     template<typename X>
@@ -1467,7 +1466,6 @@ public:
   }
 };
 
-#endif // VULKAN_HPP_ENABLE_EXP
 )" };
 
 static constexpr char const *RES_BASE_TYPES{ R"(
@@ -1904,10 +1902,17 @@ namespace vkgen
 )";
         if (cfg.gen.spaceshipOperator) {
             output += R"(
-#if ( 201907 <= __cpp_lib_three_way_comparison ) && __has_include( <compare> ) && !defined( VULKAN_HPP_NO_SPACESHIP_OPERATOR )
-#  define VULKAN_HPP_HAS_SPACESHIP_OPERATOR
+//#if ( 201907 <= __cpp_lib_three_way_comparison ) && __has_include( <compare> ) && !defined( VULKAN_HPP_NO_SPACESHIP_OPERATOR )
+//#  define VULKAN_HPP_HAS_SPACESHIP_OPERATOR
+//#endif
+#ifndef VULKAN_HPP_NO_SPACESHIP_OPERATOR
+#  if __has_include( <compare> )
+#    include <compare>
+#    if ( 201907L <= __cpp_lib_three_way_comparison )
+#      define VULKAN_HPP_HAS_SPACESHIP_OPERATOR
+#    endif
+#  endif
 #endif
-
 )";
         }
 
@@ -2210,6 +2215,156 @@ import std;
         output += expEndif("VULKAN_HPP_EXPERIMENTAL_NO_FLAG_TRAITS");
     }
 
+    std::string FunctionGenerator::getTemplate() const {
+        return additonalTemplate;
+    }
+
+    void FunctionGenerator::generatePrefix(std::string &output, bool declaration, bool isInline) {
+        const auto &cfg = gen.getConfig();
+
+        if (specifierInline) {
+            if (isInline || ! cfg.gen.cppFiles) {
+                output += cfg.macro.mInline.get() + " ";
+            }
+        }
+        if (specifierExplicit && declaration) {
+            output += cfg.macro.mExplicit.get() + " ";
+        }
+        if (specifierConstexpr) {
+            output += cfg.macro.mConstexpr.get() + " ";
+        } else if (specifierConstexpr14) {
+            output += cfg.macro.mConstexpr14.get() + " ";
+        }
+    }
+
+    void FunctionGenerator::generateSuffix(std::string &output, bool declaration) {
+        if (specifierConst) {
+            output += " const";
+        }
+        if (specifierNoexcept) {
+            output += " VULKAN_HPP_NOEXCEPT";
+        }
+    }
+
+    void FunctionGenerator::generateArgument(std::string &output, const Argument &arg, bool declaration) {
+        output += arg.type;
+        output += ' ';
+        output += arg.id;
+        if (declaration) {
+            output += arg.assignment;
+        }
+    }
+
+    void FunctionGenerator::generateArgument(std::string &output, const VariableData *var, bool declaration) {
+        output += "/*V*/";
+    }
+
+    void FunctionGenerator::generateArguments(std::string &output, bool declaration) {
+        for (const auto &a : arguments) {
+
+            std::visit([&](auto&& arg) {
+                generateArgument(output, arg, declaration);
+                output += ", ";
+            }, a);
+
+        }
+        if (output.ends_with(", ")) {
+            output.erase(output.end() - 2);
+        }
+    }
+
+    void FunctionGenerator::generatePrototype(std::string &output, bool declaration, bool isInline) {
+        generatePrefix(output, declaration, isInline);
+        std::string templ = getTemplate();
+        if (!templ.empty()) {
+            output += "template<";
+            output += templ;
+            output += ">\n";
+            output += indent;
+        }
+        output += type;
+        if (!type.empty()) {
+            output += ' ';
+        }
+        if (!declaration && !className.empty()) {
+            output += className;
+            output += "::";
+        }
+        output += name;
+        output += '(';
+        generateArguments(output, declaration);
+        output += ")";
+        generateSuffix(output, declaration);
+    }
+
+    std::string FunctionGenerator::generate(bool declaration, bool isInline) {
+        std::string output = indent;
+        generatePrototype(output, declaration, isInline);
+        output += '\n';
+        if (!inits.empty()) {
+            output += indent;
+            output += "  : ";
+            for (size_t i = 0; i < inits.size(); ++i) {
+
+                output += inits[i].dst;
+                output += '(';
+                output += inits[i].src;
+                output += ')';
+                if (i != inits.size() - 1) {
+                    output += ',';
+                }
+                output += '\n';
+                output += indent;
+                output += "    ";
+            }
+            strStripSuffix(output, "    ");
+        }
+        output += indent;
+        output += "{\n";
+        output += code;
+        output += indent;
+        output += "}\n\n";
+        return output;
+    }
+
+    std::string FunctionGenerator::generate() {
+        return generate(true, true);
+    }
+
+    std::string FunctionGenerator::generate(UnorderedFunctionOutputGroup &impl) {
+        const bool hasTemplate = !getTemplate().empty();
+        bool genInline = allowInline;
+        if (gen.getConfig().gen.cppFiles && (!hasTemplate || !allowInline)) {
+            genInline = false;
+        }
+        if (genInline) {
+            return generate();
+        }
+        std::string output = indent;
+        generatePrototype(output, true);
+        output += ";\n\n";
+
+        std::vector<Protect> protects;
+        if (!optionalProtect.first.empty()) {
+            protects.emplace_back(optionalProtect);
+        }
+        if (base) {
+            const auto &p = base->getProtect();
+            if (!p.empty()) {
+                protects.emplace_back(p, true);
+            }
+        }
+
+        std::string def = generate(false);
+        if (hasTemplate) {
+            impl.templ.get(protects) += std::move(def);
+        }
+        else {
+            impl.def.get(protects) += std::move(def);
+        }
+        return output;
+    }
+
     class UniqueBaseGenerator
     {
         const Generator &gen;
@@ -2372,7 +2527,7 @@ import std;
         output += RES_ARRAY_PROXY;
         // PROXY TEMPORARIES
         output += RES_ARRAY_WRAPPER;
-        if (cfg.gen.expApi) {
+        if (cfg.gen.expApi && cfg.gen.functionsVecAndArray) {
             output += RES_VECTOR;
         }
 
@@ -3319,6 +3474,11 @@ import std;
         if (cfg.gen.cppFiles) {
             auto &impl = out.addFile("_impl", ".cpp");
             impl += "#include \"vulkan.hpp\"\n";
+            impl += R"(
+#ifdef VULKAN_HPP_HAS_SPACESHIP_OPERATOR
+#  define VULKAN_HPP_USE_SPACESHIP_OPERATOR
+#endif
+)";
             impl += beginNamespace();
             impl += std::move(outputFuncs.def);
             impl += endNamespace();
@@ -3340,9 +3500,9 @@ import std;
     }
 
     void Generator::generateEnumStr(const Enum &data, std::string &output, std::string &to_string_output) {
-        const std::string &name = data.name;
+        std::string name = data.name;
 
-        output += "/*" + name + "*/\n";
+        // output += "/*" + name + "*/\n";
 
         UnorderedFunctionOutputX members;
         UnorderedFunctionOutputX to_string;
@@ -3374,36 +3534,58 @@ import std;
             output += "  using " + a + " = " + name + ";\n";
         }
 
+        std::string str;
         if (data.isBitmask) {
-            genFlagTraits(data, name, output, to_string_output);
-        } else {
-            // to_string_output += genOptional(data, [&](std::string &output) {
-            std::string str = to_string.toString();
-            if (str.empty()) {
-                to_string_output += vkgen::format(R"(
-  VULKAN_HPP_INLINE std::string to_string({0}) {{
-    return {1};
-  }}
-)",
-                                                  name,
-                                                  "\"(void)\"");
-            } else {
-                str += "  default: return \"invalid ( \" + " + m_ns + "::toHexString(static_cast<uint32_t>(value))  + \" )\";";
-
-                to_string_output += vkgen::format(R"(
-  VULKAN_HPP_INLINE std::string to_string({0} value) {{
-    switch (value) {{
-      {1}
-    }}
-  }}
-)",
-                                                  name,
-                                                  str);
-            }
-            // });
+            genFlagTraits(data, name, output, str);
+            name = std::regex_replace(data.name, std::regex("FlagBits"), "Flags");
         }
+            FunctionGenerator fun(*this, "std::string", "to_string");
+            fun.indent = "  ";
+            fun.base = &data;
+            fun.optionalProtect = Protect{"VULKAN_HPP_NO_TO_STRING", false};
+            fun.allowInline = true;
+            fun.specifierInline = true;
+            fun.add(name, "value");
 
-        output += "/* */\n";
+            if (data.isBitmask) {
+                fun.code = str;
+            }
+            else {
+                str = to_string.toString();
+                if (str.empty()) {
+                    fun.code = "    return \"\\\"(void)\\\"\";\n";
+
+                    //                to_string_output += vkgen::format(R"(
+                    //  VULKAN_HPP_INLINE std::string to_string({0}) {{
+                    //    return {1};
+                    //  }}
+                    //)",
+                    //                                                  name,
+                    //                                                  "\"(void)\"");
+                } else {
+                    str += "      default: return \"invalid ( \" + " + m_ns + "::toHexString(static_cast<uint32_t>(value))  + \" )\";";
+
+                    fun.code = vkgen::format(R"(
+    switch (value) {{
+{0}
+    }}
+)", str);
+
+                    //                to_string_output += vkgen::format(R"(
+                    //  VULKAN_HPP_INLINE std::string to_string({0} value) {{
+                    //    switch (value) {{
+                    //      {1}
+                    //    }}
+                    //  }}
+                    //)",
+                    //                                                  name,
+                    //                                                  str);
+                }
+            }
+
+
+            to_string_output += fun.generate(outputFuncs);
+
     }
 
     void Generator::generateEnum(const Enum &data, OutputBuffer &output, OutputBuffer &output_forward, OutputBuffer &to_string_output) {
@@ -3532,7 +3714,7 @@ import std;
         }
     }
 
-    void Generator::genFlagTraits(const Enum &data, std::string inherit, std::string &output, std::string &to_string_output) {
+    void Generator::genFlagTraits(const Enum &data, std::string inherit, std::string &output, std::string &to_string_code) {
         std::string name = std::regex_replace(data.name, std::regex("FlagBits"), "Flags");
 
         std::string flags;
@@ -3562,7 +3744,7 @@ import std;
         }
 
         output += vkgen::format(R"(
-  using {0} = Flags<{1}>; /*2*/
+  using {0} = Flags<{1}>;
 )",
                                 name,
                                 inherit);
@@ -3586,30 +3768,15 @@ import std;
 
         // to_string_output += genOptional(data, [&](std::string &output) {
         if (str.empty()) {
-            to_string_output += vkgen::format(R"(
-/*1*/
-  VULKAN_HPP_INLINE std::string to_string({0}) {{
-    return "{{}}";
-  }}
-)",
-                                              name,
-                                              inherit,
-                                              str);
+            to_string_code = "    return {};\n";
         } else {
-            to_string_output += vkgen::format(R"(
-VULKAN_HPP_INLINE std::string to_string({0} value) {{
-if ( !value )
-return "{{}}";
-
-std::string result;
-{2}
-
-return "{{ " + result.substr( 0, result.size() - 3 ) + " }}";
-}}
-)",
-                                              name,
-                                              inherit,
-                                              str);
+            to_string_code = vkgen::format(R"(
+    if ( !value )
+      return "{{}}";
+    std::string result;
+{0}
+    return "{{ " + result.substr( 0, result.size() - 3 ) + " }}";
+)", str);
         }
         // });
     }
@@ -4243,58 +4410,80 @@ return "{{ " + result.substr( 0, result.size() - 3 ) + " }}";
     }
 
     bool Generator::generateStructConstructor(const Struct &data, bool transform, std::string &output) {
-        InitializerBuilder init{ "      " };
-        std::string        args;
-        std::string        pNextArg;
-        std::string        templ;
+//        InitializerBuilder init{ "      " };
+//        std::string        args;
+//        std::string        pNextArg;
+//        std::string        templ;
         bool               hasProxy = false;
+
+        FunctionGenerator fun(*this, "", data.name);
+        fun.className = data.name;
+        fun.base = &data;
+        fun.optionalProtect = Protect{"VULKAN_HPP_NO_STRUCT_CONSTRUCTORS", false};
+        fun.allowInline = true;
+        fun.specifierConstexpr = !transform;
+
+        VariableData *pNext = nullptr;
 
         for (const auto &p : data.members) {
             std::string id = p->identifier() + "_";
+            std::string type = p->fullType(*this);
 
             bool const toProxy = transform && p->hasLengthVar();
             if (p->hasLengthVar()) {
                 hasProxy = true;
             }
 
+//            auto &v = fun.add(type, id, " = " + m_ns + "::StructureType::eApplicationInfo");
+//            v.assignment = ;
             if (p->type() == "StructureType") {
                 if (data.name != "BaseOutStructure" && data.name != "BaseInStructure") {
                     continue;
                 }
-                args += p->fullType(*this);
-                args += " ";
-                args += id;
-                args += " = ";
-                args += m_ns;
-                args += "::StructureType::eApplicationInfo";
+//                args += p->fullType(*this);
+//                args += " ";
+//                args += id;
+//                args += " = ";
+//                args += m_ns;
+//                args += "::StructureType::eApplicationInfo";
+
+                fun.add(type, id, " = " + m_ns + "::StructureType::eApplicationInfo");
             } else if (p->identifier() == "pNext") {
-                pNextArg += p->fullType(*this);
-                pNextArg += " ";
-                pNextArg += id;
-                pNextArg += " = nullptr";
+//                pNextArg += p->fullType(*this);
+//                pNextArg += " ";
+//                pNextArg += id;
+//                pNextArg += " = nullptr";
+
+                pNext = p.get();
             } else {
                 if (toProxy) {
                     VariableData var(*p);
                     var.removeLastAsterisk();
                     if (var.type() == "void" && !var.isPointer()) {
                         var.setType("T");
-                        templ = "    template <typename T>\n";
+                        // templ = "    template <typename T>\n";
+                        fun.additonalTemplate = "typename T";
                     }
-                    args += vkgen::format("{0}::ArrayProxyNoTemporaries<{1}> const & {2}", m_ns, var.fullType(*this), id);
+                    // args += vkgen::format("{0}::ArrayProxyNoTemporaries<{1}> const & {2}", m_ns, var.fullType(*this), id);
+
+                    fun.add(vkgen::format("{0}::ArrayProxyNoTemporaries<{1}> const &", m_ns, var.fullType(*this)), id);
+
                 } else {
-                    args += p->fullType(*this);
-                    args += " ";
-                    args += id;
-                    if (!transform) {
-                        args += " = {}";
-                    }
+//                    args += p->fullType(*this);
+//                    args += " ";
+//                    args += id;
+//                    if (!transform) {
+//                        args += " = {}";
+//                    }
+                    fun.add(type, id, transform? "" : " = {}");
                 }
-                args += ", ";
+                // args += ", ";
             }
 
             std::string const lhs = p->identifier();
             if (toProxy) {
-                init.append(lhs, id + ".data()");
+                // init.append(lhs, id + ".data()");
+                fun.addInit(lhs, id + ".data()");
             } else {
                 std::string rhs  = id;
                 const auto &vars = p->getArrayVars();
@@ -4321,27 +4510,33 @@ return "{{ " + result.substr( 0, result.size() - 3 ) + " }}";
                     }
                     rhs += ")";
                 }
-                init.append(lhs, rhs);
+                // init.append(lhs, rhs);
+                fun.addInit(lhs, rhs);
             }
         }
-
-        strStripSuffix(args, ", ");
-        if (!pNextArg.empty()) {
-            if (!args.empty()) {
-                args += ", ";
-            }
-            args += pNextArg;
+        if (pNext) {
+            fun.add(pNext->fullType(*this), pNext->identifier() + "_", " = nullptr");
         }
 
-        output += templ;
-        output += "    ";
-        if (!transform) {
-            output += cfg.macro.mConstexpr.get();
-            output += " ";
-        }
-        output += data.name + "( " + args + " )\n";
-        output += "      " + init.string();
-        output += "\n    {}\n";
+//        strStripSuffix(args, ", ");
+//        if (!pNextArg.empty()) {
+//            if (!args.empty()) {
+//                args += ", ";
+//            }
+//            args += pNextArg;
+//        }
+
+
+        output += fun.generate(outputFuncs);
+//        output += templ;
+//        output += "    ";
+//        if (!transform) {
+//            output += cfg.macro.mConstexpr.get();
+//            output += " ";
+//        }
+//        output += data.name + "( " + args + " )\n";
+//        output += "      " + init.string();
+//        output += "\n    {}\n";
 
         return hasProxy;
     }
@@ -4409,23 +4604,41 @@ return "{{ " + result.substr( 0, result.size() - 3 ) + " }}";
                         if (m->type() == "StructureType") {
                             continue;
                         }
-                        auto var = VariableData(*m);
-                        var.setIdentifier(m->identifier() + "_");
+//                        auto var = VariableData(*m);
+//                        var.setIdentifier(m->identifier() + "_");
 
-                        std::string id   = m->identifier();
-                        std::string name = strFirstUpper(id);
-                        std::string arg  = var.toString(*this);
-                        output += vkgen::format(R"(
-    VULKAN_HPP_CONSTEXPR_14 {0}& set{1}({2}) VULKAN_HPP_NOEXCEPT {{
-      {3} = {4};
+                        // setter
+                        const auto &id   = m->identifier();
+                        // std::string name = strFirstUpper(id);
+                        // std::string arg  = var.toString(*this);
+
+                        FunctionGenerator fun(*this, data.name + "&", "set" + strFirstUpper(id));
+                        fun.className = data.name;
+                        fun.base = &data;
+                        fun.optionalProtect = Protect{define.data.define, false};
+                        fun.specifierNoexcept = true;
+                        fun.specifierConstexpr14 = true;
+
+                        fun.add(m->fullType(*this), m->identifier() + "_");
+                        fun.code = vkgen::format(R"(
+      {0} = {0}_;
       return *this;
-    }}
-            )",
-                                                data.name,
-                                                name,
-                                                arg,
-                                                id,
-                                                var.identifier());
+)",
+                                                       id);
+
+                        output += fun.generate(outputFuncs);
+
+//                        output += vkgen::format(R"(
+//    VULKAN_HPP_CONSTEXPR_14 {0}& set{1}({2}) VULKAN_HPP_NOEXCEPT {{
+//      {3} = {4};
+//      return *this;
+//    }}
+//            )",
+//                                                data.name,
+//                                                name,
+//                                                arg,
+//                                                id,
+//                                                var.identifier());
                     }
                 }
 
@@ -4448,29 +4661,51 @@ return "{{ " + result.substr( 0, result.size() - 3 ) + " }}";
                             var.setIdentifier(m->identifier() + "_");
                             var.removeLastAsterisk();
 
+                            FunctionGenerator fun(*this, data.name + "&", "set" + name);
+                            fun.className = data.name;
+                            fun.base = &data;
+                            fun.optionalProtect = Protect{define.data.define, false};
+                            fun.specifierNoexcept = true;
+
                             std::string const id = m->identifier();
                             std::string       modif;
                             if (var.original.type() == "void" && !var.original.isConstSuffix()) {
-                                output += "    template <typename DataType>\n";
+                                // output += "    template <typename DataType>\n";
+                                fun.additonalTemplate = "typename DataType";
                                 var.setType("DataType");
                                 modif = " * sizeof(DataType)";
                             }
 
-                            std::string arg = "ArrayProxyNoTemporaries<" + var.fullType(*this) + "> const &" + var.identifier();
-                            output += vkgen::format(R"(
-    {0}& set{1}({2}) VULKAN_HPP_NOEXCEPT {{
-      {4} = static_cast<uint32_t>({3}.size(){6});
-      {5} = {3}.data();
-      return *this;
-    }}
-                )",
-                                                    data.name,
-                                                    name,
-                                                    arg,
-                                                    var.identifier(),
-                                                    m->getLengthVar()->identifier(),
-                                                    m->identifier(),
-                                                    modif);
+                            fun.add("ArrayProxyNoTemporaries<" + var.fullType(*this) + "> const &", var.identifier());
+
+                            fun.code = vkgen::format(R"(
+  {1} = static_cast<uint32_t>({0}.size(){3});
+  {2} = {0}.data();
+  return *this;
+)",
+                                                 var.identifier(),
+                                                 m->getLengthVar()->identifier(),
+                                                 m->identifier(),
+                                                 modif);
+
+
+                            output += fun.generate(outputFuncs);
+
+//                            std::string arg = "ArrayProxyNoTemporaries<" + var.fullType(*this) + "> const &" + var.identifier();
+//                            output += vkgen::format(R"(
+//    {0}& set{1}({2}) VULKAN_HPP_NOEXCEPT {{
+//      {4} = static_cast<uint32_t>({3}.size(){6});
+//      {5} = {3}.data();
+//      return *this;
+//    }}
+//                )",
+//                                                    data.name,
+//                                                    name,
+//                                                    arg,
+//                                                    var.identifier(),
+//                                                    m->getLengthVar()->identifier(),
+//                                                    m->identifier(),
+//                                                    modif);
                         }
                     }
                 }
@@ -4501,15 +4736,23 @@ return "{{ " + result.substr( 0, result.size() - 3 ) + " }}";
                         output += "#  endif // VULKAN_HPP_DISABLE_ENHANCED_MODE \n";
                     }
 
+                    // copy constuctor
                     output += vkgen::format(R"(
     VULKAN_HPP_CONSTEXPR {0}( {0} const & rhs ) VULKAN_HPP_NOEXCEPT = default;
 
-    {0}( Vk{0} const & rhs ) VULKAN_HPP_NOEXCEPT
-      : {0}( *reinterpret_cast<{0} const *>( &rhs ) )
-    {{
-    }}
-
 )", data.name);
+                    {
+                        // C style copy constuctor
+                        FunctionGenerator fun(*this, "", data.name);
+                        fun.className = data.name;
+                        fun.optionalProtect = Protect{"VULKAN_HPP_NO_STRUCT_CONSTRUCTORS", false};
+                        fun.specifierNoexcept = true;
+                        fun.add("Vk" + data.name + " const &", "rhs");
+                        fun.addInit(data.name, "*reinterpret_cast<" + data.name + " const *>( &rhs )");
+                        output += fun.generate(outputFuncs);
+                    }
+
+
     // {0} & operator=( {0} const & rhs ) VULKAN_HPP_NOEXCEPT = default;
 
                 });
@@ -4599,26 +4842,45 @@ return "{{ " + result.substr( 0, result.size() - 3 ) + " }}";
                                 data.name,
                                 data.name.original);
 
-        gen(cfg.gen.structReflect, [&](std::string &output) {
+        output += gen(cfg.gen.structReflect, [&](std::string &output) {
             ArgumentBuilder types{ false };
             ArgumentBuilder tie{ false };
             for (const auto &m : data.members) {
                 types.append(m->fullType(*this), "");
                 tie.append("", m->identifier());
             }
-            output += vkgen::format(R"(
+
+            std::string type = vkgen::format(R"(
 #  if 14 <= VULKAN_HPP_CPP_VERSION
     auto
 #  else
     std::tuple<{0}>
 #  endif
-      reflect() const VULKAN_HPP_NOEXCEPT
-    {{
-      return std::tie({1});
-    }}
-)",
-                                    types.string(),
-                                    tie.string());
+)",                             types.string());
+
+            FunctionGenerator fun(*this, type, "reflect");
+            fun.className         = data.name;
+            fun.base              = &data;
+            fun.optionalProtect   = Protect{ "VULKAN_HPP_USE_REFLECT", true };
+            fun.specifierNoexcept = true;
+            fun.specifierConst = true;
+            fun.code = "      return std::tie(" + tie.string() + ");\n";
+
+            output += fun.generate(outputFuncs);
+
+//            output += vkgen::format(R"(
+//#  if 14 <= VULKAN_HPP_CPP_VERSION
+//    auto
+//#  else
+//    std::tuple<{0}>
+//#  endif
+//      reflect() const VULKAN_HPP_NOEXCEPT
+//    {{
+//      return std::tie({1});
+//    }}
+//)",
+//                                    types.string(),
+//                                    tie.string());
         });
 
         std::string comp;
@@ -4696,7 +4958,7 @@ return "{{ " + result.substr( 0, result.size() - 3 ) + " }}";
                 compareBody = "      return " + compareMembers + ";";
                 if (useSpaceship) {
                     constexpr auto spaceshipOperatorTemplate =
-                      R"(    {2} operator<=>( {0} const & rhs ) const VULKAN_HPP_NOEXCEPT
+                      R"(    {2} operator<=>( {0} const & rhs ) const VULKAN_HPP_NOEXCEPT /*X*/
     {{
 {1}
       return {2}::equivalent;
@@ -4711,7 +4973,8 @@ return "{{ " + result.substr( 0, result.size() - 3 ) + " }}";
       return this->reflect() == rhs.reflect();
 #else
       return {0};
-#endif // VULKAN_HPP_USE_REFLECT)";
+#endif // VULKAN_HPP_USE_REFLECT
+)";
                 compareBody = vkgen::format(compareBodyTemplate, compareMembers);
 
                 if (useSpaceship) {
@@ -4722,21 +4985,67 @@ return "{{ " + result.substr( 0, result.size() - 3 ) + " }}";
             output += gen(cfg.gen.structCompare, [&](std::string &output) {
                 if (!spaceshipOperator.empty()) {
                     output += "#  if defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )\n";
-                    output += spaceshipOperator + "\n";
+
+                    if (nonDefaultCompare) {
+                        FunctionGenerator fun(*this, ordering, "operator<=>");
+                        fun.className         = data.name;
+                        fun.base              = &data;
+                        fun.optionalProtect   = Protect{ "VULKAN_HPP_USE_SPACESHIP_OPERATOR", true }; // workaround
+                        fun.specifierNoexcept = true;
+                        fun.specifierConst = true;
+                        fun.code = vkgen::format(R"(
+{0}
+      return {1}::equivalent;
+)",                                 spaceshipMembers, ordering);
+
+                        fun.add(data.name + " const &", "rhs");
+                        output += fun.generate(outputFuncs);
+                    }
+                    else {
+                        output += spaceshipOperator + "\n";
+                    }
+
                     output += "#  else\n";
                 }
-                output += vkgen::format(R"(
-    bool operator==( {0} const & rhs ) const VULKAN_HPP_NOEXCEPT
-    {{
-{1}
-    }}
-    bool operator!=( {0} const & rhs ) const VULKAN_HPP_NOEXCEPT
-    {{
-      return !operator==( rhs );
-    }}
-    )",
-                                        data.name,
-                                        compareBody);
+
+                {
+                    FunctionGenerator fun(*this, "bool", "operator==");
+                    fun.className         = data.name;
+                    fun.base              = &data;
+                    fun.optionalProtect   = Protect{ "VULKAN_HPP_HAS_SPACESHIP_OPERATOR", false };
+                    fun.specifierNoexcept = true;
+                    fun.specifierConst = true;
+
+                    fun.add(data.name + " const &", "rhs");
+                    fun.code = compareBody;
+                    output += fun.generate(outputFuncs);
+                }
+                {
+                    FunctionGenerator fun(*this, "bool", "operator!=");
+                    fun.className         = data.name;
+                    fun.base              = &data;
+                    fun.optionalProtect   = Protect{ "VULKAN_HPP_HAS_SPACESHIP_OPERATOR", false };
+                    fun.specifierNoexcept = true;
+                    fun.specifierConst = true;
+
+                    fun.add(data.name + " const &", "rhs");
+                    fun.code = "      return !operator==( rhs );\n";
+                    output += fun.generate(outputFuncs);
+                }
+
+//                output += vkgen::format(R"(
+//    bool operator==( {0} const & rhs ) const VULKAN_HPP_NOEXCEPT
+//    {{
+//{1}
+//    }}
+//    bool operator!=( {0} const & rhs ) const VULKAN_HPP_NOEXCEPT
+//    {{
+//      return !operator==( rhs );
+//    }}
+//    )",
+//                                        data.name,
+//                                        compareBody);
+
                 if (!spaceshipOperator.empty()) {
                     output += "#  endif\n";
                 }

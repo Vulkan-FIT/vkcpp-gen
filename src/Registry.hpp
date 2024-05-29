@@ -93,10 +93,14 @@ namespace vkgen
 
         // virtual void setEnabled(bool, bool ifSelected = false) {}
 
-        virtual void setEnabledChildren(bool, bool ifSelected = false) {}
+        virtual void setEnabledChildren(bool value, bool ifSelected = false) {}
 
         void setSelected(bool value) {
             selected = value;
+        }
+
+        bool isSelected() const {
+            return selected;
         }
     };
 

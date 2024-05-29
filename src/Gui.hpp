@@ -245,7 +245,9 @@ namespace vkgen
             HelpMarker(const std::string &text) : text(text) {}
 
             virtual void render(GUI &g) override {
-                GUI::showHelpMarker(text.c_str());
+                if (!text.empty()) {
+                    GUI::showHelpMarker(text.c_str());
+                }
             }
         };
 
@@ -534,6 +536,15 @@ namespace vkgen
             V *data = {};
 
             std::string name;
+
+            virtual void setEnabledChildren(bool value, bool ifSelected = false) {
+                for (T &e : *data) {
+                    if (ifSelected && !e.isSelected()) {
+                        continue;
+                    }
+                    e.setEnabled(value);
+                }
+            }
 
             void draw(int id, bool filterNested);
         };

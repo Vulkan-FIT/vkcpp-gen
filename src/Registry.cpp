@@ -748,6 +748,8 @@ namespace vkgen
             }
         }
 
+        // std::cout << "instance: " << instance.members.size() << " commands\n";
+        // std::cout << "device: " << device.members.size() << " commands\n";
         if (verbose)
             std::cout << "Assign commands done" << '\n';
     }

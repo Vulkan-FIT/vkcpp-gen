@@ -161,6 +161,7 @@ namespace vkgen
         ConfigWrapper<NDefine> handleTemplates{ "handle_templates", { "VULKAN_HPP_EXPERIMENTAL_NO_TEMPLATES", Define::ENABLED } };
 
         ConfigWrapper<std::string> contextClassName{ "context_class_name", { "Context" } };
+        ConfigWrapper<std::string> moduleName{ "module_name", { "vulkan" } };
 
         ConfigWrapper<int> classMethods{ "class_methods", { 1 } };
         ConfigWrapper<int> cppStd{ "cpp_standard", 11 };
@@ -189,6 +190,7 @@ namespace vkgen
                             handleConstructors,
                             handleTemplates,
                             contextClassName,
+                            moduleName,
                             classMethods,
                             raii);
         }
