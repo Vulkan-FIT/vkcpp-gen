@@ -7,29 +7,30 @@ Vulkan C++ bindings generator
 
 Official C++ bindings: <https://github.com/KhronosGroup/Vulkan-Hpp>
 
-Main purpose of this project is to provide customizable Vulkan bindings.
-Adding more flexibility and experimental features. 
+Main purpose of this project is to provide customizable lightweight Vulkan bindings.
 
-* possibly more lightweight, faster compilation speed
-* embed PFN pointers in `vk::` namespace objects
-* create handles with constructors instead of `create` or `allocate`
-* functions returning `SmallVector` and `std::array`
-* c++ modules support
+* features can be disabled, faster compilation speed
+* subset generation, remove unused commands
+* implicit PFN dispatch table, no static linking
+* enhanced handle constructors
+* functions returning optimized custom `Vector` or `std::array`
+* PFN dispatch table compatible with VMA
+* C++20 modules support
 
 Configurable via GUI or xml file.
-![GUI](doc/screenshot.png)
+![screen2](https://github.com/Vulkan-FIT/vkcpp-gen/assets/80781072/ca518cbe-a9d2-4846-b9ca-6307713ca737)
 
 Requirements
 ============
 
-* C++20 capable compiler such as MSVC or clang 
+* C++20 capable compiler such as MSVC or Clang 
 * Vulkan SDK <https://www.lunarg.com/vulkan-sdk/>
 * CMake <https://cmake.org/>
 
 Build
 =====
 
-Obtain copy of repo with dependencies
+Obtain a copy of repo with dependencies
 ```
 git clone --recurse-submodules
 ```
