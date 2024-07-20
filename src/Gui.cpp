@@ -978,6 +978,7 @@ void vkgen::Window::queueRedraw() {
 void vkgen::GUI::onLoad() {
     collection.platforms.data  = &gen->getPlatforms().ordered;
     collection.extensions.data = &gen->getExtensions().ordered;
+    collection.features.data   = &gen->getFeatures().ordered;
     collection.handles.data    = &gen->getHandles().ordered;
     collection.structs.data    = &gen->getStructs().ordered;
     collection.enums.data      = &gen->getEnums().ordered;
@@ -990,6 +991,7 @@ vkgen::GUI::GUI(vkgen::Generator &gen) {
 
     collection.platforms.name  = "Platforms";
     collection.extensions.name = "Extensions";
+    collection.features.name   = "Features";
     collection.commands.name   = "Commands";
     collection.handles.name    = "Handles";
     collection.structs.name    = "Struct";
@@ -1292,7 +1294,7 @@ void vkgen::GUI::mainScreen() {
     }
 }
 
-static void showLoadEntry(vkgen::Generator *gen, const std::string &path) {
+static int showLoadEntry(vkgen::Generator *gen, const std::string &path) {
     if (!path.empty()) {
         Dummy(ImVec2(0, 10));
         Text("Found: %s", path.c_str());
@@ -1300,7 +1302,9 @@ static void showLoadEntry(vkgen::Generator *gen, const std::string &path) {
         if (Button("Load")) {
             gen->load(path);
         }
+        return 1;
     }
+    return 0;
 }
 
 void vkgen::GUI::loadScreen() {
@@ -1326,12 +1330,13 @@ void vkgen::GUI::loadScreen() {
     }
     // PopID();
     if (regButtonDisabled) {
-        DummySameLine(100, 0).render(*this);
-        ImGui::Text("File does not exist.");
+        // DummySameLine(100, 0).render(*this);
+        // ImGui::Text("File does not exist.");
     }
 
-    showLoadEntry(gen, Generator::findSystemRegistryPath());
-    showLoadEntry(gen, Generator::findLocalRegistryPath());
+    int entries = 0;
+    entries += showLoadEntry(gen, Generator::getSystemRegistryPath());
+    entries += showLoadEntry(gen, Generator::getLocalRegistryPath());
 }
 
 void vkgen::GUI::setupCommandBuffer(VkCommandBuffer cmd) {
@@ -1376,7 +1381,8 @@ void vkgen::GUI::drawFrame() {
     if (result == VK_ERROR_OUT_OF_DATE_KHR) {
         recreateSwapChain();
         return;
-    } else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
+    }
+    if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
         throw std::runtime_error("failed to acquire swap chain image!");
     }
 
@@ -1533,20 +1539,151 @@ static void drawSelectable(const char *text, vkgen::SelectableGUI *s) {
     }
 }
 
-static void draw(vkgen::BaseType *data, bool filterNested) {
+
+static void draw(vkgen::Feature *data, bool filterNested) {
+
     if (!data->filtered) {
         return;
     }
-    bool supported = data->isSuppored() && data->version != nullptr;
+    bool supported = data->isSupported(); // && data->version != nullptr;
     // std::cout << data->name << " " << supported << " " << (data->version? data->version : "NULL") << "\n";
     if (!supported) {
         return;
     }
+
+    const auto &name = data->name;
+    bool open = false;
+
+    bool check = data->isEnabled();
+    if (Checkbox("", &check)) {
+        // std::cout << "set enabled: " << check << ": " << data->name << '\n';
+        data->setEnabled(check);
+    }
+
+    if (!name.empty()) {
+        // open = drawContainerHeader(name.c_str(), this, false, info);
+        ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnDoubleClick | ImGuiTreeNodeFlags_OpenOnArrow;
+        SameLine();
+        open = TreeNodeEx(name.c_str(), flags);
+        std::string info;
+
+        if (!info.empty()) {
+            SameLine();
+            TextDisabled("[i]");
+            if (IsItemHovered()) {
+                BeginTooltip();
+                PushTextWrapPos(GetFontSize() * 100.0f);
+                TextUnformatted(info.c_str());
+                PopTextWrapPos();
+                EndTooltip();
+            }
+        }
+
+
+    }
+    if (open) {
+        int i = 0;
+        for (const vkgen::Command &c : data->commands) {
+            PushID(i++);
+            // ::draw(&e, filterNested);
+            std::string text = c.name + " (" + c.metaTypeString() + "), " + (c.version? c.version : "-") +"\n";
+            ImGui::Text("%s", text.c_str());
+            PopID();
+        }
+//        for (vkgen::GenericType &t : data->types) {
+//            PushID(i++);
+//            // ::draw(&e, filterNested);
+//            std::string text = t.name + " (" + t.metaTypeString() + "), " + (t.version? t.version : "-") +"\n";
+//            ImGui::Text("%s", text.c_str());
+//            PopID();
+//        }
+        TreePop();
+    }
+
+}
+
+static void draw(vkgen::Extension *data, bool filterNested) {
+
+    if (!data->filtered) {
+        return;
+    }
+    bool supported = data->isSupported(); //&& data->version != nullptr;
+    // std::cout << data->name << " " << supported << " " << (data->version? data->version : "NULL") << "\n";
+    if (!supported) {
+        return;
+    }
+
+    const auto &name = data->name;
+    bool open = false;
+
+    bool check = data->isEnabled();
+    if (Checkbox("", &check)) {
+        // std::cout << "set enabled: " << check << ": " << data->name << '\n';
+        data->setEnabled(check);
+    }
+
+    if (!name.empty()) {
+        // open = drawContainerHeader(name.c_str(), this, false, info);
+        ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnDoubleClick | ImGuiTreeNodeFlags_OpenOnArrow;
+        SameLine();
+        open = TreeNodeEx(name.c_str(), flags);
+        std::string info;
+        if (data->platform) {
+            info += "platform: ";
+            info += data->platform->name;
+        }
+
+        if (!info.empty()) {
+            SameLine();
+            TextDisabled("[i]");
+            if (IsItemHovered()) {
+                BeginTooltip();
+                PushTextWrapPos(GetFontSize() * 100.0f);
+                TextUnformatted(info.c_str());
+                PopTextWrapPos();
+                EndTooltip();
+            }
+        }
+
+
+    }
+    if (open) {
+        int i = 0;
+        for (const vkgen::Command &c : data->commands) {
+            PushID(i++);
+            // ::draw(&e, filterNested);
+            std::string text = c.name + " (" + c.metaTypeString() + "), " + (c.version? c.version : "-") +"\n";
+            ImGui::Text("%s", text.c_str());
+            PopID();
+        }
+//        for (vkgen::GenericType &t : data->types) {
+//            PushID(i++);
+//            // ::draw(&e, filterNested);
+//            std::string text = t.name + " (" + t.metaTypeString() + "), " + (t.version? t.version : "-") +"\n";
+//            ImGui::Text("%s", text.c_str());
+//            PopID();
+//        }
+        TreePop();
+    }
+
+}
+
+static void draw(vkgen::GenericType *data, bool filterNested) {
+    if (!data->filtered) {
+        return;
+    }
+    bool supported = data->isSupported(); // && data->version != nullptr;
+    // std::cout << data->name << " " << supported << " " << (data->version? data->version : "NULL") << "\n";
+//    if (!supported) {
+//        return;
+//    }
     std::string disabler;
+    if (!supported) {
+        disabler += "is not supported";
+    }
     //    if (data->vulkanSpec > 0) {
     //        disabler += "vk: " + std::to_string(data->vulkanSpec);
     //    }
-
     //    if (visualizeDisabled) {
     //        if (data->ext) {
     //            if (!data->ext->isEnabled()) {
@@ -1565,6 +1702,14 @@ static void draw(vkgen::BaseType *data, bool filterNested) {
     }
 
     std::string n = data->name.original;
+    if (data->version) {
+        n += ", ";
+        n += data->version;
+    }
+    if (!data->tempversion.empty()) {
+        n += ", ";
+        n += data->tempversion;
+    }
     // PushID(id);
     Dummy(ImVec2(5.0f, 0.0f));
     SameLine();
@@ -1670,9 +1815,13 @@ void vkgen::GUI::Container<T>::draw(int id, bool filterNested) {
     }
 
     PushID(id);
-    bool open = true;
+    bool open = false;
     if (!name.empty()) {
-        open = drawContainerHeader(name.c_str(), this, false, info);
+        std::string n = name;
+        n += " (";
+        n += std::to_string(this->data->size());
+        n += ")";
+        open = drawContainerHeader(n.c_str(), this, false, info);
     }
     if (open) {
         int i = 0;
@@ -1832,6 +1981,7 @@ void vkgen::GUI::Collection::draw(int &id, bool filtered) {
     // Type::drawFiltered = filtered;
     // Type::visualizeDisabled = false;
     platforms.draw(id++, false);
+    features.draw(id++, false);
     extensions.draw(id++, false);
 }
 

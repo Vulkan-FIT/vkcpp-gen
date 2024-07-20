@@ -47,27 +47,11 @@ namespace vkgen
             explicit AttributeNotFoundException(const std::string &msg) : runtime_error(msg.c_str()) {}
         };
 
-        inline std::string_view requiredAttrib(const tinyxml2::XMLElement *e, const std::string_view &attribute) {
-            const char *attrib = e->Attribute(attribute.data());
-            if (!attrib) {
-                std::cerr << e->Value() << ":\n";
-                auto *att = e->FirstAttribute();
-                while (att) {
-                    std::cerr << "  " << att->Name() << "=" << att->Value() << "\n";
-                    att = att->Next();
-                }
-                throw AttributeNotFoundException{ "vk.xml:" + std::to_string(e->GetLineNum()) + " missing XML attribute: " + std::string{ attribute } };
-            }
-            return attrib;
-        }
+        std::string_view requiredAttrib(const tinyxml2::XMLElement *e, const std::string_view &attribute);
 
-        inline std::optional<std::string_view> attrib(const tinyxml2::XMLElement *e, const std::string_view &attribute) {
-            const char *attrib = e->Attribute(attribute.data());
-            if (!attrib) {
-                return {};
-            }
-            return attrib;
-        }
+        std::string_view value(const tinyxml2::XMLNode &node);
+
+        std::optional<std::string_view> attrib(const tinyxml2::XMLElement *e, const std::string_view &attribute);
 
         // Wrapper
         class Element
@@ -79,54 +63,25 @@ namespace vkgen
 
             explicit Element(tinyxml2::XMLElement *e) : data(e) {}
 
-            Element &operator=(tinyxml2::XMLElement *e) {
-                data = e;
-                return *this;
-            }
+            Element &operator=(tinyxml2::XMLElement *e);
 
-            bool operator==(const Element &o) const {
-                return data == o.data;
-            }
+            bool operator==(const Element &o) const;
 
-            tinyxml2::XMLElement *operator->() const {
-                return data;
-            }
+            tinyxml2::XMLElement *operator->() const;
 
-            tinyxml2::XMLElement *toElement() const {
-                return data;
-            }
+            tinyxml2::XMLElement *toElement() const;
 
-            Element firstChild() const {
-                return Element{ data->FirstChildElement() };
-            }
+            Element firstChild() const;
 
-            inline std::string_view operator[](const std::string_view attrib) const {
-                return xml::requiredAttrib(data, attrib);
-            }
+            std::string_view operator[](const std::string_view attrib) const;
 
-            inline std::string_view required(const std::string_view attrib) const {
-                return xml::requiredAttrib(data, attrib);
-            }
+            std::string_view required(const std::string_view attrib) const;
 
-            inline std::optional<std::string_view> optional(const std::string_view attrib) const {
-                return xml::attrib(data, attrib);
-            }
+            std::optional<std::string_view> optional(const std::string_view attrib) const;
 
-            inline std::string_view getNested(const std::string_view attrib) const {
-                auto a = optional(attrib);
-                if (a) {
-                    return a.value();
-                }
+            std::string_view value() const;
 
-                tinyxml2::XMLElement *elem = data->FirstChildElement(attrib.data());
-                if (elem) {
-                    const auto *text = elem->GetText();
-                    if (text) {
-                        return std::string_view{ text };
-                    }
-                }
-                return "";
-            }
+            std::string_view getNested(const std::string_view attrib) const;
         };
 
         class Iterator
@@ -503,7 +458,7 @@ namespace vkgen
         return out;
     }
 
-    static std::vector<std::string_view> split2(const std::string_view &str, const std::string_view &delim) {
+    static std::vector<std::string_view> split2(const std::string_view str, const std::string_view delim) {
         std::vector<std::string_view> out;
         size_t                        start = 0;
         auto                          end   = str.find(delim);
@@ -580,22 +535,35 @@ namespace vkgen
       public:
         std::string original;
 
-        String &operator=(const std::string &rhs) {
-            std::string::assign(rhs);
-            return *this;
-        }
+//        String &operator=(const std::string &rhs) {
+//            std::string::assign(rhs);
+//            return *this;
+//        }
 
-        String(const std::string &src) {
+        String() = default;
+
+        explicit String(const std::string &src) {
             reset(src);
         }
+
+        explicit String(const String &src) {
+            std::string::assign(src);
+            original = src.original;
+        }
+
+        explicit String(String &&src) = default;
+
+        String &operator=(String &&) = default;
+
+        String &operator=(const String &) = default;
 
         String(const std::string &src, bool firstCapital) {
             convert(src, firstCapital);
         }
 
         void reset(const std::string &src = "") {
-            original = src;
             std::string::assign(src);
+            original = src;
         }
 
         void convert(const std::string &src, bool firstCapital = false) {

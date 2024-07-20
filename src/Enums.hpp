@@ -42,7 +42,13 @@ namespace vkgen
             Struct,
             Union,
             Handle,
-            Command
+            Command,
+            EnumValue,
+            BaseType,
+            FuncPointer,
+            Feature,
+            Extension,
+            Platform
         };
         using enum Value;
 
@@ -76,6 +82,12 @@ namespace vkgen
                 case Union: return "union";
                 case Handle: return "handle";
                 case Command: return "command";
+                case EnumValue: return "enumvalue";
+                case BaseType: return "basetype";
+                case FuncPointer: return "funcpointer";
+                case Feature: return "feature";
+                case Extension: return "extension";
+                case Platform: return "platform";
                 default: return "unknown";
             }
         }

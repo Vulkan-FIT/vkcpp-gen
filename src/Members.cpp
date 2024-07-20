@@ -937,7 +937,7 @@ namespace vkgen
 //        def += generateDefinition(false);
 //    }
 
-    void MemberResolver::generate(UnorderedFunctionOutputX &decl, UnorderedFunctionOutputGroup &def, const std::span<Protect> opt) {
+    void MemberResolver::generate(UnorderedFunctionOutput &decl, UnorderedFunctionOutputGroup &def, const std::span<Protect> opt) {
         setOptionalAssignments();
 
         if (gen.getConfig().dbg.methodTags) {
@@ -1360,7 +1360,7 @@ namespace vkgen
         if (ctx.addVectorAllocator) {
             for (VariableData &p : cmd->outParams) {
                 if (p.isArrayOut()) {
-                    const auto &type = p.getAllocatorType();
+                    const auto &type = String(p.getAllocatorType());
                     auto id = strFirstLower(type);
                     p.setStdAllocator(id);
 
@@ -1825,7 +1825,7 @@ for (auto const &{2} : {3}) {
 
     MemberResolverStaticDispatch::MemberResolverStaticDispatch(const Generator &gen, ClassCommand &d, MemberContext &ctx) : MemberResolver(gen, d, ctx) {
         returnType = cmd->type;
-        name       = name.original;
+        name.assign(name.original);
         dbgtag     = "static dispatch";
     }
 
@@ -1950,9 +1950,10 @@ for (auto const &{2} : {3}) {
     }
 
     MemberResolverCtor::MemberResolverCtor(const Generator &gen, ClassCommand &d, MemberContext &refCtx)
-      : MemberResolverDefault(gen, d, refCtx, true), _name("") {
-        _name = gen.convertCommandName(name.original, cls->superclass);
-        name  = std::string(cls->name);
+      : MemberResolverDefault(gen, d, refCtx, true)//, _name("")
+    {
+        // _name = gen.convertCommandName(name.original, cls->superclass);
+        name.assign(cls->name);
 
         if (cmd->params.empty()) {
             std::cerr << "error: MemberResolverCtor" << '\n';
@@ -2122,7 +2123,7 @@ for (auto const &{2} : {3}) {
     }
 
     MemberResolverUniqueCtor::MemberResolverUniqueCtor(Generator &gen, ClassCommand &d, MemberContext &refCtx) : MemberResolverDefault(gen, d, refCtx, true) {
-        name = "Unique" + cls->name;
+        name.assign("Unique" + cls->name);
 
         InitializerBuilder init("        ");
         const auto        &vars = getFilteredProtoVars();
@@ -2407,7 +2408,7 @@ for (auto const &{2} : {3}) {
         return output;
     }
 
-    MemberGeneratorExperimental::MemberGeneratorExperimental(const Generator &gen, ClassCommand &m, UnorderedFunctionOutputX &decl, UnorderedFunctionOutputGroup &out, bool isStatic)
+    MemberGeneratorExperimental::MemberGeneratorExperimental(const Generator &gen, ClassCommand &m, UnorderedFunctionOutput &decl, UnorderedFunctionOutputGroup &out, bool isStatic)
       : gen(gen), m(m), decl(decl), out(out) {
         ctx.ns              = Namespace::VK;
         if (isStatic) {
@@ -2555,7 +2556,7 @@ for (auto const &{2} : {3}) {
         }
         first->setOptional(false);
 
-        second.name   = name;
+        second.name.assign(name);
         second.dbgtag = "d. overload";
 
         std::vector<Protect> protects;

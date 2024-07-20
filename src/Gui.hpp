@@ -552,6 +552,7 @@ namespace vkgen
         struct Collection
         {
             Container<vkr::Platform>  platforms;
+            Container<vkr::Feature>   features;
             Container<vkr::Extension> extensions;
             Container<vkr::Handle>    handles;
             Container<vkr::Struct>    structs;

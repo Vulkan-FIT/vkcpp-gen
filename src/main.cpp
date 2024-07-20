@@ -18,18 +18,7 @@
 
 #include "ArgumentsParser.hpp"
 #include "Generator.hpp"
-
-#include <algorithm>
-#include <cstdlib>
-#include <filesystem>
-#include <fstream>
-#include <functional>
-#include <iostream>
-#include <map>
-#include <memory>
-#include <stdexcept>
-#include <unordered_set>
-#include <vector>
+#include "Registry.hpp"
 
 #ifdef GENERATOR_GUI
 #    include "Gui.hpp"
@@ -38,6 +27,9 @@
 #include "tool/tool.hpp"
 #endif
 
+#include <iostream>
+#include <stdexcept>
+
 static constexpr char const *HELP_TEXT{
     R"(Usage:
     -r, --reg       path to source registry file    
@@ -45,10 +37,12 @@ static constexpr char const *HELP_TEXT{
     -c, --config    path to configuration file)"
 };
 
-static bool loadDefaultRegistry(vkgen::Generator &gen) {
-    std::string path = vkgen::Generator::findDefaultRegistryPath();
+static bool loadDefaultRegistry(vkgen::Generator &gen, bool quiet = false) {
+    const auto& path = vkgen::Generator::getDefaultRegistryPath();
     if (path.empty()) {
-        std::cerr << "Failed to detect vk.xml. See usage.\n";
+        if (!quiet) {
+            std::cerr << "Failed to detect vk.xml. See usage.\n";
+        }
         return false;
     }
     return gen.load(path);
@@ -85,11 +79,11 @@ int main(int argc, char **argv) {
 
         Generator gen;
 
-        const auto loadRegistry = [&] {
+        const auto loadRegistry = [&](bool quiet = false) {
             if (regOption.set) {
                 return gen.load(regOption.value);
             }
-            return loadDefaultRegistry(gen);
+            return loadDefaultRegistry(gen, quiet);
         };
 #ifdef GENERATOR_EXTENSION
         {
@@ -105,7 +99,7 @@ int main(int argc, char **argv) {
                 throw std::runtime_error("Missing arguments. See usage.");
             }
             if (!loadRegistry()) {
-                return;
+                throw std::runtime_error("Can't load registry.");
             }
             if (configOption.set) {
                 gen.loadConfigFile(configOption.value);
@@ -130,6 +124,7 @@ int main(int argc, char **argv) {
             return 0;
         }
 
+        Registry::loadRegistryPath();
 #ifdef GENERATOR_GUI
         if (!noguiOption.set) {
             GUI gui{ gen };
@@ -140,7 +135,7 @@ int main(int argc, char **argv) {
             if (configOption.set) {
                 gui.setConfigPath(configOption.value);
             }
-            loadRegistry();
+            loadRegistry(true);
             if (configOption.set) {
                 gen.loadConfigFile(configOption.value);
             }

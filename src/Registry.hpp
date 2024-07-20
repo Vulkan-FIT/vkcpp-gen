@@ -91,8 +91,6 @@ namespace vkgen
         bool hovered  = {};
         bool filtered = true;
 
-        // virtual void setEnabled(bool, bool ifSelected = false) {}
-
         virtual void setEnabledChildren(bool value, bool ifSelected = false) {}
 
         void setSelected(bool value) {
@@ -103,22 +101,6 @@ namespace vkgen
             return selected;
         }
     };
-
-    // template <typename T> struct SelectableData : public Selectable {
-    //     T *data;
-    //
-    //     SelectableData(T &data) : data(&data) {}
-    //
-    //     virtual void setEnabled(bool value, bool ifSelected = false) override {
-    //         if (ifSelected && !selected) {
-    //             return;
-    //         }
-    //         std::cout << "set enabled: " << (int)value << std::endl;
-    //         data->setEnabled(value);
-    //     };
-    //
-    //     virtual void setSelected(bool value) override { selected = value; }
-    // };
 
 #endif
 
@@ -170,14 +152,14 @@ namespace vkgen
 
     namespace vkr
     {
-        struct Extension;
+        struct Feature;
         struct Handle;
+        struct Extension;
         struct Command;
+        struct Platform;
     }  // namespace vkr
 
-    static constexpr auto temp = "x";
-
-    struct BaseType
+    struct GenericType
       : public MetaType
 #ifdef GENERATOR_GUI
       , public SelectableGUI
@@ -185,24 +167,41 @@ namespace vkgen
     {
       private:
         vkr::Extension *ext = {};
+        vkr::Feature   *feature = {};
 
       public:
-        String name = { "" };
+        String name;
 
-        std::set<BaseType *> dependencies;
-        std::set<BaseType *> subscribers;
-        std::vector<String>  aliases;
+        std::set<GenericType *>   dependencies;
+        std::set<GenericType *>   subscribers;
+        std::vector<GenericType>  aliases;
         std::string_view     protect;
-        const char          *version       = temp;
+        const char          *version       = {};
+        std::string          tempversion;
         bool                 forceRequired = {};
+        vkr::Extension      *parentExtension = {};
 
-        BaseType() = default;
+        GenericType() = default;
 
-        explicit BaseType(MetaType::Value type) noexcept : MetaType(type) {}
+        explicit GenericType(MetaType::Value type) noexcept : MetaType(type) {}
 
-        BaseType(MetaType::Value type, std::string_view name, bool firstCapital = false) : name(std::string{ name }, firstCapital), MetaType(type) {}
+        GenericType(MetaType::Value type, std::string_view name, bool firstCapital = false) : name(std::string{ name }, firstCapital), MetaType(type) {}
+
+        GenericType(const GenericType &parent, std::string_view name, bool firstCapital = false);
 
         std::string_view getProtect() const;
+
+        vkr::Platform* getPlatfrom() const;
+
+        std::string getVersionDebug() const;
+
+        vkr::Extension *getExtension() const {
+            return ext;
+        }
+
+        vkr::Feature *getFeature() const {
+            return feature;
+        }
 
         void setProtect(const std::string_view);
 
@@ -212,9 +211,9 @@ namespace vkgen
 
         void setExtension(vkr::Extension *ext);
 
-        void bind(vkr::Extension *ext, const std::string_view protect);
+        void bind(vkr::Feature *feature, vkr::Extension *ext, const std::string_view protect = "");
 
-        void setUnsuppored() {
+        void setUnsupported() {
             supported = false;
             version   = nullptr;
         }
@@ -223,7 +222,7 @@ namespace vkgen
             return enabled && supported;
         }
 
-        bool isSuppored() const {
+        bool isSupported() const {
             return supported;
         }
 
@@ -235,8 +234,8 @@ namespace vkgen
             return supported && (enabled || isRequired());
         }
 
-        void addAlias(const std::string_view alias) {
-            aliases.emplace_back(std::string{ alias }, true);
+        void addAlias(const std::string_view alias, bool firstCapital) {
+            aliases.emplace_back(*this, std::string{ alias }, firstCapital);
         }
 
         void setEnabled(bool value) {
@@ -244,11 +243,6 @@ namespace vkgen
                 return;
             }
             enabled = value;
-            if (enabled) {
-                // std::cout << "> enable: " << name << '\n';
-            } else {
-                // std::cout << "> disable: " << name << '\n';
-            }
 
             if (enabled) {
                 // std::cout << "    enable: " << name << '\n';
@@ -268,7 +262,7 @@ namespace vkgen
         }
 
       protected:
-        void subscribe(BaseType *s) {
+        void subscribe(GenericType *s) {
             if (!subscribers.contains(s)) {
                 bool empty = subscribers.empty();
                 subscribers.emplace(s);
@@ -279,7 +273,7 @@ namespace vkgen
             }
         }
 
-        void unsubscribe(BaseType *s) {
+        void unsubscribe(GenericType *s) {
             auto it = subscribers.find(s);
             if (it != subscribers.end()) {
                 subscribers.erase(it);
@@ -297,13 +291,29 @@ namespace vkgen
     namespace vkr
     {
 
+        struct Snippet : public GenericType
+        {
+            Snippet(const std::string &name, std::string&& code);
+
+            std::string code;
+        };
+
+        using BaseType = Snippet;
+        using DefineSnippet = Snippet;
+
+        struct FuncPointer : public Snippet {
+            FuncPointer(const std::string &name, std::string&& code);
+
+            bool inStruct = false;
+        };
+
         // holds information about class member (function)
         struct ClassCommand
         {
             enum class PrivateFlags
             {
                 NONE = 0
-            };  // TODO refactor enum class
+            };
 
             class Flags : public Enums::Flags<PrivateFlags>
             {
@@ -313,7 +323,7 @@ namespace vkgen
 
             const Handle *cls      = {};
             Command      *src      = {};
-            String        name     = { "" };
+            String        name;
             bool          raiiOnly = {};
             Flags         flags    = {};
 
@@ -325,10 +335,10 @@ namespace vkgen
                 return !name.empty();
             }
 
-            operator BaseType() const;
+            operator GenericType() const;
         };
 
-        struct Handle : public BaseType
+        struct Handle : public GenericType
         {
             enum class CreationCategory
             {
@@ -343,7 +353,7 @@ namespace vkgen
             std::unique_ptr<VariableData> ownerRaii;
             std::unique_ptr<VariableData> ownerUnique;
             std::unique_ptr<VariableData> secondOwner;
-            // std::string alias;
+            std::string      code;
             Handle          *parent      = {};
             CreationCategory creationCat = CreationCategory::NONE;
 
@@ -370,9 +380,9 @@ namespace vkgen
             bool isSubclass       = false;
             bool vectorVariant    = false;
 
-            explicit Handle(Generator &gen) : BaseType(MetaType::Handle), superclass(""), vkhandle(VariableData::TYPE_INVALID) {}
+            explicit Handle(Generator &gen) : GenericType(MetaType::Handle), superclass(""), vkhandle(VariableData::TYPE_INVALID) {}
 
-            Handle(Generator &gen, xml::Element elem);
+            Handle(Generator &gen, xml::Element elem, const std::string_view name, std::string &&code);
 
             static Handle &empty(Generator &gen) {
                 static Handle h{ gen };
@@ -400,12 +410,13 @@ namespace vkgen
             }
         };
 
+        struct Enum;
         struct Struct;
 
-        struct Command : public BaseType
+        struct Command : public GenericType
         {
           private:
-            void init(const Registry &reg);
+
 
             void initParams() {
                 if (params.size() != _params.size()) {
@@ -423,6 +434,8 @@ namespace vkgen
             }
 
           public:
+            void init(const Registry &reg);
+
             enum class NameCategory
             {
                 UNKNOWN,
@@ -441,7 +454,6 @@ namespace vkgen
                 NONE     = 0,
                 ALIAS    = 1,
                 INDIRECT = 1 << 1,
-                // RAII_ONLY = 4,
                 CREATES_HANDLE     = 1 << 3,
                 CPP_VARIANT        = 1 << 4,
                 OVERLOADED_DESTROY = 1 << 5,
@@ -459,24 +471,24 @@ namespace vkgen
             std::vector<std::reference_wrapper<VariableData>> params;
             std::vector<std::reference_wrapper<VariableData>> outParams;
             std::string                                       type;  // return type
-            // std::string alias;
             std::vector<std::string> successCodes;
             NameCategory             nameCat;
             PFNReturnCategory        pfnReturn;
             EnumFlag<CommandFlags>   flags{};
             vkr::Handle             *top{};
-            const vkr::Struct             *structChain{};
+            const vkr::Struct       *structChain{};
 
-            //  Command(const Generator &gen, xml::Element elem,
-            //          const std::string &className) noexcept;
-            Command(const Generator &gen, xml::Element elem) noexcept;
+            Command(Generator &gen, xml::Element elem, const std::string_view name);
 
             Command(const Registry &reg, const Command &o, std::string_view alias);
 
-            // copy constuctor
             Command(const Command &) = delete;
-            // move constuctor
-            Command(Command &&o) noexcept = default;
+
+            Command(Command &&) noexcept = default;
+
+            Command& operator=(const Command&) = delete;
+
+            Command& operator=(Command&&) = default;
 
             void check() {
                 bool ok;
@@ -544,26 +556,10 @@ namespace vkgen
                 if (prepared) {
                     // return;
                 }
-                // std::cerr << "  >cmd prepare  " << this << '\n';
                 for (auto &v : _params) {
                     v->restore();
                 }
                 initParams();
-
-                //            if (params.size() != _params.size()) {
-                //                params.clear();
-                //                params.reserve(_params.size());
-                //                for (auto &p : _params) {
-                //                    params.push_back(std::ref(*p));
-                //                }
-                //            }
-                //            else {
-                //                params.clear();
-                //                params.reserve(_params.size());
-                //                for (auto &p : _params) {
-                //                    params.push_back(std::ref(*p));
-                //                }
-                //            }
                 // std::cout << "cmd prepare " << this << '\n';
 #ifndef NDEBUG
                 check();
@@ -632,7 +628,6 @@ namespace vkgen
                 return !_params.empty();
             }
 
-            // TODO deprecated
             bool isIndirectCandidate(const std::string_view &type) const {
                 try {
                     if (getsObject() || createsHandle()) {
@@ -716,12 +711,6 @@ namespace vkgen
                     }
                 }
                 return nullptr;
-                //            for (VariableData &v : std::ranges::reverse_view(params)) {
-                //                if (v.isHandle()) {
-                //                    return &v;
-                //                }
-                //            }
-                // throw std::runtime_error("can't get param (last handle)");
             }
 
             VariableData *getFirstHandleVar() const {
@@ -737,80 +726,144 @@ namespace vkgen
             bool prepared = false;
         };
 
-        struct Platform : public BaseType
+        struct Feature : public GenericType {
+            std::vector<std::string>                                 constants;
+            std::vector<std::reference_wrapper<std::string>>         includes;
+            std::vector<std::reference_wrapper<vkr::Enum>>           enums;
+            std::vector<std::reference_wrapper<vkr::Struct>>         forwardStructs;
+            std::vector<std::reference_wrapper<vkr::Struct>>         structs;
+            std::vector<std::reference_wrapper<vkr::Command>>        commands;
+            std::vector<std::reference_wrapper<vkr::Handle>>         handles;
+            std::vector<std::reference_wrapper<vkr::DefineSnippet>>  defines;
+            std::vector<std::reference_wrapper<vkr::BaseType>>       baseTypes;
+            std::vector<std::reference_wrapper<vkr::FuncPointer>>    funcPointers;
+            std::vector<std::reference_wrapper<GenericType>>         aliases;
+            unsigned int                                             elements = 0;
+
+            Feature(const std::string_view name) : GenericType(MetaType::Feature) {
+                GenericType::name.reset(std::string{ name });
+            }
+
+            bool tryInsert(Registry &reg, const std::string &name);
+
+            template<typename T, typename C>
+            bool tryInsertFromMap(std::unordered_map<std::string, C> &src, const std::string &name, std::vector<std::reference_wrapper<T>> &dst) {
+                if (auto it = src.find(name); it != src.end()) {
+                    this->insert<T>(dst, it->second);
+                    elements++;
+                    return true;
+                }
+                return false;
+            }
+
+            template<typename T, typename C>
+            bool tryInsertFrom(C &src, const std::string &name, std::vector<std::reference_wrapper<T>> &dst) {
+                if (auto it = src.find(name); it != src.end()) {
+                    this->insert<T>(dst, *it);
+                    elements++;
+                    return true;
+                }
+                return false;
+            }
+
+            template<typename T>
+            static void insert(std::vector<std::reference_wrapper<T>> &dst, T &type) {
+                for (const auto &i : dst) {
+                    if (std::addressof(i.get()) == &type) {
+                        return;
+                    }
+                }
+                dst.emplace_back(std::ref(type));
+            }
+
+        };
+
+        struct Platform : public GenericType
         {
             std::string_view protect;
+            std::vector<std::reference_wrapper<vkr::Extension>> extensions;
+            std::unordered_set<std::string> includes;
 
-            Platform(const std::string_view name, const std::string_view protect, bool enabled) : protect(protect) {
-                BaseType::name.reset(std::string{ name });
-                BaseType::enabled = enabled;
+            Platform(const std::string_view name, const std::string_view protect, bool enabled) : GenericType(MetaType::Platform), protect(protect) {
+                GenericType::name.reset(std::string{ name });
+                GenericType::enabled = enabled;
             }
         };
 
-        struct Extension : public BaseType
+        struct Extension : public Feature
         {
-            std::string                 protect;
-            Platform                   *platform;
-            std::vector<vkr::Command *> commands;
-            std::vector<BaseType *>     types;
+            struct Platform             *platform;
+            std::string                  protect;
+            unsigned int                 number = 0;
+            std::vector<vkr::Extension*> depends;
+            std::string                  versiondepends;
+            std::string                  comment;
 
-            Extension(const std::string &name, Platform *platform, bool supported, bool enabled) : platform(platform) {
-                BaseType::name.reset(name);
-                BaseType::enabled   = enabled;
-                BaseType::supported = supported;
+            Extension(const std::string &name, struct Platform *platform, bool supported, bool enabled) : Feature(name), platform(platform) {
+                setMetaType(MetaType::Extension);
+                GenericType::enabled   = enabled;
+                GenericType::supported = supported;
                 if (platform) {
                     protect = platform->protect;
                 }
             }
         };
 
-        struct EnumValue : public BaseType
+        struct EnumValue : public GenericType
         {
             std::string value;
+            std::string alias;
             bool        isAlias = {};
 
-            EnumValue(const String &name, const std::string &value, bool isAlias = false, bool enabled = true) : value(value), isAlias(isAlias) {
-                this->name    = name;
-                this->enabled = true;
-            }
+            EnumValue(const Registry &reg, std::string name, const std::string &value, const std::string &enumName, bool isBitmask = false);
+
+            void setValue(uint64_t value, const vkr::Enum &parent);
         };
 
         struct EnumValueType : public EnumValue
         {
             std::string type;
 
-            EnumValueType(const String &name, const std::string &value, const std::string &type, bool isAlias = false, bool enabled = true)
-              : EnumValue(name, value, isAlias, enabled), type(type) {}
+            EnumValueType(const Registry &reg, std::string name, const std::string &value, const std::string &type)
+             : EnumValue(reg, name, value, ""), type(type)
+            {}
         };
 
-        struct Enum : public BaseType
+        struct Enum : public GenericType
         {
-            std::vector<EnumValue> members;
-            bool                   isBitmask = {};
+            std::vector<struct EnumValue> members;
+            std::string type;
+            String bitmask;
 
-            Enum(const std::string_view name, bool isBitmask = false) : BaseType(MetaType::Enum, name, true), isBitmask(isBitmask) {}
+            Enum(Generator &gen, xml::Element elem, const std::string_view name, const std::string_view type, bool bitmask = false);
 
             bool containsValue(const std::string &value) const;
 
-            EnumValue *find(const std::string_view value) noexcept;
+            bool isBitmask() const {
+                return !bitmask.empty();
+            }
+
+            struct EnumValue *find(const std::string_view value) noexcept;
+
+            static std::string toFlags(const std::string &name);
+            static std::string toFlagBits(const std::string &name);
         };
 
-        struct Struct : BaseType
+        struct Struct : GenericType
         {
-            // XMLNode *node;
             std::string           structTypeValue;
             std::vector<Struct *> extends;
             Variables             members;
             bool                  returnedonly = false;
+            bool                  needForwardDeclare = false;
 
             Struct(Generator &gen, const std::string_view name, MetaType::Value type, const xml::Element &e);
 
             Struct(const Struct &o) = delete;
 
             Struct(Struct &&o) noexcept {
-                BaseType::operator=(o);
+                GenericType::operator=(o);
                 structTypeValue = std::move(o.structTypeValue);
-                // aliases = std::move(o.aliases);
                 extends      = std::move(o.extends);
                 members      = std::move(o.members);
                 returnedonly = o.returnedonly;
@@ -819,9 +872,8 @@ namespace vkgen
             Struct &operator=(const Struct &o) = delete;
 
             Struct &operator=(Struct &&o) noexcept {
-                BaseType::operator=(o);
+                GenericType::operator=(o);
                 structTypeValue = std::move(o.structTypeValue);
-                // aliases = std::move(o.aliases);
                 extends      = std::move(o.extends);
                 members      = std::move(o.members);
                 returnedonly = o.returnedonly;
@@ -855,7 +907,6 @@ namespace vkgen
     {
         std::string define;
         std::string value;
-        //        Macro      *parent     = {};
         bool usesDefine = {};
 
         Macro(const std::string &define, const std::string &value, bool usesDefine) : define(define), value(value), usesDefine(usesDefine) {}
@@ -865,9 +916,6 @@ namespace vkgen
         }
 
         std::string get() const {
-            //            if (parent) {
-            //                return parent->get() + "::" + getDefine();
-            //            }
             return getDefine();
         }
 
@@ -905,14 +953,15 @@ namespace vkgen
 
         static std::string to_string(vkr::Command::NameCategory);
 
-        using Types = std::unordered_map<std::string, BaseType *>;
+        using Types = std::unordered_map<std::string, GenericType *>;
 
         template <typename T>
         class Container
         {
-            static_assert(std::is_base_of<BaseType, T>::value, "T must derive from BaseType");
+            static_assert(std::is_base_of<GenericType, T>::value, "T must derive from BaseType");
 
             std::map<std::string, size_t, std::less<>> map;
+            std::map<std::string, GenericType*> aliasMap;
 
           public:
             using iterator       = std::vector<T>::iterator;
@@ -925,25 +974,27 @@ namespace vkgen
                 return find(name) != end();
             }
 
-            void addAlias(const std::string_view alias, const std::string_view to) {
-                auto i = map.find(to);
-                if (i == map.end()) {
-                    std::cerr << "can't add alias: " << to << " not found" << '\n';
-                    return;
-                }
-                map.emplace(alias, i->second);
-            }
-
             void prepare() {
                 map.clear();
+                aliasMap.clear();
+
                 ordered.clear();
                 ordered.reserve(items.size());
                 for (size_t i = 0; i < items.size(); ++i) {
                     map.emplace(items[i].name.original, i);
                     map.emplace(items[i].name, i);
+                    if constexpr (std::is_same_v<T, vkr::Enum>) {
+                        if (items[i].isBitmask()) {
+                            map.emplace(items[i].bitmask.original, i);
+                            map.emplace(items[i].bitmask, i);
+                        }
+                    }
+//                    for (const auto &a : items[i].aliases) {
+//                        aliasMap.emplace(a.name.original, &a);
+//                        aliasMap.emplace(a.name, &a);
+//                    }
                     ordered.emplace_back(std::ref(items[i]));
                 }
-                // std::cout << "prepared container" << '\n';
             }
 
             void addTypes(Registry::Types &types) {
@@ -975,7 +1026,7 @@ namespace vkgen
             T &operator[](const std::string_view name) {
                 auto it = map.find(name);
                 if (it == map.end()) {
-                    throw std::runtime_error("Error: " + std::string{ name } + " not found in Container<" + std::string{ typeid(T).name() } + ">");
+                    throw std::runtime_error(std::string{ name } + " not found in Container<" + std::string{ typeid(T).name() } + ">");
                 }
                 return items[it->second];
             }
@@ -983,7 +1034,7 @@ namespace vkgen
             const T &operator[](const std::string_view name) const {
                 auto it = map.find(name);
                 if (it == map.end()) {
-                    throw std::runtime_error("Error: " + std::string{ name } + " not found in Container<" + std::string{ typeid(T).name() } + ">");
+                    throw std::runtime_error(std::string{ name } + " not found in Container<" + std::string{ typeid(T).name() } + ">");
                 }
                 return items[it->second];
             }
@@ -1008,6 +1059,7 @@ namespace vkgen
                 items.clear();
                 ordered.clear();
                 map.clear();
+                aliasMap.clear();
             }
 
             size_t size() const {
@@ -1022,6 +1074,19 @@ namespace vkgen
                     }
                 }
             }
+
+            void removeUnsupported(bool dbg = false) {
+                if (dbg) {
+                    for (auto &item : items) {
+                        if (!item.isSupported()) {
+                            std::cout << "rem: " << item.name.original << "\n";
+                        }
+                    }
+                }
+                auto count = std::erase_if(items, [](const T& item) { return !item.isSupported(); });
+                // std::cout << "Erased: " << count << '\n';
+                prepare();
+            }
         };
 
         template <typename T>
@@ -1031,7 +1096,6 @@ namespace vkgen
             struct Item
             {
                 T *data = {};
-                // Item *parent = {};
                 std::vector<Item *>   children;
                 std::vector<Item *>   deps;
                 std::set<std::string> plats;
@@ -1040,8 +1104,6 @@ namespace vkgen
                 void addDependency(DependencySorter<T> &sorter, const std::string &dep) {
                     auto item = sorter.find(dep);
                     if (!item) {
-                        // should not happen
-                        std::cerr << "Error: dep not found: " << dep << '\n';
                         return;
                     }
                     bool unique = true;
@@ -1079,25 +1141,47 @@ namespace vkgen
                 };
             };
 
-            explicit DependencySorter(Container<T> &source) : source(source) {}
-
-            void sort(const std::string &msg, std::function<void(Item &i)> getDependencies) {
+            void sort(Container<T> &source, const std::string &msg, std::function<void(Item &i)> getDependencies) {
                 source.ordered.clear();
                 source.ordered.reserve(source.size());
 
+                items.clear();
                 items.reserve(source.size());
                 for (auto &i : source.items) {
-                    items.push_back(Item{ .data = &i });  // TODO emplace
+                    items.emplace_back(&i);
                 }
+
+                sortItems(source.ordered, msg, getDependencies);
+            }
+
+            void sort(std::vector<std::reference_wrapper<T>> &source, const std::string &msg) {
+
+                auto size = source.size();
+                items.clear();
+                items.reserve(size);
+                for (T &i : source) {
+                    items.emplace_back(&i);
+                }
+
+                source.clear();
+                source.reserve(size);
+                sortItems(source, msg, [&](DependencySorter<T>::Item &i) {
+                    for (auto *d : i.data->dependencies) {
+                        if (d->name.original == "VkBaseInStructure" || d->name.original == "VkBaseOutStructure") {
+                            continue;
+                        }
+                        i.addDependency(*this, d->name.original);
+                    }
+                });
+            }
+
+
+          private:
+
+            void sortItems(std::vector<std::reference_wrapper<T>> &dst, const std::string &msg, std::function<void(Item &i)> getDependencies) {
 
                 for (auto &i : items) {
                     getDependencies(i);
-                    /*
-                    std::cout << "S: " << i.data->name << "\n";
-                    for (auto &d : i.deps) {
-                        std::cout << "     " << d->data->name << "\n";
-                    }
-                    */
                 }
 
                 bool empty = false;
@@ -1107,7 +1191,7 @@ namespace vkgen
                     for (auto &i : items) {
                         if (!i.inserted) {
                             if (i.hasDepsInserted()) {
-                                source.ordered.push_back(std::ref(*i.data));
+                                dst.push_back(std::ref(*i.data));
                                 i.inserted = true;
                                 stuck      = false;
                             }
@@ -1130,9 +1214,7 @@ namespace vkgen
                 }
             }
 
-          private:
             std::vector<Item> items;
-            Container<T>     &source;
 
             Item *find(const std::string &name) {
                 for (auto &i : items) {
@@ -1155,12 +1237,25 @@ namespace vkgen
         using Commands   = Container<vkr::Command>;
         using Platforms  = Container<vkr::Platform>;
         using Extensions = Container<vkr::Extension>;
+        using Features = Container<vkr::Feature>;
         using Tags       = std::unordered_set<std::string>;
         using Handles    = Container<vkr::Handle>;
         using Structs    = Container<vkr::Struct>;
         using Enums      = Container<vkr::Enum>;
 
       protected:
+
+        struct Parse {
+            std::vector<xml::Element> xmlSupportedFeatures;
+            std::vector<xml::Element> xmlUnsupportedFeatures;
+            std::vector<xml::Element> xmlSupportedExtensions;
+            std::vector<xml::Element> xmlUnsupportedExtensions;
+
+            std::vector<std::pair<std::string, std::string>> typeRequires;
+        };
+
+        std::unique_ptr<Parse> parse;
+
         struct ErrorClass
         {
             std::string           name;
@@ -1174,50 +1269,30 @@ namespace vkgen
 
         bool defaultWhitelistOption = true;
         bool verbose                = false;
-        // int spec = 0;
 
       public:
         std::string registryPath;
-        std::string headerVersion;
-
-        std::vector<ErrorClass> errorClasses;
 
         Types types;
 
         Platforms  platforms;  // maps platform name to protect (#if defined PROTECT)
+        Features   features;
         Extensions extensions;
         Tags       tags;  // list of tags from <tags>
 
         Commands                                          commands;
         std::vector<std::reference_wrapper<vkr::Command>> staticCommands;
 
+
+        Handles                         handles;
         Structs                         structs;
         Enums                           enums;
         std::vector<vkr::EnumValueType> apiConstants;
-
-        Handles                                          handles;
-        std::vector<std::reference_wrapper<vkr::Handle>> topLevelHandles;
-
-        std::vector<xml::Element> unsupportedFeatures;
-
-        std::vector<std::reference_wrapper<vkr::Command>> orderedCommands;
-        vkr::Handle                                       loader;
-
-        Registry(Generator &gen);
-
-        // returns filtered prototype name in class context
-        String convertCommandName(const std::string &name, const std::string &cls) const {
-            String      out{ name, false };
-            std::string cname = cls;
-            std::string tag   = strRemoveTag(cname);
-            if (!cls.empty()) {
-                out = std::regex_replace(out, std::regex(cname, std::regex_constants::icase), "");
-            }
-            if (!tag.empty()) {
-                strStripSuffix(out, tag);
-            }
-            return out;
-        }
+        std::unordered_map<std::string, std::string>        includes;
+        std::unordered_map<std::string, vkr::Snippet>       defines;
+        std::unordered_map<std::string, vkr::BaseType>      baseTypes;
+        std::unordered_map<std::string, vkr::FuncPointer>   funcPointers;
+        std::unordered_map<std::string, std::reference_wrapper<GenericType>>    aliases;
 
         std::string strRemoveTag(std::string &str) const;
 
@@ -1225,15 +1300,153 @@ namespace vkgen
 
         bool strEndsWithTag(const std::string_view str) const;
 
-        std::pair<std::string, std::string> snakeToCamelPair(std::string str) const;
-
-        std::string snakeToCamel(const std::string &str) const;
+        std::string snakeToCamel(std::string str) const;
 
         std::string enumConvertCamel(const std::string &enumName, std::string value, bool isBitmask = false) const;
 
-        // bool isStructOrUnion(const std::string &name) const;
-
         bool containsFuncPointer(const vkr::Struct &data) const;
+
+        vkr::Handle &findHandle(const std::string &name) {
+            const auto &handle = handles.find(name);
+            if (handle == handles.end()) {
+                throw std::runtime_error("Handle not found: " + std::string(name));
+            }
+            return *handle;
+        }
+
+        const vkr::Handle &findHandle(const std::string &name) const {
+            const auto &handle = handles.find(name);
+            if (handle == handles.end()) {
+                throw std::runtime_error("Handle not found: " + std::string(name));
+            }
+            return *handle;
+        }
+
+        String& getHandleSuperclass(const Handle &data);
+
+      private:
+        tinyxml2::XMLDocument doc;
+        tinyxml2::XMLElement *root = {};
+
+        std::function<void(void)> onLoadCallback;
+
+        static std::string systemRegistryPath;
+        static std::string localRegistryPath;
+
+        void parsePlatforms(Generator &gen, xml::Element elem, xml::Element children);
+
+        void parseTags(Generator &gen, xml::Element elem, xml::Element children);
+
+        void parseTypes(Generator &gen, xml::Element elem, xml::Element children);
+
+        void parseEnums(Generator &gen, xml::Element elem, xml::Element children);
+
+        void parseApiConstants(Generator &gen, xml::Element elem);
+
+        void parseCommands(Generator &gen, xml::Element elem, xml::Element children);
+
+        void assignCommands(Generator &gen);
+
+        void parseFeature(Generator &gen, xml::Element elem, xml::Element children);
+
+        void parseExtensions(Generator &gen, xml::Element elem, xml::Element children);
+
+        void parseEnumValue(const xml::Element &elem, vkr::Enum &e, vkr::Feature *feature = {}, vkr::Extension *ext = {}, const std::string_view protect = "");
+
+        void loadFinished();
+
+        bool loadXML(const std::string &xmlPath);
+
+        void parseXML(Generator &gen);
+
+        void removeUnsupportedFeatures();
+
+        void buildDependencies();
+
+        void buildTypesMap();
+
+      public:
+        GenericType &get(const std::string &name);
+
+        GenericType &get(const std::string_view name) {
+            return get(std::string{ name });
+        }
+
+        GenericType *find(const std::string &name) noexcept;
+
+        GenericType *find(const std::string_view name) noexcept {
+            return find(std::string{ name });
+        }
+
+        const Command* findCommand(const std::string &name) const noexcept {
+            if (auto type = commands.find(name); type != commands.end()) {
+                return &*type;
+            }
+            return nullptr;
+        }
+
+        void orderStructs();
+
+        void orderHandles();
+
+        static void loadSystemRegistryPath();
+
+        static void loadLocalRegistryPath();
+
+        static void loadRegistryPath();
+
+        static std::string& getLocalRegistryPath()  {
+            return localRegistryPath;
+        }
+
+        static std::string& getSystemRegistryPath()  {
+            return systemRegistryPath;
+        }
+
+        static std::string getDefaultRegistryPath();
+
+        bool isLoaded() const {
+            return root != nullptr;
+        }
+
+        std::string getRegistryPath() const {
+            return registryPath;
+        }
+
+        bool load(Generator &gen, const std::string &xmlPath);
+
+        void unload();
+
+        void bindGUI(const std::function<void(void)> &onLoad);
+    };
+
+    class VideoRegistry : public Registry {
+
+
+    };
+
+    class VulkanRegistry : public Registry {
+
+    public:
+        std::vector<ErrorClass> errorClasses;
+        std::string headerVersion;
+        std::vector<std::reference_wrapper<vkr::Handle>>  topLevelHandles;
+        std::vector<std::reference_wrapper<vkr::Command>> orderedCommands;
+
+        vkr::Handle                                       loader;
+
+        std::unique_ptr<VideoRegistry> video;
+
+    public:
+        VulkanRegistry(Generator &gen);
+
+        String& getHandleSuperclass(const Handle &data);
+
+        void createErrorClasses();
+
+        bool load(Generator &gen, const std::string &xmlPath);
+
+        void unload();
 
         vkr::Handle &findHandle(const std::string &name) {
             const auto &handle = handles.find(name);
@@ -1257,90 +1470,6 @@ namespace vkgen
             return *handle;
         }
 
-        String getHandleSuperclass(const Handle &data);
-
-      private:
-        tinyxml2::XMLDocument doc;
-        tinyxml2::XMLElement *root = {};
-
-        std::function<void(void)> onLoadCallback;
-
-        void parsePlatforms(Generator &gen, xml::Element elem, xml::Element children);
-
-        void parseTags(Generator &gen, xml::Element elem, xml::Element children);
-
-        void parseTypes(Generator &gen, xml::Element elem, xml::Element children);
-
-        void parseEnums(Generator &gen, xml::Element elem, xml::Element children);
-
-        void parseApiConstants(Generator &gen, xml::Element elem);
-
-        void parseCommands(Generator &gen, xml::Element elem, xml::Element children);
-
-        void assignCommands(Generator &gen);
-
-        void parseFeature(Generator &gen, xml::Element elem, xml::Element children);
-
-        void parseExtensions(Generator &gen, xml::Element elem, xml::Element children);
-
-        void parseEnumExtend(const xml::Element &elem, Extension *ext, const std::string_view optProtect, const char *spec = {});
-
-        void loadFinished();
-
-        bool loadXML(const std::string &xmlPath);
-
-        void parseXML(Generator &gen);
-
-        void createErrorClasses();
-
-        void disableUnsupportedFeatures();
-
-        void buildDependencies();
-
-      public:
-        BaseType &get(const std::string &name) const {
-            auto it = types.find(name);
-            if (it == types.end()) {
-                throw std::runtime_error("Error: " + std::string{ name } + " not found in reg");
-            }
-            return *it->second;
-        }
-
-        BaseType &get(const std::string_view name) const {
-            return get(std::string{ name });
-        }
-
-        BaseType *find(const std::string &name) const noexcept {
-            auto it = types.find(name);
-            return it != types.end() ? it->second : nullptr;
-        }
-
-        BaseType *find(const std::string_view name) const noexcept {
-            return find(std::string{ name });
-        }
-
-        void orderStructs();
-
-        void orderHandles();
-
-        static std::string findSystemRegistryPath();
-        static std::string findLocalRegistryPath();
-
-        static std::string findDefaultRegistryPath();
-
-        bool isLoaded() const {
-            return root != nullptr;
-        }
-
-        std::string getRegistryPath() const {
-            return registryPath;
-        }
-
-        bool load(Generator &gen, const std::string &xmlPath);
-
-        void unload();
-
-        void bindGUI(const std::function<void(void)> &onLoad);
     };
 
 }  // namespace vkgen

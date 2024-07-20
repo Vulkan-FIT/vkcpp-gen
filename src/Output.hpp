@@ -28,72 +28,37 @@
 
 namespace vkgen
 {
-
+    struct GenericType;
     class OutputBuffer;
-    struct BaseType;
     class Generator;
-
-    class UnorderedFunctionOutput
-    {
-        const Generator &g;
-
-        struct Segment
-        {
-            std::map<std::string, std::string> guards;
-
-            void add(const std::string &guard, const std::string &code) {
-                guards[guard] += code;
-            }
-
-            std::string get(const Generator &g) const;
-        };
-
-      public:
-        std::map<std::string, Segment> segments;
-
-        UnorderedFunctionOutput(const Generator &gen) : g(gen) {}
-
-        void add(const BaseType &type, std::function<void(std::string &)> function, const std::string &guard);
-
-        void clear() {
-            segments.clear();
-        }
-
-        UnorderedFunctionOutput &operator+=(const std::string &str) {
-            segments[""].add("", str);
-            return *this;
-        }
-
-        std::string get(bool onlyNoProtect = false) const;
-    };
 
     using Protect = std::pair<std::string, bool>;
 
-    class UnorderedFunctionOutputX
+    class UnorderedFunctionOutput
     {
         std::unique_ptr<OutputBuffer>                   output;
-        std::map<std::string, UnorderedFunctionOutputX> segments;
+        std::map<std::string, UnorderedFunctionOutput> segments;
         bool                                            ifdef = {};
 
         OutputBuffer &get() {
             return *output;
         }
 
-        UnorderedFunctionOutputX &get(const std::string &protect, bool ifdef) {
+        UnorderedFunctionOutput &get(const std::string &protect, bool ifdef) {
             auto &s = segments[protect];
             s.ifdef = ifdef;
             return s;
         }
 
       public:
-        UnorderedFunctionOutputX();
+        UnorderedFunctionOutput();
 
         OutputBuffer &operator*() {
             return *output;
         }
 
         template <typename T>
-        UnorderedFunctionOutputX &operator+=(T &&v) {
+        UnorderedFunctionOutput &operator+=(T &&v) {
             *output += std::forward<T>(v);
             return *this;
         }
@@ -102,7 +67,7 @@ namespace vkgen
 
         void clear();
 
-        void add(const BaseType &type, std::function<void(std::string &)> function, const std::string &guard = "");
+        void add(const GenericType &type, std::function<void(std::string &)> function, const std::string &guard = "");
 
         OutputBuffer &get(std::span<Protect> protects);
 
@@ -113,9 +78,9 @@ namespace vkgen
 
     struct UnorderedFunctionOutputGroup
     {
-        UnorderedFunctionOutputX def;
-        UnorderedFunctionOutputX templ;
-        UnorderedFunctionOutputX platform;
+        UnorderedFunctionOutput def;
+        UnorderedFunctionOutput templ;
+        UnorderedFunctionOutput platform;
 
         void clear() {
             def.clear();
@@ -125,7 +90,7 @@ namespace vkgen
 
     };
 
-    inline std::ostream &operator<<(std::ostream &os, const vkgen::UnorderedFunctionOutputX &s) {
+    inline std::ostream &operator<<(std::ostream &os, const vkgen::UnorderedFunctionOutput &s) {
         s.write(os);
         return os;
     }
@@ -150,34 +115,9 @@ namespace vkgen
     //     return os;
     // }
 
-    /*
-    class UnorderedOutput
-    {
-        const Generator &g;
-
-      public:
-        std::map<std::string, std::string> segments;
-
-        UnorderedOutput(const Generator &gen) : g(gen){};
-
-        std::string get(bool onlyNoProtect = false) const;
-
-        void clear() {
-            segments.clear();
-        }
-
-        void add(const BaseType &type, std::function<void(std::string &)> function, bool bypass = false);
-
-        UnorderedOutput &operator+=(const std::string &str) {
-            segments[""] += str;
-            return *this;
-        }
-    };
-    */
-
     class OutputBuffer
     {
-        using Segment = std::variant<std::string, std::string_view, UnmutableString, OutputBuffer, UnorderedFunctionOutputX>;
+        using Segment = std::variant<std::string, std::string_view, UnmutableString, OutputBuffer, UnorderedFunctionOutput>;
         std::list<Segment> list;
         size_t             m_size = {};
 
@@ -200,7 +140,7 @@ namespace vkgen
 
         OutputBuffer &operator+=(const char *str);
 
-        OutputBuffer &operator+=(UnorderedFunctionOutputX &&);
+        OutputBuffer &operator+=(UnorderedFunctionOutput &&);
 
         void print() const;
     };
@@ -229,10 +169,10 @@ namespace vkgen
         //: sFuncs(gen), sFuncsEnhanced(gen), sPublic(gen), sPrivate(gen), sProtected(gen)
         // {}
 
-        UnorderedFunctionOutputX sFuncs;
-        UnorderedFunctionOutputX sPublic;
-        UnorderedFunctionOutputX sPrivate;
-        UnorderedFunctionOutputX sProtected;
+        UnorderedFunctionOutput sFuncs;
+        UnorderedFunctionOutput sPublic;
+        UnorderedFunctionOutput sPrivate;
+        UnorderedFunctionOutput sProtected;
         std::string              inherits;
     };
 
@@ -243,6 +183,7 @@ namespace vkgen
         const std::filesystem::path       path;
         std::map<std::string, OutputFile> files;
         std::string                       protectSuffix;
+        bool                              cguard = false;
 
         GenOutput(const std::string &prefix, const std::string &extension, std::filesystem::path &path) : prefix(prefix), extension(extension), path(path) {}
 
@@ -285,6 +226,9 @@ namespace vkgen
                 } else {
                     out += std::toupper(c);
                 }
+            }
+            if (cguard) {
+                out += '_';
             }
             return out;
         };

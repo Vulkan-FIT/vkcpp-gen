@@ -26,45 +26,7 @@
 namespace vkgen
 {
 
-    std::string UnorderedFunctionOutput::Segment::get(const Generator &g) const {
-        std::string out;
-        for (const auto &k : guards) {
-            out += g.genWithProtectNegate(k.second, k.first);
-        }
-        return out;
-    }
-
-    /*
-    std::string UnorderedOutput::get(bool onlyNoProtect) const {
-        if (onlyNoProtect) {
-            std::string o = segments.at("");
-            return o;
-        }
-        std::string out;
-        for (const auto &k : segments) {
-            // std::cout << ">> uo[" << k.first << "]" << '\n';
-            out += g.genWithProtect(k.second, k.first);
-        }
-        return out;
-    }
-
-    void UnorderedOutput::add(const BaseType &type, std::function<void(std::string &)> function, bool bypass) {
-        auto [code, protect] = g.genCodeAndProtect(type, function, bypass);
-        segments[protect] += code;
-    }
-    */
-
-    void UnorderedFunctionOutput::add(const BaseType &type, std::function<void(std::string &)> function, const std::string &guard) {
-        if (!type.canGenerate()) {
-            return;
-        }
-
-        auto [code, protect] = g.genCodeAndProtect(type, function, false);
-
-        segments[protect].add(guard, code);
-    }
-
-    void UnorderedFunctionOutputX::add(const BaseType &type, std::function<void(std::string &)> function, const std::string &guard) {
+    void UnorderedFunctionOutput::add(const GenericType &type, std::function<void(std::string &)> function, const std::string &guard) {
         if (!type.canGenerate()) {
             return;
         }
@@ -81,22 +43,6 @@ namespace vkgen
             std::array<Protect, 2> pro = {Protect(guard, true), Protect(p, true)};
             get(pro) += out;
         }
-    }
-
-    std::string UnorderedFunctionOutput::get(bool onlyNoProtect) const {
-        if (onlyNoProtect) {
-            auto it = segments.find("");
-            if (it == segments.end()) {
-                return "";
-            }
-            return it->second.get(g);
-        }
-        std::string out;
-        for (const auto &k : segments) {
-            // std::cout << ">> uo[" << k.first << "]" << '\n';
-            out += g.genWithProtect(k.second.get(g), k.first);
-        }
-        return out;
     }
 
     void GenOutput::writeFile(Generator &gen, OutputFile &file) {
@@ -119,10 +65,43 @@ namespace vkgen
 
         if (!protect.empty()) {
             output << "#ifndef " << protect << "\n";
-            output << "#define " << protect << "\n";
+            output << "#define " << protect;
+            if (cguard) {
+                output << " 1";
+            }
+            output << "\n\n";
+        }
+
+        output <<
+          R"(/*
+** Copyright 2015-2024 The Khronos Group Inc.
+**
+** SPDX-License-Identifier: Apache-2.0
+*/
+
+/*
+** This header is generated from the Khronos Vulkan XML API Registry.
+**
+*/
+)";
+
+        if (cguard) {
+            output << R"(
+#ifdef __cplusplus
+extern "C" {
+#endif
+)";
         }
 
         content.write(output);
+
+        if (cguard) {
+            output << R"(
+#ifdef __cplusplus
+}
+#endif
+)";
+        }
 
         if (!protect.empty()) {
             output << "#endif // " + protect + "\n";
@@ -131,17 +110,16 @@ namespace vkgen
         // std::cout << "Generated: " << p << ", reserved: " << content.size() << "B\n";
     }
 
-
-    UnorderedFunctionOutputX::UnorderedFunctionOutputX() {
+    UnorderedFunctionOutput::UnorderedFunctionOutput() {
         output = std::make_unique<OutputBuffer>();
     }
 
-    void UnorderedFunctionOutputX::clear() {
+    void UnorderedFunctionOutput::clear() {
         output = std::make_unique<OutputBuffer>(); // TODO
         segments.clear();
     }
 
-    size_t UnorderedFunctionOutputX::size() const {
+    size_t UnorderedFunctionOutput::size() const {
         size_t s = output->size();
         for (const auto &k : segments) {
             s += k.second.size();
@@ -149,14 +127,14 @@ namespace vkgen
         return s;
     }
 
-    std::string UnorderedFunctionOutputX::toString() const {
+    std::string UnorderedFunctionOutput::toString() const {
         std::stringstream s;
         write(s);
         return s.str();
     }
 
-    OutputBuffer &UnorderedFunctionOutputX::get(const std::span<Protect> protects) {
-        UnorderedFunctionOutputX *output = this;
+    OutputBuffer &UnorderedFunctionOutput::get(const std::span<Protect> protects) {
+        UnorderedFunctionOutput *output = this;
         for (const auto &p : protects) {
             if (!p.first.empty()) {
                 output = &output->get(p.first, p.second);
@@ -165,7 +143,7 @@ namespace vkgen
         return output->get();
     }
 
-    void UnorderedFunctionOutputX::write(std::ostream &os) const {
+    void UnorderedFunctionOutput::write(std::ostream &os) const {
         output->write(os);
         for (const auto &s : segments) {
             if (s.second.ifdef) {
@@ -248,7 +226,7 @@ namespace vkgen
         return *this;
     }
 
-    OutputBuffer &OutputBuffer::operator+=(UnorderedFunctionOutputX &&out) {
+    OutputBuffer &OutputBuffer::operator+=(UnorderedFunctionOutput &&out) {
         m_size += out.size();
         list.emplace_back(std::move(out));
         return *this;

@@ -247,11 +247,11 @@ namespace vkgen
             }
         }
 
-        void append(const BaseType &t) {
+        void append(const GenericType &t) {
             if (t.isEnabled() || t.isRequired()) {
                 auto name = t.name.original;
                 text += "            " + name + "\n";
-            } else if (t.isSuppored()) {
+            } else if (t.isSupported()) {
                 hasDisabledElement = true;
                 // std::cout << "disabled elem: " << t.name << " " << t.metaTypeString() << std::endl;
             }

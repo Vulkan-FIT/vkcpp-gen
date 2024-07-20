@@ -182,7 +182,7 @@ namespace vkgen
         VariableBase saved;
 
       public:
-        VariableData(const Registry &reg, xml::Element);
+        VariableData(Registry &reg, xml::Element);
 
         VariableData(const String &type, const std::string &id);
 
@@ -214,7 +214,7 @@ namespace vkgen
             // std::cout << "~var dtor " << this << " " << fullType() << ", s: " << (int) specialType << '\n';
         }
 
-        void updateMetaType(const Registry &reg);
+        void updateMetaType(Registry &reg);
 
         bool check(const Generator &gen, VariableData &ref, std::stringstream &s) const {
             std::stringstream ss;
@@ -321,6 +321,10 @@ namespace vkgen
 
         Type getSpecialType() const {
             return specialType;
+        }
+
+        std::string getNameSuffix() const {
+            return nameSuffix;
         }
 
         std::string getLenAttrib() const {
@@ -684,6 +688,8 @@ namespace vkgen
 
         std::string toArgumentArrayProxy(const Generator &gen) const;
 
+        std::string optionalArraySuffix() const;
+
         void evalFlags();
 
       protected:
@@ -721,8 +727,6 @@ namespace vkgen
         };
 
         std::vector<VariableData *> arrayVars = {};
-
-        std::string optionalArraySuffix() const;
 
         std::string createCast(const Generator &gen, std::string from) const;
 
@@ -822,6 +826,34 @@ namespace vkgen
 
         virtual bool Visit(const tinyxml2::XMLText &text) override;
     };
+
+    class XMLTextParser : protected tinyxml2::XMLVisitor
+    {
+        const tinyxml2::XMLNode *root = {};
+        const tinyxml2::XMLNode *prev = {};
+        std::unordered_map<std::string, std::string> fields;
+      public:
+        std::string text;
+
+        std::string& operator[](const std::string &field);
+
+        XMLTextParser(xml::Element element);
+
+        virtual bool Visit(const tinyxml2::XMLText &text) override;
+    };
+
+    /*
+    class XMLBaseTypeParser : protected tinyxml2::XMLVisitor
+    {
+      public:
+        std::string name;
+        std::string text;
+
+        XMLBaseTypeParser(tinyxml2::XMLElement *element);
+
+        virtual bool Visit(const tinyxml2::XMLText &text) override;
+    };
+    */
 
 }  // namespace vkgen
 

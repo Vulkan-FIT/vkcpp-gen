@@ -29,7 +29,7 @@ void vkgen::VariableFields::set(size_t index, const std::string &str) {
     fields[index] = str;
 }
 
-vkgen::VariableData::VariableData(const Registry &reg, xml::Element elem) {
+vkgen::VariableData::VariableData(Registry &reg, xml::Element elem) {
     XMLVariableParser p(*this, elem.toElement());
 
     const auto len      = elem.optional("len");
@@ -63,7 +63,7 @@ vkgen::VariableData::VariableData(const Registry &reg, xml::Element elem) {
 
     convertToCpp();
 
-    updateMetaType(reg);
+    // updateMetaType(reg);
 }
 
 vkgen::VariableData::VariableData(Type type) {
@@ -101,10 +101,10 @@ vkgen::VariableData::VariableData(const String &type, const std::string &id) : V
     convertToReference();
 }
 
-void vkgen::VariableData::updateMetaType(const Registry &reg) {
+void vkgen::VariableData::updateMetaType(Registry &reg) {
     auto *t = reg.find(original.type());
     if (t) {
-        if (nameSuffix.empty()) {
+        if (nameSuffix.empty() && !type().starts_with("PFN_")) {
             ns = Namespace::VK;
         } else {
             setType(original.type());
@@ -483,6 +483,8 @@ std::string vkgen::VariableData::declaration(const Generator &gen) const {
     return out;
 }
 
+
+
 std::string vkgen::VariableData::toStringWithAssignment(const Generator &gen) const {
     std::string out = toString(gen);
     if (!_assignment.empty()) {
@@ -774,3 +776,60 @@ bool vkgen::XMLDefineParser::Visit(const tinyxml2::XMLText &text) {
     }
     return true;
 }
+
+vkgen::XMLTextParser::XMLTextParser(xml::Element element) {
+    prev = element.toElement();
+    root = element.toElement();
+    auto name = element.optional("name");
+    if (name) {
+        fields["name"] = name.value();
+    }
+    element->Accept(this);
+}
+
+std::string& vkgen::XMLTextParser::operator[](const std::string &field) {
+    auto it = fields.find(field);
+    if (it == fields.end()) {
+        throw std::runtime_error("Parse error: Missing XML node: " + field + "\n" + text + "\n");
+    }
+    return it->second;
+}
+
+bool vkgen::XMLTextParser::Visit(const tinyxml2::XMLText &text) {
+    const auto *node = text.Parent();
+    std::string_view tag   = node->Value();
+    std::string_view value = xml::value(text);
+    // std::cout << "P: " << text.ToText() << ", " << text.Parent() << ", " << prev << ", <" << tag << ">: " << value << "\n";
+    if (prev != root && node != root && prev != node) {
+        this->text += ' ';
+    }
+    if (node != root) {
+        // std::cout << "  <" << tag << ">: " << value << "\n";
+        fields[std::string(tag)] = value;
+    }
+    this->text += value;
+    prev = node;
+    return true;
+}
+
+/*
+vkgen::XMLBaseTypeParser::XMLBaseTypeParser(tinyxml2::XMLElement *element) {
+    element->Accept(this);
+}
+
+bool vkgen::XMLBaseTypeParser::Visit(const tinyxml2::XMLText &text) {
+    std::string_view tag   = text.Parent()->Value();
+    std::string_view value = xml::value(text);
+
+    std::cout << "P: " << text.Parent() << ", " << prev << "\n";
+    // std::cout << tag << "<<" << value << ">>\n";
+    if (tag == "name") {
+//        if (!this->text.starts_with(' ')) {
+//            this->text += ' ';
+//        }
+        this->name = value;
+    }
+    this->text += value;
+    return true;
+}
+*/

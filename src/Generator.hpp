@@ -24,15 +24,8 @@
 #include "Output.hpp"
 #include "Registry.hpp"
 
-#include <filesystem>
-#include <forward_list>
-#include <iostream>
-#include <optional>
-#include <ranges>
-#include <regex>
-#include <stdexcept>
 #include <string>
-#include <string_view>
+#include <optional>
 #include <variant>
 #include <vector>
 
@@ -96,7 +89,7 @@ namespace vkgen
         std::string      additonalTemplate;
         std::string      indent = "    ";
         Protect          optionalProtect;
-        const BaseType *base = nullptr;
+        const GenericType *base = nullptr;
         bool          allowInline          = true;
         bool          specifierInline      = {};
         bool          specifierExplicit    = {};
@@ -106,7 +99,7 @@ namespace vkgen
         bool          specifierConstexpr14 = {};
     };
 
-    class Generator : public Registry
+    class Generator : public VulkanRegistry
     {
       public:
         struct ClassVariables
@@ -120,31 +113,27 @@ namespace vkgen
 
         Config         cfg;
         ClassVariables cvars;
-        // bool           dispatchLoaderBaseGenerated;
 
         std::string                            m_ns;
         std::string                            m_ns_raii;
         std::string                            m_constexpr;
         std::string                            m_constexpr14;
         std::string                            m_cast;
-        // std::unordered_map<Namespace, Macro *> namespaces;
 
         std::string outputFilePath;
 
         UnorderedFunctionOutputGroup outputFuncs;
         UnorderedFunctionOutputGroup outputFuncsRAII;
-        // UnorderedFunctionOutput      outputFuncsInterop;
-        // UnorderedOutput              platformOutput;
 
         std::string genWithProtect(const std::string &code, const std::string &protect) const;
 
         std::string genWithProtectNegate(const std::string &code, const std::string &protect) const;
 
         std::pair<std::string, std::string>
-          genCodeAndProtect(const BaseType &type, const std::function<void(std::string &)> &function, bool bypass = false) const;
+          genCodeAndProtect(const GenericType &type, const std::function<void(std::string &)> &function, bool bypass = false) const;
 
-        std::string genOptional(const BaseType &type, std::function<void(std::string &)> function, bool bypass = false) const;
-        std::string genPlatform(const BaseType &type, std::function<void(std::string &)> function, bool bypass = false);
+        std::string genOptional(const GenericType &type, std::function<void(std::string &)> function, bool bypass = false) const;
+        std::string genPlatform(const GenericType &type, std::function<void(std::string &)> function, bool bypass = false);
 
         std::string gen(const Define &define, std::function<void(std::string &)> function) const;
 
@@ -160,8 +149,6 @@ namespace vkgen
 
         void generateMainFile(OutputBuffer &);
 
-        // std::pair<std::string, std::string> generateModuleFunctions(GenOutput &);
-
         void generateModuleEnums(OutputBuffer &);
 
         void generateModuleStructs(OutputBuffer &);
@@ -172,7 +159,11 @@ namespace vkgen
 
         void wrapNamespace(OutputBuffer &output, std::function<void(OutputBuffer &)> func);
 
-        void generateFiles(std::filesystem::path path);
+        void generateApiVideo(std::filesystem::path path);
+
+        void generateApiC(std::filesystem::path path);
+
+        void generateApiCpp(std::filesystem::path path);
 
         void generateForwardHandles(OutputBuffer &output);
 
@@ -181,6 +172,8 @@ namespace vkgen
         void generateEnum(const Enum &data, OutputBuffer &output, OutputBuffer &output_forward, OutputBuffer &to_string_output);
 
         std::string generateToStringInclude() const;
+
+        void generateCore(OutputBuffer &output);
 
         void generateEnums(OutputBuffer &output, OutputBuffer &output_forward, OutputBuffer &to_string_output);
 
@@ -269,7 +262,7 @@ namespace vkgen
 
         std::string generateClassWithPFN(Handle &h);
 
-        void generateContext(OutputBuffer &output, UnorderedFunctionOutput &inter);
+        void generateContext(OutputBuffer &output);
 
         void generateRAII(OutputBuffer &output, OutputBuffer &output_forward, GenOutput &out);
 
@@ -413,6 +406,10 @@ namespace vkgen
             return extensions;
         };
 
+        Features &getFeatures() {
+            return features;
+        };
+
         auto &getHandles() {
             return handles;
         }
@@ -436,10 +433,6 @@ namespace vkgen
         const Config &getConfig() const {
             return cfg;
         }
-
-//        bool smartHandles() const {
-//            return cfg.gen.smartHandles && !cfg.gen.expApi && !cfg.gen.cppModules;
-//        }
 
         void saveConfigFile(const std::string &filename);
 

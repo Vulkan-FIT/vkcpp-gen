@@ -191,11 +191,11 @@ namespace vkgen
 
         virtual ~MemberResolver();
 
-        void generate(UnorderedFunctionOutputX &decl, UnorderedFunctionOutputGroup &def, const std::span<Protect> protects = {});
+        void generate(UnorderedFunctionOutput &decl, UnorderedFunctionOutputGroup &def, const std::span<Protect> protects = {});
 
         template <typename... Args>
         VariableData &addVar(decltype(cmd->params)::iterator pos, Args &&...args) {
-            auto &var = tempVars.emplace_back(std::make_unique<VariableData>(args...));
+            auto &var = tempVars.emplace_back(std::make_unique<VariableData>(std::forward<Args>(args)...));
 
             //            std::stringstream s;
             //            s << std::hex << var.get();
@@ -318,7 +318,7 @@ namespace vkgen
     class MemberResolverCtor : public MemberResolverDefault
     {
       protected:
-        String      _name;
+        // String      _name;
         std::string src;
         bool        ownerInParent;
 
@@ -406,7 +406,7 @@ namespace vkgen
     {
         const Generator              &gen;
         ClassCommand                 &m;
-        UnorderedFunctionOutputX     &decl;
+        UnorderedFunctionOutput     &decl;
         UnorderedFunctionOutputGroup &out;
         MemberContext                 ctx{};
 
@@ -435,7 +435,7 @@ namespace vkgen
         void generateDestroy(ClassCommand &m, MemberContext &ctx, const std::string &name);
 
       public:
-        MemberGeneratorExperimental(const Generator &gen, ClassCommand &m, UnorderedFunctionOutputX &decl, UnorderedFunctionOutputGroup &out, bool isStatic = false);
+        MemberGeneratorExperimental(const Generator &gen, ClassCommand &m, UnorderedFunctionOutput &decl, UnorderedFunctionOutputGroup &out, bool isStatic = false);
 
         void generate();
     };
