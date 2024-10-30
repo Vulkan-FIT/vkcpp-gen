@@ -557,6 +557,11 @@ namespace vkgen
 
         String &operator=(const String &) = default;
 
+        String &operator=(const std::string &str) {
+            std::string::assign(str);
+            return *this;
+        }
+
         String(const std::string &src, bool firstCapital) {
             convert(src, firstCapital);
         }

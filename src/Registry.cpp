@@ -109,6 +109,9 @@ namespace vkgen
     void Registry::loadRegistryPath() {
         loadSystemRegistryPath();
         loadLocalRegistryPath();
+        std::cout << "Lookup paths: \n";
+        std::cout << systemRegistryPath << "\n";
+        std::cout << localRegistryPath << "\n";
     }
 
     void Registry::loadSystemRegistryPath() {
@@ -219,6 +222,7 @@ namespace vkgen
                 tag = "_" + tag;
             }
             enumSnake = camelToSnake(enumSnake);
+            strStripPrefix(enumSnake, "VK_");
 
             const auto &tokens = split(enumSnake, "_");
 
@@ -365,9 +369,6 @@ namespace vkgen
         if (verbose)
             std::cout << "Parsing declarations" << '\n';
 
-        std::vector<std::pair<std::string, std::string>> bitmasks;
-        std::vector<std::pair<std::string, std::string>> structextends;
-
         ItemInserter enumsInserter  { enums,   true };
         ItemInserter structsInserter{ structs, true };
         ItemInserter handlesInserter{ handles, true };
@@ -410,7 +411,7 @@ namespace vkgen
                         auto extends = type.optional("structextends");
                         if (extends) {
                             for (const auto &e : split2(extends.value(), ",")) {
-                                structextends.emplace_back(name.value(), e);
+                                parse->structExtends.emplace_back(name.value(), e);
                             }
                         }
                     }
@@ -447,12 +448,6 @@ namespace vkgen
         handlesInserter.finalize();
         enumsInserter.finalize();
         structsInserter.finalize();
-
-        for (auto &e : structextends) {
-            auto &src = structs[e.first.data()];
-            auto &dst = structs[e.second.data()];
-            dst.extends.emplace_back(&src);
-        };
 
         if (verbose)
             std::cout << "Parsing declarations done" << '\n';
@@ -552,6 +547,57 @@ namespace vkgen
 
         if (verbose)
             std::cout << "Parsing commands done" << '\n';
+    }
+
+    void Registry::orderCommands() {
+        std::sort(commands.ordered.begin(), commands.ordered.end(), [](const Command &a, const Command &b){ return a.successCodes.size() < b.successCodes.size(); });
+
+        return;
+        const auto findCode = [](const Command &cmd, const std::string_view code) {
+            for (const auto &c : cmd.successCodes) {
+                if (c == code) {
+                    return true;
+                }
+            }
+            return false;
+        };
+
+        std::map<int, int> hist;
+        int arraycnt = 0;
+
+        for (const Command &c : commands.ordered) {
+
+            bool retarray = false;
+            if (c.successCodes.size() >= 2) {
+                if (findCode(c, "VK_SUCCESS") && findCode(c, "VK_INCOMPLETE")) {
+                    retarray = true;
+                }
+            }
+            if (!retarray) {
+                hist[c.successCodes.size()] += 1;
+            }
+            else {
+                arraycnt++;
+            }
+
+            // if (c.successCodes.size() <= 2 || retarray)
+                continue;
+
+            if (c.pfnReturn == vkr::Command::PFNReturnCategory::VOID) {
+                std::cout << "void ";
+            }
+            std::cout << c.name.original << "[" << c.successCodes.size() << "]: { ";
+            for (const auto &code : c.successCodes) {
+                std::cout << code << ", ";
+            }
+            std::cout << "}\n";
+        }
+
+        std::cout << "All functions: " << commands.size() << "\n";
+        for (const auto &k : hist) {
+            std::cout << k.first << " ret functions: " << k.second << "\n";
+        }
+        std::cout << "vector ret functions: " << arraycnt << "\n";
     }
 
     void Registry::assignCommands(Generator &gen) {
@@ -668,7 +714,7 @@ namespace vkgen
             }
         };
 
-        for (auto &command : commands) {
+        for (Command &command : commands.ordered) {
             if (assignGetProc(instance, command) || assignGetProc(device, command)) {
                 continue;
             }
@@ -1138,9 +1184,28 @@ namespace vkgen
         }
     }
 
-    void Registry::buildDependencies() {
+    void Registry::buildDependencies(Generator &gen) {
         if (verbose)
             std::cout << "Building dependencies information" << '\n';
+
+        for (auto &e : parse->structExtends) {
+            auto src = structs.find(e.first.data());
+            if (src != structs.end()) {
+                auto dst = structs.find(e.second.data());
+                if (dst != structs.end()) {
+                    dst->extends.emplace_back(&*src);
+                }
+            }
+        };
+
+        for (auto &h : handles.items) {
+            if (!h.superclass.empty()) {
+                h.setParent(*this, &handles[h.superclass]);
+            }
+        }
+        for (auto &h : handles.items) {
+            h.init(gen);
+        }
 
         for (auto &e : enums) {
             for (auto &a : e.aliases) {
@@ -1205,17 +1270,7 @@ namespace vkgen
         parseXML(gen);
         buildTypesMap();
         removeUnsupportedFeatures();
-
-        for (auto &h : handles.items) {
-            if (!h.superclass.empty()) {
-                h.setParent(*this, &handles[h.superclass]);
-            }
-        }
-        for (auto &h : handles.items) {
-            h.init(gen);
-        }
-
-        buildDependencies();
+        buildDependencies(gen);
 
         for (const auto &r : parse->typeRequires) {
 
@@ -1281,6 +1336,7 @@ namespace vkgen
 //            }
 //        }
 
+        orderCommands();
         assignCommands(gen);
         orderStructs();
         orderHandles();
@@ -1682,7 +1738,8 @@ namespace vkgen::vkr
 
     Handle::Handle(Generator &gen, xml::Element elem, const std::string_view, std::string &&code)
       : GenericType(MetaType::Handle, elem.getNested("name"), true)
-      , superclass(std::string{ elem.optional("parent").value_or("") })
+      , superclass(std::string{elem.optional("parent").value_or("")})
+      , objType(std::string{elem.optional("objtypeenum").value_or("VK_OBJECT_TYPE_UNKNOWN")})
       , vkhandle(VariableDataInfo{ .vktype     = this->name.original,
                                    // .identifier = "m_" + strFirstLower(this->name),
                                    .identifier = "m_handle",
@@ -1694,6 +1751,8 @@ namespace vkgen::vkr
 
     {
         isSubclass = name != "Instance" && name != "Device";
+        objType = gen.enumConvertCamel("ObjectType", objType.original, false);
+        // std::cout << objType.original << " -> " << objType << "\n";
     }
 
     void Handle::init(Generator &gen) {
@@ -1770,14 +1829,16 @@ namespace vkgen::vkr
         bool                                            order = !gen.orderedCommands.empty();
 
         for (auto &m : members) {
-            std::string const s = gen.genOptional(m, [&](std::string &output) {
+            if (m.src->canGenerate()) {
+            // std::string const s = gen.genOptional(m, [&](std::string &output) {
                 effectiveMembers++;
                 if (order) {
                     stage.emplace(m.name.original, &m);
                 } else {
                     filteredMembers.push_back(&m);
                 }
-            });
+            }
+            // });
         }
         if (order) {
             for (const auto &o : gen.orderedCommands) {
@@ -1843,21 +1904,26 @@ namespace vkgen::vkr
         // std::cout << "Value: " << this->name << ", " << this->name.original << "\n";
     }
 
-    void EnumValue::setValue(uint64_t value, const vkr::Enum &parent) {
+    std::string EnumValue::toHex(uint64_t value, bool is64bit) {
+        std::string str = vkgen::format("{:x}", value);
+        if (str.size() > 8) {
+            str = str.substr(str.size() - 8);
+        }
+        str = "0x" + str;
+        if (is64bit) {
+            str += "ULL";
+        }
+        return str;
+    }
+
+    void EnumValue::setValue(uint64_t v, const vkr::Enum &parent) {
         if (parent.isBitmask()) {
-            std::string str = vkgen::format("{:x}", value);
-            if (str.size() > 8) {
-                str = str.substr(str.size() - 8);
-            }
-            this->value = "0x";
-            this->value += str;
-            if (parent.type != "VkFlags") {
-                this->value += "ULL";
-            }
+            value = std::move(toHex(v, parent.is64bit()));
         }
         else {
-            this->value = std::to_string(value);
+            value = std::move(std::to_string(v));
         }
+        numericValue = v;
     }
 
     Enum::Enum(Generator &gen, xml::Element elem, const std::string_view name, const std::string_view type, bool isBitmask)
@@ -1872,7 +1938,7 @@ namespace vkgen::vkr
 
     EnumValue *Enum::find(const std::string_view value) noexcept {
         for (auto &m : members) {
-            if (m.name.original == value) {
+            if (m.name.original == value || m.name == value) {
                 return &m;
             }
         }
@@ -1880,17 +1946,22 @@ namespace vkgen::vkr
     }
 
     void Command::init(const Registry &reg) {
-        _params.bind();
+        const bool noArray = name.original == "vkGetDescriptorEXT";
+        _params.bind(noArray);
 
         initParams();
 
         bool hasHandle    = false;
+        bool hasTopHandle    = false;
         bool canTransform = false;
         for (auto &p : _params) {
             if (p->isOutParam()) {
                 if (p->getArrayVars().empty()) {
                     outParams.push_back(std::ref(*p));
                     if (p->isHandle()) {
+                        if (!reg.findHandle(p->original.type()).isSubclass) {
+                            hasTopHandle = true;
+                        }
                         hasHandle = true;
                     }
                 }
@@ -1914,6 +1985,9 @@ namespace vkgen::vkr
 
         if (hasHandle) {
             setFlagBit(CommandFlags::CREATES_HANDLE, true);
+        }
+        if (hasTopHandle) {
+            setFlagBit(CommandFlags::CREATES_TOP_HANDLE, true);
         }
         if (canTransform) {
             setFlagBit(CommandFlags::CPP_VARIANT, true);
@@ -2107,10 +2181,15 @@ namespace vkgen::vkr
             const std::string &type = v->type();
             const std::string &name = v->identifier();
 
+            if (!v->isPointer() && (type == "float" || type == "double")) {
+                containsFloatingPoints = true;
+            }
+
             if (const char *values = member->ToElement()->Attribute("values")) {
                 std::string value = gen.enumConvertCamel(type, values);
                 v->setAssignment(" = " + type + "::" + value);
                 if (v->original.type() == "VkStructureType") {  // save sType information for structType
+                    structTypeValue.original = values;
                     structTypeValue = value;
                 }
             }

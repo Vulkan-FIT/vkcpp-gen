@@ -46,7 +46,9 @@ namespace vkgen
         bool      addVectorAllocator         = {};
         bool      commentOut                 = {};
         bool      templateVector             = {};
+        bool      staticVector               = {};
         bool      structureChain             = {};
+        bool      globalModeStatic           = {};
         bool      exp                        = {};
     };
 
@@ -170,8 +172,6 @@ namespace vkgen
 
         std::string createProtoArguments(bool declaration = false);
 
-        void transformToArray(VariableData &var);
-
         void prepareParams();
 
         void setOptionalAssignments();
@@ -191,7 +191,7 @@ namespace vkgen
 
         virtual ~MemberResolver();
 
-        void generate(UnorderedFunctionOutput &decl, UnorderedFunctionOutputGroup &def, const std::span<Protect> protects = {});
+        void generate(GuardedOutput &decl, GuardedOutputFuncs &def, const std::span<Protect> protects = {});
 
         template <typename... Args>
         VariableData &addVar(decltype(cmd->params)::iterator pos, Args &&...args) {
@@ -249,7 +249,14 @@ namespace vkgen
     class MemberResolverDefault : public MemberResolver
     {
       private:
+
+        void transformVoidType(VariableData &var);
+        bool transformToArray(VariableData &var);
+        void transformToArrayIn(VariableData &var);
+        void transformToArrayOut(VariableData &var);
+
         void transformMemberArguments();
+
 
       protected:
         std::string getSuperclassArgument(const String &superclass) const;
@@ -259,6 +266,8 @@ namespace vkgen
         void generateMemberBodyArray(std::string &output, std::string &returnId, bool &returnsRAII, VariableData *vectorSizeVar, bool dbg = false);
 
         std::string generateMemberBody() override;
+
+        // bool returnsResult();
 
       public:
         MemberResolverDefault(const Generator &gen, ClassCommand &d, MemberContext &ctx, bool constructor = {});
@@ -286,11 +295,11 @@ namespace vkgen
         std::string generateMemberBody() override;
     };
 
-    class MemberResolverStaticVector final : public MemberResolverDefault
-    {
-      public:
-        MemberResolverStaticVector(const Generator &gen, ClassCommand &d, MemberContext &ctx);
-    };
+//    class MemberResolverStaticVector final : public MemberResolverDefault
+//    {
+//      public:
+//        MemberResolverStaticVector(const Generator &gen, ClassCommand &d, MemberContext &ctx);
+//    };
 
     class MemberResolverPass final : public MemberResolver
     {
@@ -402,14 +411,16 @@ namespace vkgen
         std::string generateMemberBody() override;
     };
 
-    class MemberGeneratorExperimental
+    class MemberGenerator
     {
         const Generator              &gen;
         ClassCommand                 &m;
-        UnorderedFunctionOutput     &decl;
-        UnorderedFunctionOutputGroup &out;
-        MemberContext                 ctx{};
-
+        GuardedOutput                &decl;
+        GuardedOutputFuncs           &out;
+      public:
+        MemberContext                 ctx;
+        bool isGlobalModeStatic = {};
+      private:
         template <typename T>
         void generate(T &resolver, const std::span<Protect> protects = {}) {
             resolver.generate(decl, out, protects);
@@ -435,7 +446,7 @@ namespace vkgen
         void generateDestroy(ClassCommand &m, MemberContext &ctx, const std::string &name);
 
       public:
-        MemberGeneratorExperimental(const Generator &gen, ClassCommand &m, UnorderedFunctionOutput &decl, UnorderedFunctionOutputGroup &out, bool isStatic = false);
+        MemberGenerator(const Generator &gen, ClassCommand &m, GuardedOutput &decl, GuardedOutputFuncs &out, bool isStatic = false);
 
         void generate();
     };

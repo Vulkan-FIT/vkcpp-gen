@@ -166,6 +166,10 @@ void vkgen::VariableData::convertToCpp() {
     setIdentifier(strStripVk(id));
 }
 
+void vkgen::VariableData::convertToStructChain() {
+    structChain = true;
+}
+
 bool vkgen::VariableData::isNullTerminated() const {
     return nullTerminated;
 }
@@ -188,9 +192,17 @@ void vkgen::VariableData::convertToConstReference() {
     setReference(true);
 }
 
-void vkgen::VariableData::bindLengthVar(VariableData &var) {
+void vkgen::VariableData::bindLengthVar(VariableData &var, bool noArray) {
     lenghtVar = &var;
-
+//    if (var.type() == "size_t" && type() == "void") {
+//        std::cout << "  " << identifier() << "\n";
+//        if (identifier() != "pData") {
+//            return;
+//        }
+//    }
+    if (noArray) {
+        return;
+    }
     flags |= Flags::ARRAY;
     if (isConst()) {
         flags |= Flags::ARRAY_IN;
@@ -253,18 +265,19 @@ void vkgen::VariableData::convertToStdVector(const Generator &gen) {
         s.erase(pos, 5);
     }
 
-    if (!optionalTemplate.empty()) {
-        optionalTemplate += ", ";
-    }
-    optionalAllocator = strFirstUpper(type()) + "Allocator";
-    optionalTemplate += "typename " + optionalAllocator;
-    optionalTemplateAssignment = " = std::allocator<";
+//    if (!optionalTemplate.empty()) {
+//        optionalTemplate += ", ";
+//    }
+    allocatorTemplate.prefix = "typename ";
+    allocatorTemplate.type = strFirstUpper(type()) + "Allocator";
+    std::string assignment = " = std::allocator<";
     if (ns == Namespace::VK) {
-        optionalTemplateAssignment += gen.m_ns;
-        optionalTemplateAssignment += "::";
+        assignment += gen.m_ns;
+        assignment += "::";
     }
-    optionalTemplateAssignment += type();
-    optionalTemplateAssignment += ">";
+    assignment += type();
+    assignment += ">";
+    allocatorTemplate.assignment = std::move(assignment);
 }
 
 bool vkgen::VariableData::removeLastAsterisk() {
@@ -360,7 +373,7 @@ std::string vkgen::VariableData::toArgument(const Generator &gen, bool useOrigin
     switch (specialType) {
         case TYPE_VECTOR:
         case TYPE_TEMPL_VECTOR:
-        case TYPE_EXP_VECTOR:
+        case TYPE_VK_VECTOR:
         case TYPE_EXP_ARRAY:
         case TYPE_ARRAY_PROXY:
         case TYPE_ARRAY_PROXY_NO_TEMPORARIES: return toArgumentArrayProxy(gen);
@@ -417,9 +430,28 @@ std::string vkgen::VariableData::toStructArgumentWithAssignment(const Generator 
     return out;
 }
 
+std::string vkgen::VariableData::createVectorType(const std::string_view vectorType, const std::string &type) const {
+    std::string output = std::string(vectorType);
+    output += "<";
+    output += type;
+    if (!sizeTemplate.type.empty()) {
+        output += ", ";
+        output += sizeTemplate.type;
+    }
+    if (!allocatorTemplate.type.empty()) {
+        output += ", ";
+        output += allocatorTemplate.type;
+    }
+    output += ">";
+    return output;
+}
+
 std::string vkgen::VariableData::fullType(const Generator &gen, bool forceNamespace) const {
     std::string type = fields[PREFIX];
-    type += namespaceString(gen, forceNamespace);
+    if (!fields[TYPE].starts_with("Vk")) {
+        type += namespaceString(gen, forceNamespace);
+    }
+    // type += "/*" + std::to_string((int)ns) + "*/";
     type += fields[TYPE];
     type += fields[SUFFIX];
     switch (specialType) {
@@ -443,7 +475,9 @@ std::string vkgen::VariableData::fullType(const Generator &gen, bool forceNamesp
                 return "ArrayProxy<" + type + "> const &";
             }
         case TYPE_ARRAY_PROXY_NO_TEMPORARIES: return "ArrayProxyNoTemporaries<" + type + "> const &";
-        case TYPE_VECTOR: return "std::vector<" + type + (optionalAllocator.empty()? "" : ", " + optionalAllocator) + ">";
+        case TYPE_EXP_ARRAY: return createVectorType("std::array", type);
+        case TYPE_VECTOR: return createVectorType("std::vector", type);
+        case TYPE_VK_VECTOR: return createVectorType("Vector", type);
         case TYPE_OPTIONAL: return "Optional<" + type + ">";
         default: return type;
     }
@@ -463,7 +497,10 @@ std::string vkgen::VariableData::toString(const Generator &gen) const {
     return out;
 }
 
-std::string vkgen::VariableData::toStructString(const Generator &gen) const {
+std::string vkgen::VariableData::toStructString(const Generator &gen,  bool cstyle) const {
+    if (cstyle) {
+        return toString(gen);
+    }
     const auto &id = fields[IDENTIFIER];
     switch (arrayAttrib) {
         case ArraySize::DIM_1D: return vkgen::format("{}::ArrayWrapper1D<{}, {}> {}", gen.m_ns, fields[TYPE], arraySizes[0], id);
@@ -493,8 +530,8 @@ std::string vkgen::VariableData::toStringWithAssignment(const Generator &gen) co
     return out;
 }
 
-std::string vkgen::VariableData::toStructStringWithAssignment(const Generator &gen) const {
-    std::string out = toStructString(gen);
+std::string vkgen::VariableData::toStructStringWithAssignment(const Generator &gen, bool cstyle) const {
+    std::string out = toStructString(gen, cstyle);
     if (!_assignment.empty()) {
         out += _assignment;
     }
@@ -511,29 +548,13 @@ std::string vkgen::VariableData::originalToString() const {
     return out;
 }
 
-void vkgen::VariableData::setTemplate(const std::string &str) {
-    optionalTemplate = str;
-}
-
-void vkgen::VariableData::setTemplateAssignment(const std::string &str) {
-    optionalTemplateAssignment = str;
-}
-
-std::string vkgen::VariableData::getTemplate() const {
-    return optionalTemplate;
-}
-
-void vkgen::VariableData::setTemplateDataType(const std::string &str) {
-    templateDataTypeStr = str;
-}
-
-const std::string &vkgen::VariableData::getTemplateDataType() const {
-    return templateDataTypeStr;
-}
-
-std::string vkgen::VariableData::getTemplateAssignment() const {
-    return optionalTemplateAssignment;
-}
+//void vkgen::VariableData::setTemplateDataType(const std::string &str) {
+//    templateDataTypeStr = str;
+//}
+//
+//const std::string &vkgen::VariableData::getTemplateDataType() const {
+//    return templateDataTypeStr;
+//}
 
 void vkgen::VariableData::evalFlags() {
     if (isPointer() && !isConst() && arrayVars.empty()) {
@@ -613,7 +634,8 @@ std::string vkgen::VariableData::toArgumentDefault(const Generator &gen, bool us
         const auto &var = arrayVars[0];
         if (var->isArrayIn() && !var->isLenAttribIndirect() && (var->specialType == TYPE_ARRAY_PROXY || var->specialType == TYPE_ARRAY_PROXY_NO_TEMPORARIES)) {
             std::string size = var->identifier() + ".size()";
-            if (const auto &str = var->getTemplateDataType(); !str.empty()) {
+            const auto &str = var->dataTemplate.type;
+            if (!str.empty()) {
                 size += " * sizeof(" + str + ")";
             }
             return size;
@@ -630,10 +652,10 @@ std::string vkgen::VariableData::toArgumentDefault(const Generator &gen, bool us
 std::string vkgen::VariableData::toArrayProxySize() const {
     std::string s = fields[IDENTIFIER] + ".size()";
     if (original.type() == "void") {
-        if (templateDataTypeStr.empty()) {
+        if (dataTemplate.type.empty()) {
             std::cerr << "Warning: ArrayProxy " << fields[IDENTIFIER] << " has no template set, but is required" << '\n';
         }
-        s += " * sizeof(" + templateDataTypeStr + ")";
+        s += " * sizeof(" + dataTemplate.type + ")";
     }
     return s;
 }

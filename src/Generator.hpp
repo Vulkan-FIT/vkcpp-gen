@@ -34,6 +34,14 @@ namespace vkgen
 
     using namespace Utils;
 
+    /*
+    struct FunctionGenerator {
+        using StringSource = std::variant<const char*, const std::string_view, std::string>;
+
+        StringSource type;
+    };
+    */
+
     class FunctionGenerator
     {
       protected:
@@ -61,6 +69,7 @@ namespace vkgen
 
         void generatePrototype(std::string &output, bool declaration, bool isInline = false);
 
+        // TODO
         std::string generate(bool declaration, bool isInline = false);
 
       public:
@@ -72,7 +81,7 @@ namespace vkgen
 
         std::string generate();
 
-        std::string generate(UnorderedFunctionOutputGroup &impl);
+        std::string generate(GuardedOutputFuncs &impl);
 
         Argument& add(const std::string &type, const std::string &id, const std::string &assignment = "") {
             return get<Argument>(arguments.emplace_back(Argument{type, id, assignment}));
@@ -116,28 +125,38 @@ namespace vkgen
 
         std::string                            m_ns;
         std::string                            m_ns_raii;
+        std::string                            m_cast;
         std::string                            m_constexpr;
         std::string                            m_constexpr14;
-        std::string                            m_cast;
+        std::string                            m_inline;
+        std::string                            m_noexcept;
+        std::string                            m_nodiscard;
+
 
         std::string outputFilePath;
 
-        UnorderedFunctionOutputGroup outputFuncs;
-        UnorderedFunctionOutputGroup outputFuncsRAII;
+        GuardedOutputFuncs outputFuncs;
+        GuardedOutputFuncs outputFuncsRAII;
 
-        std::string genWithProtect(const std::string &code, const std::string &protect) const;
+        // std::string genWithProtect(const std::string &code, const std::string &protect) const;
 
-        std::string genWithProtectNegate(const std::string &code, const std::string &protect) const;
+        // std::string genWithProtectNegate(const std::string &code, const std::string &protect) const;
 
-        std::pair<std::string, std::string>
-          genCodeAndProtect(const GenericType &type, const std::function<void(std::string &)> &function, bool bypass = false) const;
+//        std::pair<std::string, std::string>
+//          genCodeAndProtect(const GenericType &type, const std::function<void(std::string &)> &function, bool bypass = false) const;
 
-        std::string genOptional(const GenericType &type, std::function<void(std::string &)> function, bool bypass = false) const;
-        std::string genPlatform(const GenericType &type, std::function<void(std::string &)> function, bool bypass = false);
+        void genOptional(OutputBuffer &output, const GenericType &type, const std::function<void(OutputBuffer&)> &function) const;
 
-        std::string gen(const Define &define, std::function<void(std::string &)> function) const;
+        // std::string genOptional(const GenericType &type, std::function<void(std::string &)> function, bool bypass = false) const;
 
-        std::string gen(const NDefine &define, std::function<void(std::string &)> function) const;
+        void genPlatform(OutputBuffer &output, const GenericType &type, const std::function<void(OutputBuffer&)> &function);
+        // std::string genPlatform(const GenericType &type, std::function<void(std::string &)> function, bool bypass = false);
+
+        // std::string gen(const Define &define,  std::function<void(std::string &)> function) const;
+
+        // std::string gen(const NDefine &define, std::function<void(std::string &)> function) const;
+
+        void gen(OutputBuffer &output, const Define &define, const std::function<void(OutputBuffer&)> &function) const;
 
         std::string genNamespaceMacro(const Macro &m);
 
@@ -167,7 +186,7 @@ namespace vkgen
 
         void generateForwardHandles(OutputBuffer &output);
 
-        void generateEnumStr(const Enum &data, std::string &output, std::string &to_string_output);
+        void generateEnumStr(const Enum &data, OutputBuffer &output, OutputBuffer &to_string_output);
 
         void generateEnum(const Enum &data, OutputBuffer &output, OutputBuffer &output_forward, OutputBuffer &to_string_output);
 
@@ -177,17 +196,19 @@ namespace vkgen
 
         void generateEnums(OutputBuffer &output, OutputBuffer &output_forward, OutputBuffer &to_string_output);
 
-        void genFlagTraits(const Enum &data, std::string name, std::string &output, std::string &to_string_code);
+        void genFlagTraits(const Enum &data, std::string name, OutputBuffer &output, std::string &to_string_code);
 
-        std::string generateDispatch();
+        void generateDispatch(OutputBuffer &output);
 
-        std::string generateErrorClasses();
+        void generateErrorClasses(OutputBuffer &output);
 
-        std::string generateApiConstants();
+        void generateResultValue(OutputBuffer &output);
+
+        void generateApiConstants(OutputBuffer &output);
 
         std::string generateDispatchLoaderBase();
 
-        std::string generateDispatchLoaderStatic();
+        void generateDispatchLoaderStatic(OutputBuffer &output);
 
         bool useDispatchLoader() const {
             const auto &cfg = getConfig();
@@ -234,13 +255,13 @@ namespace vkgen
             return "::";
         }
 
-        std::string generateStructDecl(const Struct &d) const;
+        void generateStructDecl(OutputBuffer &output, const Struct &d) const;
 
-        std::string generateClassDecl(const Handle &data) const;
+        void generateClassDecl(OutputBuffer &output, const Handle &data) const;
 
-        std::string generateClassDecl(const Handle &data, const std::string &name) const;
+        void generateClassDecl(OutputBuffer &output, const Handle &data, const std::string &name) const;
 
-        std::string generateClassString(const std::string &className, const GenOutputClass &from, Namespace ns) const;
+        // std::string generateClassString(const std::string &className, const OutputClass &from, Namespace ns) const;
 
         std::string generateForwardInclude(GenOutput &out) const;
 
@@ -250,17 +271,17 @@ namespace vkgen
 
         std::string generateStructsInclude() const;
 
-        std::string generateStructs(bool exp = false);
+        void generateStructs(OutputBuffer &output, bool exp = false);
 
-        void generateStructChains(OutputBuffer &output);
+        void generateStructChains(OutputBuffer &output, bool ctype = false);
 
-        bool generateStructConstructor(const Struct &data, bool transform, std::string &output);
+        bool generateStructConstructor(OutputBuffer &output, const Struct &data, bool transform);
 
-        std::string generateStruct(const Struct &data, bool exp);
+        void generateStruct(OutputBuffer &output, const Struct &data, bool exp);
 
         std::string generateIncludeRAII(GenOutput &out) const;
 
-        std::string generateClassWithPFN(Handle &h);
+        void generateClassWithPFN(OutputBuffer &output, Handle &h);
 
         void generateContext(OutputBuffer &output);
 
@@ -312,40 +333,40 @@ namespace vkgen
 
         void generateClassMember(ClassCommand            &m,
                                  MemberContext           &ctx,
-                                 GenOutputClass          &out,
-                                 UnorderedFunctionOutputGroup &outFuncs,
+                                 OutputClass          &out,
+                                 GuardedOutputFuncs &outFuncs,
                                  bool                     inlineFuncs = false);
 
         void generateClassMembers(const Handle            &data,
-                                  GenOutputClass          &out,
-                                  UnorderedFunctionOutputGroup &outFuncs,
+                                  OutputClass          &out,
+                                  GuardedOutputFuncs &outFuncs,
                                   Namespace                ns,
                                   bool                     inlineFuncs = false);
 
-        void generateClassConstructors(const Handle &data, GenOutputClass &out);
+        void generateClassConstructors(const Handle &data, OutputClass &out);
 
-        void generateClassConstructorsRAII(const Handle &data, GenOutputClass &out);
+        void generateClassConstructorsRAII(const Handle &data, OutputClass &out);
 
-        std::string generateUniqueClassStr(const Handle &data, bool inlineFuncs);
+        void generateUniqueClassStr(OutputBuffer &output, const Handle &data, bool inlineFuncs);
 
-        std::string generateUniqueClass(const Handle &data);
+        // std::string generateUniqueClass(const Handle &data);
 
-        std::string
-          generateClass(const Handle &data);
+        void generateUniqueClass(OutputBuffer &output, const Handle &data);
 
-        std::string generateClassTypeInfo(const std::string &className, GenOutputClass &out);
+        void generateClassTypeInfo(const Handle &h, OutputBuffer &output, OutputClass &out);
 
-        std::string generateClassStr(const Handle            &data,
+        void generateClass(OutputBuffer &output,
+                           const Handle            &data,
                                      bool                     inlineFuncs,
                                      bool                     noFuncs = false);
 
-        std::string generateClassStrRAII(const Handle &data, bool asUnique = false);
+        void generateClassRAII(OutputBuffer &output, const Handle &data, bool asUnique = false);
 
-        std::string generateClassRAII(const Handle &data, bool exp = false);
+        void generateClassesRAII(OutputBuffer &output, bool exp = false);
 
-        std::string generatePFNs(const Handle &data, GenOutputClass &out) const;
+        // std::string generatePFNs(const Handle &data, OutputClass &out) const;
 
-        std::string generateLoader(bool exp = false);
+        void generateLoader(OutputBuffer &output, bool exp = false);
 
         std::string genMacro(const Macro &m);
 

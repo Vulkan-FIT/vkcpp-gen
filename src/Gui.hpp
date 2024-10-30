@@ -121,6 +121,7 @@ namespace vkgen
         struct RenderableColumn : public Renderable
         {
             int                column;
+            GUI::Level         level = {};
             RenderableArray<N> data;
 
             //            template <typename... T>
@@ -131,7 +132,13 @@ namespace vkgen
             template <typename... T>
             RenderableColumn(int column, T &&...t) : column(column), data({ std::forward<T>(t)... }) {}
 
+            template <typename... T>
+            RenderableColumn(int column, GUI::Level level, T &&...t) : column(column), level(level), data({ std::forward<T>(t)... }) {}
+
             void render(GUI &g) override {
+                if (g.guiLevel < level) {
+                    return;
+                }
                 ImGui::TableSetColumnIndex(column);
                 data.render(g);
             }
@@ -169,7 +176,10 @@ namespace vkgen
                 //                if (advancedOnly && !GUI::advancedMode) {
                 //                    return;
                 //                }
-                if (ImGui::BeginTable(str_id.c_str(), 1, ImGuiTableFlags_BordersOuter)) {
+                // auto flags = ImGuiTableFlags_BordersOuter | ImGuiTableFlags_v
+
+
+                if (ImGui::BeginTable(str_id.c_str(), 1, 0)) {
                     ImGui::TableNextRow();
                     ImGui::TableSetColumnIndex(0);
 
@@ -278,12 +288,13 @@ namespace vkgen
         {
             Define     *data;
             std::string text;
+            GUI::HelpMarker help;
 
             bool state;
             bool stateDefine;
             // NestedOption define;
 
-            BoolDefineGUI(Define *data, const std::string &text);
+            BoolDefineGUI(Define *data, const std::string &text, const std::string &helpText = "");
 
             void render(GUI &g) override;
 
@@ -391,6 +402,49 @@ namespace vkgen
             }
         };
 
+        struct Button : public Renderable
+        {
+            std::string text;
+            bool state = false;
+
+            Button() = default;
+
+            explicit Button(const std::string &text) : text(text)
+            {}
+
+            void render(GUI &g) override {
+                ImVec2 sz = ImGui::CalcTextSize(text.c_str());
+                sz.x += 32;
+                sz.y += 8;
+                state = ImGui::Button(text.c_str(), sz);
+            }
+
+            operator bool() const noexcept {
+                return state;
+            }
+
+        };
+
+        struct ButtonGroup : public Renderable
+        {
+            int index = 0;
+            std::string label;
+            std::vector<Button> buttons;
+            std::function<void(int)> onChange;
+
+            ButtonGroup() = default;
+            ButtonGroup(const std::string &label, const std::initializer_list<std::string> &texts)
+              : label(label)
+            {
+                buttons.reserve(texts.size());
+                for (const auto &t : texts) {
+                    buttons.emplace_back(t);
+                }
+            }
+
+            void render(GUI &g) override;
+        };
+
         struct StandardSelector : public Renderable
         {
             Generator &gen;
@@ -400,7 +454,7 @@ namespace vkgen
             StandardSelector(Generator &gen) : gen(gen) {}
 
             void render(GUI &g) override {
-                ImGui::Text("Minimum standard");
+                ImGui::Text("");
                 if (ImGui::Checkbox("c++11", &c11)) {
                     c11 = true;
                     c20 = false;
@@ -564,17 +618,20 @@ namespace vkgen
 
         Collection collection;
 
+        ButtonGroup guiLevelSelector;
+        ButtonGroup standardSelector;
         std::unique_ptr<RenderableTable<3>> tableGeneral;
+        std::unique_ptr<RenderableTable<1>> tableMacros;
 
-        struct AsyncButton
+
+        struct AsyncButton : public Button
         {
-            std::string               text;
             std::function<void(void)> task;
             std::future<void>         future;
             std::atomic_bool          running = false;
             float                     size    = 1.f;
 
-            void draw();
+            void render(GUI &g) override;
             void run();
         };
 
@@ -664,7 +721,7 @@ namespace vkgen
         AsyncButton loadConfigButton;
         AsyncButton saveConfigButton;
 
-        StandardSelector *standardSelector = {};
+        // StandardSelector *standardSelector = {};
 
         QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device);
 

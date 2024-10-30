@@ -127,7 +127,7 @@ namespace vkgen
             TYPE_VECTOR,
             TYPE_TEMPL_VECTOR,
             TYPE_ARRAY,
-            TYPE_EXP_VECTOR,
+            TYPE_VK_VECTOR,
             TYPE_EXP_ARRAY,
             TYPE_OPTIONAL,
             TYPE_DISPATCH,
@@ -182,6 +182,18 @@ namespace vkgen
         VariableBase saved;
 
       public:
+
+        struct Template {
+            std::string prefix;
+            std::string type;
+            std::string assignment;
+
+            void clear() {
+              type.clear();
+              assignment.clear();
+            }
+        };
+
         VariableData(Registry &reg, xml::Element);
 
         VariableData(const String &type, const std::string &id);
@@ -197,10 +209,9 @@ namespace vkgen
             // std::cout << "VariableData copy ctor " << this << '\n';
             _assignment = o._assignment;
             lenghtVar = o.lenghtVar;
-
-            optionalTemplate = o.optionalTemplate;
-            optionalAllocator = o.optionalAllocator;
-            optionalTemplateAssignment = o.optionalTemplateAssignment;
+            dataTemplate = o.dataTemplate;
+            sizeTemplate = o.sizeTemplate;
+            allocatorTemplate = o.allocatorTemplate;
             stdAllocatorIdentifier = o.stdAllocatorIdentifier;
             setMetaType(o.metaType());
         }
@@ -212,6 +223,10 @@ namespace vkgen
 
         ~VariableData() {
             // std::cout << "~var dtor " << this << " " << fullType() << ", s: " << (int) specialType << '\n';
+        }
+
+        bool isTemplated() const noexcept {
+            return !dataTemplate.type.empty() || !sizeTemplate.type.empty() || !allocatorTemplate.type.empty();
         }
 
         void updateMetaType(Registry &reg);
@@ -254,12 +269,13 @@ namespace vkgen
             ignoreProto = false;
             ignorePass  = false;
             localVar    = false;
+            structChain = false;
 
             altPFN.clear();
             _assignment.clear();
-            optionalTemplate.clear();
-            optionalAllocator.clear();
-            optionalTemplateAssignment.clear();
+            dataTemplate.clear();
+            sizeTemplate.clear();
+            allocatorTemplate.clear();
             stdAllocatorIdentifier.clear();
             dbgTag.clear();
         }
@@ -392,6 +408,10 @@ namespace vkgen
             return ignoreProto;
         }
 
+        bool isStructChain() const {
+            return structChain;
+        }
+
         void setIgnorePass(bool value) {
             ignorePass = value;
         }
@@ -432,7 +452,9 @@ namespace vkgen
 
         void convertToConstReference();
 
-        void bindLengthVar(VariableData &var);
+        void convertToStructChain();
+
+        void bindLengthVar(VariableData &var, bool noArray = false);
 
         void bindArrayVar(VariableData *var);
 
@@ -492,7 +514,7 @@ namespace vkgen
                     }
                 }
 
-                const auto &templ = getTemplateDataType();
+                const auto &templ = dataTemplate.type;
                 if (!output.empty() && !templ.empty()) {
                     output += " / sizeof( " + templ + " )";
                 }
@@ -510,9 +532,9 @@ namespace vkgen
             stdAllocatorIdentifier = id;
         }
 
-        std::string getAllocatorType() const {
-            return optionalAllocator;
-        }
+//        std::string getAllocatorType() const {
+//            return optionalAllocator;
+//        }
 
         void convertToReturn();
 
@@ -566,15 +588,15 @@ namespace vkgen
             if (!_assignment.empty()) {
                 s += " as: " + _assignment;
             }
-            if (!optionalTemplate.empty()) {
-                s += " temp: " + optionalTemplate;
-            }
-            if (!optionalTemplateAssignment.empty()) {
-                s += " tmpa: " + optionalTemplateAssignment;
-            }
-            if (!stdAllocatorIdentifier.empty()) {
-                s += " std: " + optionalTemplateAssignment;
-            }
+//            if (!optionalTemplate.empty()) {
+//                s += " temp: " + optionalTemplate;
+//            }
+//            if (!optionalTemplateAssignment.empty()) {
+//                s += " tmpa: " + optionalTemplateAssignment;
+//            }
+//            if (!stdAllocatorIdentifier.empty()) {
+//                s += " std: " + optionalTemplateAssignment;
+//            }
             return s;
         }
 
@@ -636,13 +658,13 @@ namespace vkgen
         // getter for all fields combined
         std::string toString(const Generator &gen) const;
 
-        std::string toStructString(const Generator &gen) const;
+        std::string toStructString(const Generator &gen, bool cstyle = false) const;
 
         std::string declaration(const Generator &gen) const;
 
         std::string toStringWithAssignment(const Generator &gen) const;
 
-        std::string toStructStringWithAssignment(const Generator &gen) const;
+        std::string toStructStringWithAssignment(const Generator &gen, bool cstyle = false) const;
 
         // getter for all fields combined for C version
         std::string originalToString() const;
@@ -670,17 +692,17 @@ namespace vkgen
             return _assignment;
         }
 
-        void setTemplate(const std::string &str);
+        // void setTemplate(const std::string &str);
+        // void setTemplateAssignment(const std::string &str);
+        // void addTemplate(const std::string &type, const std::string &assignment = "");
 
-        void setTemplateAssignment(const std::string &str);
+        // const Templates& getTemplates() const;
 
-        std::string getTemplate() const;
+        // void setTemplateDataType(const std::string &str);
 
-        void setTemplateDataType(const std::string &str);
+        // const std::string &getTemplateDataType() const;
 
-        const std::string &getTemplateDataType() const;
-
-        std::string getTemplateAssignment() const;
+        // std::string getTemplateAssignment() const;
 
         std::string                         toArrayProxySize() const;
         std::string                         toArrayProxyData() const;
@@ -692,16 +714,21 @@ namespace vkgen
 
         void evalFlags();
 
+
+        Template   dataTemplate;
+        Template   sizeTemplate;
+        Template   allocatorTemplate;
+
       protected:
         // const Generator &gen;
         VariableData *lenghtVar = {};
         std::string   _assignment;
         std::string   altPFN;
         std::string   nameSuffix;
-        std::string   optionalTemplate;
-        std::string   optionalTemplateAssignment;
-        std::string   optionalAllocator;
-        std::string   templateDataTypeStr;
+
+        // Templates templates;
+
+        // std::string   templateDataTypeStr;
         std::string   stdAllocatorIdentifier;
         std::string   dbgTag;
         bool          ignoreFlag  = false;
@@ -709,6 +736,7 @@ namespace vkgen
         bool          ignoreProto = false;
         bool          ignorePass  = false;
         bool          localVar    = false;
+        bool          structChain = false;
 
         bool nullTerminated = false;
 
@@ -733,6 +761,8 @@ namespace vkgen
         std::string toArgumentDefault(const Generator &gen, bool useOriginal = false) const;
 
         std::string identifierAsArgument(const Generator &gen) const;
+
+        std::string createVectorType(const std::string_view vectorType, const std::string &type) const;
 
         void convertToCpp();
 

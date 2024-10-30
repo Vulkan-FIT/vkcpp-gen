@@ -28,6 +28,26 @@ using namespace ImGui;
 
 float nestPosX = 0.0;
 
+struct Palette {
+    ImVec4 text;
+    ImVec4 back;
+    ImVec4 button_bg;
+    ImVec4 button_select;
+    ImVec4 main;
+    ImVec4 area;
+    ImVec4 highlight;
+};
+
+static constexpr Palette PALETTE {
+    .text = ImVec4(1.f, 1.f, 1.f, 1.f),
+    .back = ImVec4(0.01f, 0.01f, 0.01f, 1.f),
+    .button_bg = ImVec4(0.08f, 0.02f, 0.02f, 1.f),
+    .button_select = ImVec4(0.1f, 0.02f, 0.02f, 1.f),
+    .main = ImVec4(0.3f, 0.f, 0.f, 1.f),
+    .area = ImVec4(0.05f, 0.04f, 0.04f, 1.f),
+    .highlight = ImVec4(0.3f, .1f, .1f, 1.f),
+};
+
 namespace vkgen
 {
     Generator *GUI::gen;
@@ -63,6 +83,14 @@ namespace vkgen
           level,
           GUI::RenderableArray<3>(
             { std::make_unique<GUI::DummySameLine>(static_cast<float>(x), 0.f), std::make_unique<T>(element), std::make_unique<GUI::HelpMarker>(text) }));
+    }
+
+    template <typename T>
+    auto make_config_option(GUI::Level level, int x, const T &element) {
+        return std::make_unique<GUI::LevelRenderable<GUI::RenderableArray<2>>>(
+          level,
+          GUI::RenderableArray<2>(
+            { std::make_unique<GUI::DummySameLine>(static_cast<float>(x), 0.f), std::make_unique<T>(element) }));
     }
 
 }  // namespace vkgen
@@ -702,37 +730,44 @@ void vkgen::GUI::cleanup() {
 void vkgen::GUI::initImguiStyle() {
     ImGuiStyle &style = GetStyle();
 
-    ImVec4 col_text = ImVec4(1.f, 1.f, 1.f, 1.f);
-    ImVec4 col_main = ImVec4(0.3f, 0.f, 0.f, 1.f);
-    ImVec4 col_back = ImVec4(0.025f, 0.025f, 0.025f, 1.f);
-    ImVec4 col_area = ImVec4(0.3f, 0.f, 0.f, 1.f);
+    ImVec4 col_text = PALETTE.text;
+    ImVec4 col_main = PALETTE.main;
+    ImVec4 col_back = PALETTE.back;
+    ImVec4 col_highlight = PALETTE.highlight;
+    ImVec4 col_area = PALETTE.area;
 
-    style.Colors[ImGuiCol_Text]                 = ImVec4(col_text.x, col_text.y, col_text.z, 1.00f);
-    style.Colors[ImGuiCol_TextDisabled]         = ImVec4(col_text.x, col_text.y, col_text.z, 0.58f);
-    style.Colors[ImGuiCol_WindowBg]             = ImVec4(col_back.x, col_back.y, col_back.z, 1.00f);
+    style.TabRounding = 4.f;
+    style.FrameRounding = 4.f;
+    style.GrabRounding = 4.f;
+    style.WindowRounding = 4.f;
+    style.PopupRounding = 4.f;
+
+    style.Colors[ImGuiCol_Text]                 = col_text;
+    style.Colors[ImGuiCol_TextDisabled]         = ImVec4(col_text.x, col_text.y, col_text.z, 0.6f);
+    style.Colors[ImGuiCol_WindowBg]             = col_back;
     style.Colors[ImGuiCol_ChildBg]              = ImVec4(col_area.x, col_area.y, col_area.z, 0.00f);
     style.Colors[ImGuiCol_Border]               = ImVec4(col_text.x, col_text.y, col_text.z, 0.30f);
     style.Colors[ImGuiCol_BorderShadow]         = ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
-    style.Colors[ImGuiCol_FrameBg]              = ImVec4(col_area.x, col_area.y, col_area.z, 1.00f);
-    style.Colors[ImGuiCol_FrameBgHovered]       = ImVec4(col_main.x, col_main.y, col_main.z, 0.68f);
-    style.Colors[ImGuiCol_FrameBgActive]        = ImVec4(col_main.x, col_main.y, col_main.z, 1.00f);
-    style.Colors[ImGuiCol_TitleBg]              = ImVec4(col_main.x, col_main.y, col_main.z, 0.45f);
-    style.Colors[ImGuiCol_TitleBgCollapsed]     = ImVec4(col_main.x, col_main.y, col_main.z, 0.35f);
-    style.Colors[ImGuiCol_TitleBgActive]        = ImVec4(col_main.x, col_main.y, col_main.z, 0.48f);
-    style.Colors[ImGuiCol_MenuBarBg]            = ImVec4(col_area.x, col_area.y, col_area.z, 0.57f);
+    style.Colors[ImGuiCol_FrameBg]              = PALETTE.button_bg;
+    style.Colors[ImGuiCol_FrameBgHovered]       = col_highlight;
+    style.Colors[ImGuiCol_FrameBgActive]        = col_main;
+    style.Colors[ImGuiCol_TitleBg]              = col_area;
+    style.Colors[ImGuiCol_TitleBgCollapsed]     = col_area;
+    style.Colors[ImGuiCol_TitleBgActive]        = col_area;
+    style.Colors[ImGuiCol_MenuBarBg]            = col_area;
     style.Colors[ImGuiCol_ScrollbarBg]          = ImVec4(col_back.x, col_back.y, col_back.z, 1.00f);
     style.Colors[ImGuiCol_ScrollbarGrab]        = ImVec4(col_main.x, col_main.y, col_main.z, 0.31f);
     style.Colors[ImGuiCol_ScrollbarGrabHovered] = ImVec4(col_main.x, col_main.y, col_main.z, 0.78f);
     style.Colors[ImGuiCol_ScrollbarGrabActive]  = ImVec4(col_main.x, col_main.y, col_main.z, 1.00f);
-    style.Colors[ImGuiCol_CheckMark]            = ImVec4(col_text.x, col_text.y, col_text.z, 0.80f);
+    style.Colors[ImGuiCol_CheckMark]            = col_text;
     style.Colors[ImGuiCol_SliderGrab]           = ImVec4(col_main.x, col_main.y, col_main.z, 0.24f);
     style.Colors[ImGuiCol_SliderGrabActive]     = ImVec4(col_main.x, col_main.y, col_main.z, 1.00f);
-    style.Colors[ImGuiCol_Button]               = ImVec4(col_main.x, col_main.y, col_main.z, 0.44f);
-    style.Colors[ImGuiCol_ButtonHovered]        = ImVec4(col_main.x, col_main.y, col_main.z, 0.86f);
+    style.Colors[ImGuiCol_Button]               = PALETTE.button_bg;
+    style.Colors[ImGuiCol_ButtonHovered]        = col_highlight;
     style.Colors[ImGuiCol_ButtonActive]         = ImVec4(col_main.x, col_main.y, col_main.z, 1.00f);
-    style.Colors[ImGuiCol_Header]               = ImVec4(col_main.x, col_main.y, col_main.z, 0.76f);
-    style.Colors[ImGuiCol_HeaderHovered]        = ImVec4(col_main.x, col_main.y, col_main.z, 0.7f);
-    style.Colors[ImGuiCol_HeaderActive]         = ImVec4(col_main.x, col_main.y, col_main.z, 0.90f);
+    style.Colors[ImGuiCol_Header]               = col_area;
+    style.Colors[ImGuiCol_HeaderHovered]        = col_highlight;
+    style.Colors[ImGuiCol_HeaderActive]         = col_area;
     style.Colors[ImGuiCol_ResizeGrip]           = ImVec4(col_main.x, col_main.y, col_main.z, 0.20f);
     style.Colors[ImGuiCol_ResizeGripHovered]    = ImVec4(col_main.x, col_main.y, col_main.z, 0.78f);
     style.Colors[ImGuiCol_ResizeGripActive]     = ImVec4(col_main.x, col_main.y, col_main.z, 1.00f);
@@ -740,10 +775,9 @@ void vkgen::GUI::initImguiStyle() {
     style.Colors[ImGuiCol_PlotLinesHovered]     = ImVec4(col_main.x, col_main.y, col_main.z, 1.00f);
     style.Colors[ImGuiCol_PlotHistogram]        = ImVec4(col_text.x, col_text.y, col_text.z, 0.63f);
     style.Colors[ImGuiCol_PlotHistogramHovered] = ImVec4(col_main.x, col_main.y, col_main.z, 1.00f);
-    style.Colors[ImGuiCol_TextSelectedBg]       = ImVec4(col_main.x, col_main.y, col_main.z, 0.43f);
+    style.Colors[ImGuiCol_TextSelectedBg]       = ImVec4(col_main.x, col_main.y, col_main.z, 0.6f);
 
-    style.Colors[ImGuiCol_Header]        = ImVec4(col_main.x, col_main.y, col_main.z, 0.9f);
-    style.Colors[ImGuiCol_HeaderHovered] = ImVec4(0.2f, 0.2f, 0.2f, 0.9f);
+
 }
 
 void vkgen::GUI::guiInputText(std::string &data) {
@@ -834,7 +868,7 @@ void vkgen::GUI::NestedOption<T>::render(GUI &g) {
 //     content(g);
 // }
 
-vkgen::GUI::BoolDefineGUI::BoolDefineGUI(Define *data, const std::string &text) : data(data), text(text) {
+vkgen::GUI::BoolDefineGUI::BoolDefineGUI(Define *data, const std::string &text, const std::string &helpText) : data(data), text(text), help(helpText) {
     state       = data->state != Define::DISABLED;
     stateDefine = data->state == Define::COND_ENABLED;
 }
@@ -854,6 +888,8 @@ void vkgen::GUI::BoolDefineGUI::render(GUI &g) {
         PopItemFlag();
     }
 
+    help.render(g);
+
     //    SetWindowFontScale(0.8f);
     //    auto size = CalcTextSize("");
     //    ImGui::Dummy({ size.y * 2, 0 });
@@ -871,10 +907,14 @@ void vkgen::GUI::BoolDefineGUI::render(GUI &g) {
     //        PopStyleVar();
     //    }
 
-    renderNestedOption([&]() {
+    if (g.guiLevel > GUI::Level::L0 && data->state != Define::DISABLED) {
+        //        renderNestedOption([&]() {
+        ImGui::SameLine();
         if (!state) {
             PushStyleVar(ImGuiStyleVar_Alpha, GetStyle().Alpha * 0.5f);
         }
+        SetWindowFontScale(0.8f);
+
         if (Checkbox(data->define.c_str(), &stateDefine)) {
             updateState();
             g.queueRedraw();
@@ -882,7 +922,10 @@ void vkgen::GUI::BoolDefineGUI::render(GUI &g) {
         if (!state) {
             PopStyleVar();
         }
-    });
+
+        SetWindowFontScale(1.f);
+//        });
+    }
 
     //    ImVec2 p2 = { p1.x, p1.y + size.y / 2 };
     //    ImVec2 p3 = { p2.x + size.y, p2.y };
@@ -894,15 +937,28 @@ void vkgen::GUI::BoolDefineGUI::render(GUI &g) {
 }
 
 void vkgen::GUI::BoolDefineGUI::updateState() {
-    if (state) {
-        if (stateDefine) {
-            data->state = Define::COND_ENABLED;
-        } else {
-            data->state = Define::ENABLED;
-        }
-    } else {
-        data->state = Define::DISABLED;
+    if (data->state == Define::ENABLED) {
+        data->state = Define::COND_ENABLED;
+        stateDefine = true;
     }
+    else if (data->state == Define::DISABLED) {
+        data->state = Define::ENABLED;
+        stateDefine = false;
+    }
+    else {
+        data->state = Define::DISABLED;
+        stateDefine = false;
+    }
+
+//    if (state) {
+//        if (stateDefine) {
+//            data->state = Define::COND_ENABLED;
+//        } else {
+//            data->state = Define::ENABLED;
+//        }
+//    } else {
+//        data->state = Define::DISABLED;
+//    }
     // std::cout << "[" << data->define << "] is " << (int) data->state << "\n";
 }
 
@@ -1004,50 +1060,95 @@ vkgen::GUI::GUI(vkgen::Generator &gen) {
     loadConfigButton.size = size;
     saveConfigButton.size = size;
 
-    auto standardSelector  = std::make_unique<LevelRenderable<StandardSelector>>(Level::L2, gen);
-    this->standardSelector = standardSelector.get();
+    // auto standardSelector2  = std::make_unique<LevelRenderable<StandardSelector>>(Level::L2, gen);
+    // this->standardSelector = standardSelector.get();
+
+    standardSelector = ButtonGroup("Minimum standard", {"c++11", "c++20"});
+    switch (gen.cfg.gen.cppStd.data) {
+        case 11:
+            standardSelector.index = 0;
+            break;
+        case 20:
+            standardSelector.index = 1;
+            break;
+        default:
+            break;
+    }
+    standardSelector.onChange = [&](int index) {
+        switch (index) {
+            case 0:
+                gen.cfg.gen.cppStd.data = 11;
+                break;
+            case 1:
+                gen.cfg.gen.cppStd.data = 11;
+                break;
+            default:
+                break;
+        }
+    };
+
+
+    guiLevelSelector = ButtonGroup("", {"Simple", "Advanced", "Experimental"});
+    guiLevelSelector.onChange = [&](int index) {
+        if (index >= Level::L0 && index <= Level::L2) {
+            guiLevel = static_cast<GUI::Level>(index);
+        }
+    };
 
     auto &cfg    = gen.getConfig();
     tableGeneral = std::make_unique<RenderableTable<3>>(
       "##TableNS",
       "General",
       0,
-      std::make_unique<RenderableColumn<12>>(
+      std::make_unique<RenderableColumn<10>>(
         0,
         std::make_unique<RenderableText>("Code generation"),
-        make_config_option(0, BoolGUI{ &cfg.gen.cppModules.data, "C++ modules" }, "Generate C++20 module (vulkan.cppm)"),
+        make_config_option(0, BoolGUI{ &cfg.gen.cppModules.data, "C++ module" }, "Generate C++20 module (vulkan.cppm)"),
+        make_config_option(0, BoolGUI{ &cfg.gen.globalMode.data, "Global mode" }, "Vulkan with global functions"),
+        make_config_option(0, BoolGUI{ &cfg.gen.expandMacros.data, "Expand macros" }, "Expand preprocessor macros whenever possible"),
         // make_config_option(0, BoolGUI{&cfg.gen.exceptions.data, "exceptions"}, "enable vulkan exceptions"),
-        make_config_option(0, BoolGUI{ &cfg.gen.raii.enabled.data, "RAII header" }, "Generate vk::raii header (vulkan_raii.hpp)"),
+        make_config_option(Level::L2, BoolGUI{ &cfg.gen.raii.enabled.data, "RAII header" }, "Generate vk::raii header (vulkan_raii.hpp)"),
         make_config_option(0, BoolGUI{ &cfg.gen.expApi.data, "Dynamic PFN linking" }, "PFN dispatcher will be embedded to Device and Instance"),
         make_config_option(Level::L2, 0, NestedOption<BoolGUI>{ &cfg.gen.integrateVma.data, "Integrate VMA" }, "PFN dispatcher can be used with VMA"),
         make_config_option(Level::L2, 0, BoolGUI{ &cfg.gen.proxyPassByCopy.data, "Pass ArrayProxy as copy" }, "Pass ArrayProxy parameter as copy instead of reference"),
         make_config_option(Level::L2, 0, BoolGUI{ &cfg.gen.unifiedException.data, "Unified exception" }, "Generates only vk::Error exeption"),
-        make_config_option(Level::L2, 0, BoolGUI{ &cfg.gen.branchHint.data, "Branch hints" }, "Add compiler C++20 hints (likely, unlikely)"),
-        std::make_unique<RenderableText>("Macros"),
-        make_config_option(0, MacroGUI{ &cfg.macro.mNamespace.data }, ""),
-        make_config_option(0, MacroGUI{ &cfg.macro.mNamespaceRAII.data }, ""),
-        std::move(standardSelector)),
+        make_config_option(Level::L2, 0, BoolGUI{ &cfg.gen.branchHint.data, "Branch hints" }, "Add compiler C++20 hints (likely, unlikely)")),
       std::make_unique<RenderableColumn<9>>(
         1,
         std::make_unique<RenderableText>("Handles"),
-        make_config_option(0, BoolDefineGUI(&cfg.gen.handleConstructors.data, "constructors"), "Removes handle constructors"),
-        make_config_option(0, BoolDefineGUI(&cfg.gen.smartHandles.data, "smart handles"), "Removes smart (unique) handles"),
-        make_config_option(Level::L1, 0, BoolDefineGUI(&cfg.gen.handleTemplates.data, "type traits"), "Removes CppType and isVulkanHandleType"),
+        make_config_option(Level::L0, 0, BoolDefineGUI(&cfg.gen.handleConstructors.data, "constructors", "Removes handle constructors")),
+        make_config_option(Level::L1, 0, BoolDefineGUI(&cfg.gen.smartHandles.data, "smart handles", "Removes smart (unique) handles")),
+        make_config_option(Level::L1, 0, BoolDefineGUI(&cfg.gen.handleTemplates.data, "type traits", "Removes CppType and isVulkanHandleType")),
         std::make_unique<RenderableText>("Functions"),
         make_config_option(0, BoolGUI{ &cfg.gen.dispatchParam.data, "Dispatch parameter" }, "Removes dispatch from handles and functions"),
         make_config_option(0, BoolGUI{ &cfg.gen.allocatorParam.data, "Allocator parameter" }, "Removes allocationcallbacks from handles and functions"),
         make_config_option(0, BoolGUI{ &cfg.gen.functionsVecAndArray.data, "Array & small vector variant" }, "Functions returning vector will also return vk::Vector or std::array"),
-        make_config_option(Level::L1, 0, BitSelector{ cfg.gen.classMethods.data, 1, "Methods from subobjects" }, "Methods from subobjects will be added to top level handle")),
-      std::make_unique<RenderableColumn<8>>(
+        make_config_option(Level::L2, 0, BitSelector{ cfg.gen.classMethods.data, 1, "Methods from subobjects" }, "Methods from subobjects will be added to top level handle")),
+      std::make_unique<RenderableColumn<9>>(
         2,
-        std::make_unique<RenderableText>("Structs & Unions"),
-        make_config_option(0, BoolDefineGUI(&cfg.gen.structConstructors.data, "struct constructors"), "Removes struct constructors"),
-        make_config_option(0, BoolDefineGUI(&cfg.gen.unionConstructors.data, "union constructors"), "Removes union constructors"),
-        make_config_option(0, BoolDefineGUI(&cfg.gen.structSetters.data, "struct setters"), "Removes struct setter functions"),
-        make_config_option(0, BoolDefineGUI(&cfg.gen.unionSetters.data, "union setters"), "Removes union setter functions"),
-        make_config_option(Level::L1, 0, BoolDefineGUI(&cfg.gen.structCompare.data, "compares"), "Removes struct compare operator"),
+        Level::L1,
+        std::make_unique<RenderableText>("C++ Structs"),
+        make_config_option(Level::L1, 0, BoolDefineGUI(&cfg.gen.structConstructors.data, "struct constructors", "Removes struct constructors")),
+        make_config_option(Level::L1, 0, BoolDefineGUI(&cfg.gen.structSetters.data, "struct setters", "Removes struct setter functions")),
+        make_config_option(Level::L1, 0, BoolDefineGUI(&cfg.gen.structCompare.data, "compares", "Removes struct compare operator")),
+        make_config_option(Level::L1, 0, BoolDefineGUI(&cfg.gen.structReflect.data, "reflect", "Removes struct reflection")),
         make_config_option(Level::L1, 0, NestedOption<BoolGUI>{ &cfg.gen.spaceshipOperator.data, "spaceship operator" }, "Removes spaceship operator from API"),
-        make_config_option(Level::L1, 0, BoolDefineGUI(&cfg.gen.structReflect.data, "reflect"), "Removes struct reflection")));
+        std::make_unique<RenderableText>("C++ Unions"),
+        make_config_option(Level::L1, 0, BoolDefineGUI(&cfg.gen.unionConstructors.data, "union constructors","Removes union constructors")),
+        make_config_option(Level::L1, 0, BoolDefineGUI(&cfg.gen.unionSetters.data, "union setters", "Removes union setter functions")))
+      );
+
+    tableMacros = std::make_unique<RenderableTable<1>>(
+      "##TableMacros",
+      "Macros",
+      0,
+      std::make_unique<RenderableColumn<3>>(
+        0,
+        // std::make_unique<RenderableText>("Macros"),
+        make_config_option(0, BoolGUI{ &cfg.gen.expandMacros.data, "Expand macros" }, "Expand preprocessor macros whenever possible"),
+        make_config_option(0, MacroGUI{ &cfg.macro.mNamespace.data }, ""),
+        make_config_option(0, MacroGUI{ &cfg.macro.mNamespaceRAII.data }, ""))
+    );
 }
 
 void vkgen::GUI::init() {
@@ -1148,7 +1249,7 @@ void vkgen::GUI::mainScreen() {
     id = 0;
     float spacing = 1;
     ImGui::Dummy({0, spacing});
-    unloadRegButton.draw();
+    unloadRegButton.render(*this);
     SameLine();
     std::string loadedText = "Current registry: " + gen->getRegistryPath();
     showHelpMarker(loadedText.c_str(), "i");
@@ -1156,7 +1257,7 @@ void vkgen::GUI::mainScreen() {
 
     ImGui::Dummy({0, spacing});
     SameLine();
-    generateButton.draw();
+    generateButton.render(*this);
     SameLine();
 
     // Dummy(ImVec2(0.0f, 4.0f));
@@ -1166,51 +1267,43 @@ void vkgen::GUI::mainScreen() {
     //            PushStyleColor(ImGuiCol_Text, IM_COL32(255, 134, 0, 255));
     //        }
     PushID(id++);
+    PushItemWidth(450);
     if (InputText("", &output)) {
         gen->setOutputFilePath(output);
         // outputPathBad = !gen->isOuputFilepathValid();
     }
+    PopItemWidth();
     PopID();
     //        if (outputBadFlag) {
     //            PopStyleColor();
     //        }
     ImGui::Dummy({0, spacing});
-    loadConfigButton.draw();
+    loadConfigButton.render(*this);
     SameLine();
-    saveConfigButton.draw();
+    saveConfigButton.render(*this);
     SameLine();
     Text("Config path:");
     SameLine();
 
     PushID(id++);
+    PushItemWidth(450);
     if (InputText("", &configPath)) {
     }
+    PopItemWidth();
     PopID();
     ImGui::Dummy({ 0, spacing });
 
     SetWindowFontScale(1.f);
     if (CollapsingHeader("Configuration")) {
         ImGui::Dummy({ 0, 4 });
-        if (Button("Simple")) {
-            guiLevel = Level::L0;
-            queueRedraw();
-        }
-        SameLine();
-        if (Button("Advanced")) {
-            guiLevel = Level::L1;
-            queueRedraw();
-        }
-        SameLine();
-        if (Button("Experimental")) {
-            guiLevel = Level::L2;
-            queueRedraw();
-        }
-        //        SameLine();
-        //        Dummy(ImVec2(40.0f, 0.0f));
+        guiLevelSelector.render(*this);
+        ImGui::SameLine(0, 100);
+        standardSelector.render(*this);
 
         PushID(id++);
 
         tableGeneral->render(*this);
+        tableMacros->render(*this);
 
         /*
         ImGuiTableFlags containerTableFlags = 0;
@@ -1232,9 +1325,11 @@ void vkgen::GUI::mainScreen() {
 
         if (guiLevel >= Level::L1) {
             ImGui::Dummy({ 0, 4 });
+            PushItemWidth(200);
             InputText("Namespace", &cfg.macro.mNamespace.data.value);
             InputText("vk::Context name", &cfg.gen.contextClassName.data);
             InputText("Module name", &cfg.gen.moduleName.data);
+            PopItemWidth();
         }
 
         if (Button("Load VulkanHPP preset")) {
@@ -1251,7 +1346,7 @@ void vkgen::GUI::mainScreen() {
     containerTableFlags |= ImGuiTableFlags_BordersOuter;
     containerTableFlags |= ImGuiTableFlags_ScrollY;
 
-    if (CollapsingHeader("Detailed selection")) {
+    if (CollapsingHeader("Subset selection")) {
         if (BeginTable("##Table", 1, containerTableFlags)) {
             TableNextRow();
             TableSetColumnIndex(0);
@@ -1985,14 +2080,48 @@ void vkgen::GUI::Collection::draw(int &id, bool filtered) {
     extensions.draw(id++, false);
 }
 
-void vkgen::GUI::AsyncButton::draw() {
+void vkgen::GUI::ButtonGroup::render(GUI &g) {
+    ImGui::Text("%s", label.c_str());
+    // ImGui::BeginGroup();
+
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 0.f);
+    for (int i = 0; i < buttons.size(); ++i) {
+        if (i == index) {
+            ImGui::PushStyleColor(ImGuiCol_Button, PALETTE.button_select);
+        }
+        else {
+            ImGui::PushStyleColor(ImGuiCol_Button, PALETTE.area);
+        }
+        if (i == 0) {
+            ImGui::SameLine();
+        }
+        else {
+            ImGui::SameLine(0, 0);
+        }
+        buttons[i].render(g);
+        ImGui::PopStyleColor();
+        if (buttons[i]) {
+            index = i;
+            if (onChange) {
+                onChange(i);
+            }
+            g.queueRedraw();
+        }
+    }
+    ImGui::PopStyleVar();
+
+    // ImGui::EndGroup();
+}
+
+void vkgen::GUI::AsyncButton::render(GUI &g) {
     bool locked = running;
     if (locked) {
         PushItemFlag(ImGuiItemFlags_Disabled, true);
         PushStyleVar(ImGuiStyleVar_Alpha, GetStyle().Alpha * 0.7f);
     }
     SetWindowFontScale(size);
-    if (Button(text.c_str())) {
+    Button::render(g);
+    if (Button::state) {
         run();
     }
     SetWindowFontScale(1.f);

@@ -109,7 +109,7 @@ namespace vkgen
     class Variables : public std::vector<std::unique_ptr<VariableData>>
     {
       public:
-        void bind() {
+        void bind(bool noArray = false) {
             const auto findVar = [&](const std::string &id) -> VariableData * {
                 for (auto &p : *this) {
                     if (p->original.identifier() == id) {
@@ -132,7 +132,7 @@ namespace vkgen
                 if (!len.empty() && p->getAltlenAttrib().empty()) {
                     const auto &var = findVar(len);
                     if (var) {
-                        p->bindLengthVar(*var);
+                        p->bindLengthVar(*var, noArray);
                         var->bindArrayVar(p.get());
                     }
                 }
@@ -348,6 +348,7 @@ namespace vkgen
             };
 
             String                        superclass;
+            String                        objType;
             VariableData                  vkhandle;
             std::string                   ownerhandle;
             std::unique_ptr<VariableData> ownerRaii;
@@ -455,8 +456,9 @@ namespace vkgen
                 ALIAS    = 1,
                 INDIRECT = 1 << 1,
                 CREATES_HANDLE     = 1 << 3,
-                CPP_VARIANT        = 1 << 4,
-                OVERLOADED_DESTROY = 1 << 5,
+                CREATES_TOP_HANDLE     = 1 << 4,
+                CPP_VARIANT            = 1 << 5,
+                OVERLOADED_DESTROY     = 1 << 6,
             };
 
             enum class PFNReturnCategory
@@ -593,6 +595,10 @@ namespace vkgen
 
             bool createsHandle() const {
                 return flags & CommandFlags::CREATES_HANDLE;
+            }
+
+            bool createsTopHandle() const {
+                return flags & CommandFlags::CREATES_TOP_HANDLE;
             }
 
             bool isStructChain() const {
@@ -813,11 +819,14 @@ namespace vkgen
         {
             std::string value;
             std::string alias;
+            uint64_t    numericValue = {};
             bool        isAlias = {};
 
             EnumValue(const Registry &reg, std::string name, const std::string &value, const std::string &enumName, bool isBitmask = false);
 
             void setValue(uint64_t value, const vkr::Enum &parent);
+
+            static std::string toHex(uint64_t value, bool is64bit);
         };
 
         struct EnumValueType : public EnumValue
@@ -839,6 +848,10 @@ namespace vkgen
 
             bool containsValue(const std::string &value) const;
 
+            bool is64bit() const {
+                return type != "VkFlags";
+            }
+
             bool isBitmask() const {
                 return !bitmask.empty();
             }
@@ -851,11 +864,12 @@ namespace vkgen
 
         struct Struct : GenericType
         {
-            std::string           structTypeValue;
+            String                structTypeValue;
             std::vector<Struct *> extends;
             Variables             members;
             bool                  returnedonly = false;
             bool                  needForwardDeclare = false;
+            bool                  containsFloatingPoints = false;
 
             Struct(Generator &gen, const std::string_view name, MetaType::Value type, const xml::Element &e);
 
@@ -879,29 +893,42 @@ namespace vkgen
                 returnedonly = o.returnedonly;
                 return *this;
             }
+
+            bool hasStructType() const noexcept {
+                return !structTypeValue.empty();
+            }
         };
 
     }  // namespace vkr
 
     struct Define
     {
-        std::string define;
+        enum Type {
+            IF,
+            IF_NOT
+        };
 
         enum State
         {
             DISABLED,
             ENABLED,
             COND_ENABLED
-        } state = {};
+        };
 
         bool enabled() const {
             return state != State::DISABLED;
         }
+
+        std::string define;
+        Type type = {};
+        State state = {};
+
+        auto operator<=>(Define const &) const = default;
     };
 
-    struct NDefine : public Define
-    {
-    };
+//    struct NDefine : public Define
+//    {
+//    };
 
     struct Macro
     {
@@ -1251,6 +1278,7 @@ namespace vkgen
             std::vector<xml::Element> xmlSupportedExtensions;
             std::vector<xml::Element> xmlUnsupportedExtensions;
 
+            std::vector<std::pair<std::string, std::string>> structExtends;
             std::vector<std::pair<std::string, std::string>> typeRequires;
         };
 
@@ -1345,6 +1373,8 @@ namespace vkgen
 
         void parseCommands(Generator &gen, xml::Element elem, xml::Element children);
 
+        void orderCommands();
+
         void assignCommands(Generator &gen);
 
         void parseFeature(Generator &gen, xml::Element elem, xml::Element children);
@@ -1361,7 +1391,7 @@ namespace vkgen
 
         void removeUnsupportedFeatures();
 
-        void buildDependencies();
+        void buildDependencies(Generator &gen);
 
         void buildTypesMap();
 

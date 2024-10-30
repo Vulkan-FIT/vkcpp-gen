@@ -39,14 +39,21 @@ namespace vkgen
             // std::cout << "export: " << data.name << '\n';
             auto *elem = parent->GetDocument()->NewElement(data.name.c_str());
             saveConfigParam(elem, data.reflect());
-            parent->InsertEndChild(elem);
+            if (elem->NoChildren()) {
+                parent->GetDocument()->DeleteNode(elem);
+            }
+            else {
+                parent->InsertEndChild(elem);
+            }
         } else {
             // std::cout << "export:   * leaf" << '\n';
             // export
-            auto *elem = parent->GetDocument()->NewElement("");
-            elem->SetAttribute("name", data.name.c_str());
-            data.xmlExport(elem);
-            parent->InsertEndChild(elem);
+            if (data.isDirty()) {
+                auto *elem = parent->GetDocument()->NewElement("");
+                elem->SetAttribute("name", data.name.c_str());
+                data.xmlExport(elem);
+                parent->InsertEndChild(elem);
+            }
         }
     }
 
@@ -363,13 +370,13 @@ namespace vkgen
         elem->SetAttribute("value", std::to_string(data.state).c_str());
     }
 
-    template <>
-    void ConfigWrapper<NDefine>::xmlExport(tinyxml2::XMLElement *elem) const {
-        // std::cout << "export macro:" << name << '\n';
-        elem->SetName("ndefine");
-        elem->SetAttribute("define", data.define.c_str());
-        elem->SetAttribute("value", std::to_string(data.state).c_str());
-    }
+//    template <>
+//    void ConfigWrapper<NDefine>::xmlExport(tinyxml2::XMLElement *elem) const {
+//        // std::cout << "export macro:" << name << '\n';
+//        elem->SetName("ndefine");
+//        elem->SetAttribute("define", data.define.c_str());
+//        elem->SetAttribute("value", std::to_string(data.state).c_str());
+//    }
 
     template <>
     void ConfigWrapper<std::string>::xmlExport(tinyxml2::XMLElement *elem) const {
@@ -392,11 +399,18 @@ namespace vkgen
         elem->SetAttribute("value", data ? "true" : "false");
     }
 
+    static bool checkValue(tinyxml2::XMLElement *elem, const std::string_view value) {
+        if (std::string_view{ elem->Value() } != value) {
+            std::cerr << "[config import] node value mismatch at line " << elem->GetLineNum() << ", expected " << value << '\n';
+            return false;
+        }
+        return true;
+    }
+
     template <>
     bool ConfigWrapper<Macro>::xmlImport(tinyxml2::XMLElement *elem) const {
         // std::cout << "import macro:" << name << '\n';
-        if (std::string_view{ elem->Value() } != "macro") {
-            std::cerr << "[config import] node value mismatch" << '\n';
+        if (!checkValue(elem, "macro")) {
             return false;
         }
 
@@ -425,8 +439,7 @@ namespace vkgen
 
     template <>
     bool ConfigWrapper<Define>::xmlImport(tinyxml2::XMLElement *elem) const {
-        if (std::string_view{ elem->Value() } != "define") {
-            std::cerr << "[config import] node value mismatch" << '\n';
+        if (!checkValue(elem, "define")) {
             return false;
         }
         const char *v = elem->Attribute("define");
@@ -446,33 +459,32 @@ namespace vkgen
         return true;
     }
 
-    template <>
-    bool ConfigWrapper<NDefine>::xmlImport(tinyxml2::XMLElement *elem) const {
-        if (std::string_view{ elem->Value() } != "ndefine") {
-            std::cerr << "[config import] node value mismatch" << '\n';
-            return false;
-        }
-        const char *v = elem->Attribute("define");
-        if (v) {
-            const_cast<ConfigWrapper<NDefine> *>(this)->data.define = v;
-        }
-        v = elem->Attribute("value");
-        if (v) {
-            int state = toInt(v);
-            if (state < 0 || state > Define::COND_ENABLED) {
-                std::cerr << "[config import] invalid value" << '\n';
-                return false;
-            }
-            const_cast<ConfigWrapper<NDefine> *>(this)->data.state = static_cast<Define::State>(state);
-        }
-
-        return true;
-    }
+//    template <>
+//    bool ConfigWrapper<NDefine>::xmlImport(tinyxml2::XMLElement *elem) const {
+//        if (std::string_view{ elem->Value() } != "ndefine") {
+//            std::cerr << "[config import] node value mismatch" << '\n';
+//            return false;
+//        }
+//        const char *v = elem->Attribute("define");
+//        if (v) {
+//            const_cast<ConfigWrapper<NDefine> *>(this)->data.define = v;
+//        }
+//        v = elem->Attribute("value");
+//        if (v) {
+//            int state = toInt(v);
+//            if (state < 0 || state > Define::COND_ENABLED) {
+//                std::cerr << "[config import] invalid value" << '\n';
+//                return false;
+//            }
+//            const_cast<ConfigWrapper<NDefine> *>(this)->data.state = static_cast<Define::State>(state);
+//        }
+//
+//        return true;
+//    }
 
     template <>
     bool ConfigWrapper<std::string>::xmlImport(tinyxml2::XMLElement *elem) const {
-        if (std::string_view{ elem->Value() } != "string") {
-            std::cerr << "[config import] node mismatch" << '\n';
+        if (!checkValue(elem, "string")) {
             return false;
         }
 
@@ -486,8 +498,7 @@ namespace vkgen
     template <>
     bool ConfigWrapper<int>::xmlImport(tinyxml2::XMLElement *elem) const {
         // std::cout << "import: " << name << '\n';
-        if (std::string_view{ elem->Value() } != "int") {
-            std::cerr << "[config import] node mismatch" << '\n';
+        if (!checkValue(elem, "int")) {
             return false;
         }
 
@@ -508,8 +519,7 @@ namespace vkgen
     template <>
     bool ConfigWrapper<bool>::xmlImport(tinyxml2::XMLElement *elem) const {
         // std::cout << "import: " << name << '\n';
-        if (std::string_view{ elem->Value() } != "bool") {
-            std::cerr << "[config import] node mismatch" << '\n';
+        if (!checkValue(elem, "bool")) {
             return false;
         }
 

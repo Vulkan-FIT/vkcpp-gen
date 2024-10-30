@@ -57,7 +57,7 @@ namespace vkgen
 
         bool xmlImport(tinyxml2::XMLElement *elem) const;
 
-        bool isDifferent() const {
+        bool isDirty() const {
             return data != _default;
         }
 
@@ -124,7 +124,9 @@ namespace vkgen
 
         ConfigWrapper<bool> cppModules{ "modules", false };
         ConfigWrapper<bool> cppFiles{ "cpp_files", false };  // WIP
-        ConfigWrapper<bool> expApi{ "exp_api", false };
+        ConfigWrapper<bool> expApi  { "exp_api", false };
+        // ConfigWrapper<bool> expApi  { "vkg_api", false };
+        ConfigWrapper<bool> globalMode  { "global_mode", true };
 
         ConfigWrapper<bool> internalFunctions{ "internal_functions", false };
         ConfigWrapper<bool> internalVkResult{ "internal_vkresult", true };
@@ -138,10 +140,9 @@ namespace vkgen
         ConfigWrapper<bool> dispatchTableAsUnique{ "dispatch_table_as_unique", { false } };
 
         ConfigWrapper<bool> functionsVecAndArray{ "functions_vec_array", { false } };
+        ConfigWrapper<bool> noStdVector{ "no_std_vector", { true } };
 
-        ConfigWrapper<NDefine> structConstructors{ "struct_constructors", { "VULKAN_HPP_NO_STRUCT_CONSTRUCTORS", Define::COND_ENABLED } };
-        ConfigWrapper<NDefine> structSetters{ "struct_setters", { "VULKAN_HPP_NO_STRUCT_SETTERS", Define::COND_ENABLED } };
-        ConfigWrapper<NDefine> structCompare{ "struct_compare", { "VULKAN_HPP_NO_STRUCT_COMPARE", Define::ENABLED } };
+
         ConfigWrapper<bool>    spaceshipOperator{ "spaceship_operator", true };
         ConfigWrapper<bool>    branchHint{ "branch_hint", false };
         ConfigWrapper<bool>    importStdMacro{ "import_std_macro", false };
@@ -149,30 +150,44 @@ namespace vkgen
         ConfigWrapper<bool>    proxyPassByCopy{ "proxy_pass_by_copy", false };
         ConfigWrapper<bool>    unifiedException{ "unified_exception", false };
 
-        ConfigWrapper<NDefine> smartHandles{ "smart_handles", {"VULKAN_HPP_NO_SMART_HANDLE", Define::COND_ENABLED} };
+        // ConfigWrapper<bool>    globalFunctions{ "global_functions", true };
 
-        ConfigWrapper<Define> structReflect{ "struct_reflect", { "VULKAN_HPP_USE_REFLECT", Define::COND_ENABLED } };
+        ConfigWrapper<bool>    expandMacros{ "expand_macros", true };
 
-        ConfigWrapper<NDefine> unionConstructors{ "union_constructors", { "VULKAN_HPP_NO_UNION_CONSTRUCTORS", Define::COND_ENABLED } };
-        ConfigWrapper<NDefine> unionSetters{ "union_setters", { "VULKAN_HPP_NO_UNION_SETTERS", Define::COND_ENABLED } };
+        ConfigWrapper<Define> smartHandles{ "smart_handles", {"VULKAN_HPP_NO_SMART_HANDLE", Define::IF_NOT, Define::COND_ENABLED} };
 
-        ConfigWrapper<NDefine> handleConstructors{ "handles_constructors", { "VULKAN_HPP_NO_HANDLES_CONSTRUCTORS", Define::COND_ENABLED } };
+        ConfigWrapper<Define> structConstructors{ "struct_constructors", { "VULKAN_HPP_NO_STRUCT_CONSTRUCTORS", Define::IF_NOT, Define::COND_ENABLED } };
+        ConfigWrapper<Define> structSetters{ "struct_setters", { "VULKAN_HPP_NO_STRUCT_SETTERS", Define::IF_NOT, Define::COND_ENABLED } };
+        ConfigWrapper<Define> structCompare{ "struct_compare", { "VULKAN_HPP_NO_STRUCT_COMPARE", Define::IF_NOT, Define::ENABLED } };
+        ConfigWrapper<Define> structReflect{ "struct_reflect", { "VULKAN_HPP_USE_REFLECT", Define::IF, Define::COND_ENABLED } };
 
-        ConfigWrapper<NDefine> handleTemplates{ "handle_templates", { "VULKAN_HPP_EXPERIMENTAL_NO_TEMPLATES", Define::ENABLED } };
+        ConfigWrapper<Define> unionConstructors{ "union_constructors", { "VULKAN_HPP_NO_UNION_CONSTRUCTORS", Define::IF_NOT, Define::COND_ENABLED } };
+        ConfigWrapper<Define> unionSetters{ "union_setters", { "VULKAN_HPP_NO_UNION_SETTERS", Define::IF_NOT, Define::COND_ENABLED } };
+
+        ConfigWrapper<Define> handleConstructors{ "handles_constructors", { "VULKAN_HPP_NO_HANDLES_CONSTRUCTORS", Define::IF_NOT, Define::COND_ENABLED } };
+
+        ConfigWrapper<Define> handleTemplates{ "handle_templates", { "VULKAN_HPP_EXPERIMENTAL_NO_TEMPLATES", Define::IF_NOT, Define::ENABLED } };
 
         ConfigWrapper<std::string> contextClassName{ "context_class_name", { "Context" } };
         ConfigWrapper<std::string> moduleName{ "module_name", { "vulkan" } };
 
         ConfigWrapper<int> classMethods{ "class_methods", { 1 } };
-        ConfigWrapper<int> cppStd{ "cpp_standard", 11 };
+        ConfigWrapper<int> cppStd{ "cpp_standard", 20 };
+
+        ConfigWrapper<int> structMock{ "struct_mock", 0 };
 
         ConfigGroupRAII raii;
+
+        [[nodiscard]] auto defines() const {
+
+        }
 
         [[nodiscard]] auto reflect() const {
             return std::tie(cppModules,
                             cppFiles,
                             expApi,
                             cppStd,
+                            globalMode,
                             // internalFunctions,
                             functionsVecAndArray,
                             structConstructors,
@@ -192,15 +207,18 @@ namespace vkgen
                             contextClassName,
                             moduleName,
                             classMethods,
-                            raii);
+                            raii,
+                            structMock,
+                            expandMacros
+                            );
         }
     };
 
     struct Config : public ConfigGroup
     {
-        ConfigGroupGen       gen{};
-        ConfigGroupWhitelist whitelist{};
-        ConfigGroupMacro     macro{};
+        ConfigGroupGen       gen;
+        ConfigGroupWhitelist whitelist;
+        ConfigGroupMacro     macro;
 
         struct
         {
