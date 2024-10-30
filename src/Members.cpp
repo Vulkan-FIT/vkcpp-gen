@@ -77,6 +77,7 @@ namespace vkgen
         if (ctx.commentOut) {
             output += "/*\n";
         }
+        // if (last) output += "// last: " + last->fullType(gen) + "\n";
         // std::string const indent = ctx.isStatic ? "  " : "    ";
         std::string const indent       = "    ";
         bool              usesTemplate = false;  // TODO
@@ -99,6 +100,7 @@ namespace vkgen
         // std::string const indent = genInline ? "    " : "  ";
         std::string const indent = "    ";
 
+        // if (last) output += "// last: " + last->fullType(gen) + "\n";
         bool usesTemplate = false;
         output += getProto(indent, "(definition)", genInline, usesTemplate) + "\n    {\n";
         if (ctx.ns == Namespace::RAII && isIndirect() && !constructor) {
@@ -226,10 +228,10 @@ namespace vkgen
 
             if (var.getIgnoreProto() && !var.isLocalVar()) {
                 if (var.original.type() == "VkAllocationCallbacks" && !gen.cfg.gen.allocatorParam) {
-                    // return pfn ? "nullptr/*ALLOC*/" : "/*- ALLOC*/";
-                    if (ctx.ns == Namespace::VK && !ctx.disableAllocatorRemoval) {
-                        return "";
-                    }
+//                    return pfn ? "nullptr/*ALLOC*/" : "/*ALLOC*/";
+//                    if (ctx.ns == Namespace::VK && !ctx.disableAllocatorRemoval) {
+//                        return "";
+//                    }
                     return pfn ? "nullptr" : "";
                 }
 
@@ -413,18 +415,18 @@ namespace vkgen
                 }
             }
             else if (ctx.globalModeStatic || ctx.exp || ctx.disableDispatch) {
-                if (cls && cls->name == gen.loader.name /*!cls->name.empty() && !cls->isSubclass*/) {
-                    output += "m_dispatcher.";
-                } else {
+                if (gen.getConfig().gen.globalMode && (cls && cls->name != gen.loader.name)) {
                     output += gen.m_ns;
                     output += "::dispatch.";
-                    /*
-                    if (!cmd->top) {
-                        std::cerr << "can't get dispatch source" << std::endl;
-                    } else {
+                }
+                // if ((cls && cls->name == gen.loader.name) || !ctx.globalModeStatic/*!cls->name.empty() && !cls->isSubclass*/) {
+                else {
+                    if (cls->isSubclass && cmd->top) {
                         output += strFirstLower(cmd->top->name) + ".getDispatcher()->";
                     }
-                     */
+                    else {
+                        output += "m_dispatcher.";
+                    }
                 }
             } else {
                 output += gen.getDispatchCall();
@@ -1912,6 +1914,24 @@ namespace vkgen
                 output += "      " + declareReturnVar();
             }
         }
+        if (cfg.gen.globalMode) {
+            for (const VariableData &v : cmd->outParams) {
+                if (!v.isArray() && v.isStruct() && v.identifier() != "structureChain") {
+                    auto s = gen.structs.find(v.original.type());
+                    if (s != gen.structs.end()) {
+                        if (!s->structTypeValue.empty()) {
+                            output += "      " + v.identifier() + ".sType = " + s->structTypeValue.original + ";\n";
+                        }
+                        for (const auto &m : s->members) {
+                            if (m->identifier() == "pNext") {
+                                output += "      " + v.identifier() + ".pNext = nullptr;\n";
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         return vectorSizeVar;
     }
@@ -2650,6 +2670,8 @@ for (auto const &{2} : {3}) {
             return MemberResolverDefault::generateMemberBody();
         }
 
+        output += "// TEST\n";
+
         if (ctx.returnSingle && last->isLenAttribIndirect()) {
             auto rhs = last->getLenAttribRhs();
             if (!rhs.empty()) {
@@ -2659,6 +2681,29 @@ for (auto const &{2} : {3}) {
                 }
             }
         }
+        if (!gen.getConfig().gen.globalMode && gen.getConfig().gen.expApi) {
+            const auto &h = gen.handles.find(last->original.type());
+            if (h != gen.handles.end() && !h->isSubclass) {
+                std::string args;
+                if (!cmd->params.empty()) {
+                    auto &first = cmd->params.begin()->get();
+                    // output += "  // " + first.original.type() + " == " + cls->name.original + "\n";
+                    if (first.original.type() == cls->name.original) {
+                        first.setIgnorePFN(true);
+                    }
+                    else {
+                        if (!cls->isSubclass) {
+                            args = "*this, ";
+                        }
+                        // args = "*this, ";
+                    }
+                }
+                args += createPassArguments(true);
+                output += "      return " + last->fullType(gen) + "(" + args + ");\n";
+                return output;
+            }
+        }
+
         const auto &id = last->identifier();
         output += "      " + last->original.type() + " " + id + ";\n";
         output += "      " + generatePFNcall();
@@ -2955,6 +3000,16 @@ for (auto const &{2} : {3}) {
 
     void MemberGenerator::generateCreate() {
 
+        bool unique = false;
+        auto *last = m.src->getLastVar();
+        if (last) {
+            const auto h = gen.handles.find(last->original.type());
+            if (h == gen.handles.end()) {
+                return;
+            }
+            unique = h->uniqueVariant() && !(gen.cfg.gen.globalMode && !h->isSubclass);
+        }
+
         const bool vector = m.src->returnsVector();
         if (vector) {
             if (!gen.cfg.gen.noStdVector) {
@@ -2990,13 +3045,7 @@ for (auto const &{2} : {3}) {
         if (ctx.globalModeStatic) {
             return;
         }
-        auto *last = m.src->getLastHandleVar();
-        if (!last) {
-            std::cerr << "no last handle: " << m.src->name.original << '\n';
-            return;
-        }
-        const auto &h = gen.findHandle(last->original.type());
-        if (ctx.ns == Namespace::VK && h.uniqueVariant() && !(gen.cfg.gen.globalMode && !h.isSubclass)) {
+        if (unique && ctx.ns == Namespace::VK) {
             std::array<Protect, 1> p = {Protect{"VULKAN_HPP_NO_SMART_HANDLE", false}};
 
             generate<MemberResolverCreateUnique>(p);
@@ -3013,9 +3062,16 @@ for (auto const &{2} : {3}) {
     }
 
     void MemberGenerator::generateDestroy(ClassCommand &m, MemberContext &ctx, const std::string &name) {
+        const auto &orig = m.src->name.original;
+        if (gen.getConfig().gen.globalMode && !gen.getConfig().gen.allocatorParam) {
+            if (orig == "vkDestroyInstance" || orig != "vkDestroyDevice") {
+                ctx.globalModeStatic = false;
+                generate<MemberResolverDefault>();
+            }
+            return;
+        }
         generate<MemberResolverDefault>();
 
-        const auto &orig = m.src->name.original;
         if (orig != "vkDestroyInstance" && orig != "vkDestroyDevice" && m.src->hasOverloadedDestroy()) {
             // std::cerr << "skip generate destroy overload: " << m.src->name.original << '\n';
             return;

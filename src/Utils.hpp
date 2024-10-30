@@ -436,8 +436,10 @@ namespace vkgen
     static std::string camelToSnake(const std::string &str) {
         std::string out;
         for (char c : str) {
-            if (std::isupper(c) && !out.empty()) {
-                out += '_';
+            if (!out.empty()) {
+                if (std::isupper(c) || (std::isdigit(c) && !std::isdigit(*out.rbegin()) )) {
+                    out += '_';
+                }
             }
             out += std::toupper(c);
         }

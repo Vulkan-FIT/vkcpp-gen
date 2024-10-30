@@ -1060,16 +1060,16 @@ vkgen::GUI::GUI(vkgen::Generator &gen) {
     loadConfigButton.size = size;
     saveConfigButton.size = size;
 
-    // auto standardSelector2  = std::make_unique<LevelRenderable<StandardSelector>>(Level::L2, gen);
-    // this->standardSelector = standardSelector.get();
-
-    standardSelector = ButtonGroup("Minimum standard", {"c++11", "c++20"});
+    standardSelector = ButtonGroup("Minimum standard", {"c++11", "c++17", "c++20"});
     switch (gen.cfg.gen.cppStd.data) {
         case 11:
             standardSelector.index = 0;
             break;
-        case 20:
+        case 17:
             standardSelector.index = 1;
+            break;
+        case 20:
+            standardSelector.index = 2;
             break;
         default:
             break;
@@ -1080,7 +1080,10 @@ vkgen::GUI::GUI(vkgen::Generator &gen) {
                 gen.cfg.gen.cppStd.data = 11;
                 break;
             case 1:
-                gen.cfg.gen.cppStd.data = 11;
+                gen.cfg.gen.cppStd.data = 17;
+                break;
+            case 2:
+                gen.cfg.gen.cppStd.data = 20;
                 break;
             default:
                 break;

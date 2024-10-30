@@ -189,6 +189,8 @@ namespace vkgen
                             cppStd,
                             globalMode,
                             // internalFunctions,
+                            allocatorParam,
+                            resultValueType,
                             functionsVecAndArray,
                             structConstructors,
                             structSetters,

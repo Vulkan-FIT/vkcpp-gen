@@ -269,256 +269,6 @@ static constexpr char const *RES_ERRORS_UNIFIED{ R"(
   }};
 )" };
 
-static constexpr char const *RES_STRUCT_CHAIN{ R"(
-
-template <typename X, typename Y>
-  struct StructExtends
-  {
-    enum
-    {
-      value = false
-    };
-  };
-
-  template <typename Type, class...>
-  struct IsPartOfStructureChain
-  {
-    static const bool valid = false;
-  };
-
-  template <typename Type, typename Head, typename... Tail>
-  struct IsPartOfStructureChain<Type, Head, Tail...>
-  {
-    static const bool valid = std::is_same<Type, Head>::value || IsPartOfStructureChain<Type, Tail...>::valid;
-  };
-
-  template <size_t Index, typename T, typename... ChainElements>
-  struct StructureChainContains
-  {
-    static const bool value = std::is_same<T, typename std::tuple_element<Index, std::tuple<ChainElements...>>::type>::value ||
-                              StructureChainContains<Index - 1, T, ChainElements...>::value;
-  };
-
-  template <typename T, typename... ChainElements>
-  struct StructureChainContains<0, T, ChainElements...>
-  {
-    static const bool value = std::is_same<T, typename std::tuple_element<0, std::tuple<ChainElements...>>::type>::value;
-  };
-
-  template <size_t Index, typename... ChainElements>
-  struct StructureChainValidation
-  {
-    using TestType          = typename std::tuple_element<Index, std::tuple<ChainElements...>>::type;
-    static const bool valid = StructExtends<TestType, typename std::tuple_element<0, std::tuple<ChainElements...>>::type>::value &&
-                              ( /*TestType::allowDuplicate ||*/ !StructureChainContains<Index - 1, TestType, ChainElements...>::value ) &&
-                              StructureChainValidation<Index - 1, ChainElements...>::valid;
-  };
-
-  template <typename... ChainElements>
-  struct StructureChainValidation<0, ChainElements...>
-  {
-    static const bool valid = true;
-  };
-
-  template <typename... ChainElements>
-  class StructureChain : public std::tuple<ChainElements...>
-  {
-  public:
-    StructureChain() VULKAN_HPP_NOEXCEPT
-    {
-      static_assert( StructureChainValidation<sizeof...( ChainElements ) - 1, ChainElements...>::valid, "The structure chain is not valid!" );
-      init<sizeof...( ChainElements ) - 1>();
-      link<sizeof...( ChainElements ) - 1>();
-    }
-
-    StructureChain( StructureChain const & rhs ) VULKAN_HPP_NOEXCEPT : std::tuple<ChainElements...>( rhs )
-    {
-      static_assert( StructureChainValidation<sizeof...( ChainElements ) - 1, ChainElements...>::valid, "The structure chain is not valid!" );
-      link( &std::get<0>( *this ),
-            &std::get<0>( rhs ),
-            reinterpret_cast<VkBaseOutStructure *>( &std::get<0>( *this ) ),
-            reinterpret_cast<VkBaseInStructure const *>( &std::get<0>( rhs ) ) );
-    }
-
-    StructureChain( StructureChain && rhs ) VULKAN_HPP_NOEXCEPT : std::tuple<ChainElements...>( std::forward<std::tuple<ChainElements...>>( rhs ) )
-    {
-      static_assert( StructureChainValidation<sizeof...( ChainElements ) - 1, ChainElements...>::valid, "The structure chain is not valid!" );
-      link( &std::get<0>( *this ),
-            &std::get<0>( rhs ),
-            reinterpret_cast<VkBaseOutStructure *>( &std::get<0>( *this ) ),
-            reinterpret_cast<VkBaseInStructure const *>( &std::get<0>( rhs ) ) );
-    }
-
-    StructureChain( ChainElements const &... elems ) VULKAN_HPP_NOEXCEPT : std::tuple<ChainElements...>( elems... )
-    {
-      static_assert( StructureChainValidation<sizeof...( ChainElements ) - 1, ChainElements...>::valid, "The structure chain is not valid!" );
-      link<sizeof...( ChainElements ) - 1>();
-    }
-
-    StructureChain & operator=( StructureChain const & rhs ) VULKAN_HPP_NOEXCEPT
-    {
-      std::tuple<ChainElements...>::operator=( rhs );
-      link( &std::get<0>( *this ),
-            &std::get<0>( rhs ),
-            reinterpret_cast<VkBaseOutStructure *>( &std::get<0>( *this ) ),
-            reinterpret_cast<VkBaseInStructure const *>( &std::get<0>( rhs ) ) );
-      return *this;
-    }
-
-    // StructureChain & operator=( StructureChain && rhs ) = delete;
-
-    template <typename T = typename std::tuple_element<0, std::tuple<ChainElements...>>::type, size_t Which = 0>
-    T & get() VULKAN_HPP_NOEXCEPT
-    {
-      return std::get<ChainElementIndex<0, T, Which, void, ChainElements...>::value>( static_cast<std::tuple<ChainElements...> &>( *this ) );
-    }
-
-    template <typename T = typename std::tuple_element<0, std::tuple<ChainElements...>>::type, size_t Which = 0>
-    T const & get() const VULKAN_HPP_NOEXCEPT
-    {
-      return std::get<ChainElementIndex<0, T, Which, void, ChainElements...>::value>( static_cast<std::tuple<ChainElements...> const &>( *this ) );
-    }
-
-    template <typename T0, typename T1, typename... Ts>
-    std::tuple<T0 &, T1 &, Ts &...> get() VULKAN_HPP_NOEXCEPT
-    {
-      return std::tie( get<T0>(), get<T1>(), get<Ts>()... );
-    }
-
-    template <typename T0, typename T1, typename... Ts>
-    std::tuple<T0 const &, T1 const &, Ts const &...> get() const VULKAN_HPP_NOEXCEPT
-    {
-      return std::tie( get<T0>(), get<T1>(), get<Ts>()... );
-    }
-
-    template <typename ClassType, size_t Which = 0>
-    typename std::enable_if<std::is_same<ClassType, typename std::tuple_element<0, std::tuple<ChainElements...>>::type>::value && ( Which == 0 ), bool>::type
-      isLinked() const VULKAN_HPP_NOEXCEPT
-    {
-      return true;
-    }
-
-    template <typename ClassType, size_t Which = 0>
-    typename std::enable_if<!std::is_same<ClassType, typename std::tuple_element<0, std::tuple<ChainElements...>>::type>::value || ( Which != 0 ), bool>::type
-      isLinked() const VULKAN_HPP_NOEXCEPT
-    {
-      static_assert( IsPartOfStructureChain<ClassType, ChainElements...>::valid, "Can't unlink Structure that's not part of this StructureChain!" );
-      return isLinked( reinterpret_cast<VkBaseInStructure const *>( &get<ClassType, Which>() ) );
-    }
-
-    template <typename ClassType, size_t Which = 0>
-    typename std::enable_if<!std::is_same<ClassType, typename std::tuple_element<0, std::tuple<ChainElements...>>::type>::value || ( Which != 0 ), void>::type
-      relink() VULKAN_HPP_NOEXCEPT
-    {
-      static_assert( IsPartOfStructureChain<ClassType, ChainElements...>::valid, "Can't relink Structure that's not part of this StructureChain!" );
-      auto pNext = reinterpret_cast<VkBaseInStructure *>( &get<ClassType, Which>() );
-      VULKAN_HPP_ASSERT( !isLinked( pNext ) );
-      auto & headElement = std::get<0>( static_cast<std::tuple<ChainElements...> &>( *this ) );
-      pNext->pNext       = reinterpret_cast<VkBaseInStructure const *>( headElement.pNext );
-      headElement.pNext  = pNext;
-    }
-
-    template <typename ClassType, size_t Which = 0>
-    typename std::enable_if<!std::is_same<ClassType, typename std::tuple_element<0, std::tuple<ChainElements...>>::type>::value || ( Which != 0 ), void>::type
-      unlink() VULKAN_HPP_NOEXCEPT
-    {
-      static_assert( IsPartOfStructureChain<ClassType, ChainElements...>::valid, "Can't unlink Structure that's not part of this StructureChain!" );
-      unlink( reinterpret_cast<VkBaseOutStructure const *>( &get<ClassType, Which>() ) );
-    }
-
-  private:
-    template <int Index, typename T, int Which, typename, class First, class... Types>
-    struct ChainElementIndex : ChainElementIndex<Index + 1, T, Which, void, Types...>
-    {
-    };
-
-    template <int Index, typename T, int Which, class First, class... Types>
-    struct ChainElementIndex<Index, T, Which, typename std::enable_if<!std::is_same<T, First>::value, void>::type, First, Types...>
-      : ChainElementIndex<Index + 1, T, Which, void, Types...>
-    {
-    };
-
-    template <int Index, typename T, int Which, class First, class... Types>
-    struct ChainElementIndex<Index, T, Which, typename std::enable_if<std::is_same<T, First>::value, void>::type, First, Types...>
-      : ChainElementIndex<Index + 1, T, Which - 1, void, Types...>
-    {
-    };
-
-    template <int Index, typename T, class First, class... Types>
-    struct ChainElementIndex<Index, T, 0, typename std::enable_if<std::is_same<T, First>::value, void>::type, First, Types...>
-      : std::integral_constant<int, Index>
-    {
-    };
-
-    bool isLinked( VkBaseInStructure const * pNext ) const VULKAN_HPP_NOEXCEPT
-    {
-      VkBaseInStructure const * elementPtr =
-        reinterpret_cast<VkBaseInStructure const *>( &std::get<0>( static_cast<std::tuple<ChainElements...> const &>( *this ) ) );
-      while ( elementPtr )
-      {
-        if ( elementPtr->pNext == pNext )
-        {
-          return true;
-        }
-        elementPtr = elementPtr->pNext;
-      }
-      return false;
-    }
-
-    template <size_t Index>
-    void init() VULKAN_HPP_NOEXCEPT
-    {
-        auto &x = std::get<Index>( static_cast<std::tuple<ChainElements...> &>( *this ) );
-        x.sType = vk::structureType<typename std::tuple_element<Index, std::tuple<ChainElements...>>::type>::value;
-        if constexpr (Index != 0) {
-            init<Index - 1>();
-        }
-    }
-
-    template <size_t Index>
-    typename std::enable_if<Index != 0, void>::type link() VULKAN_HPP_NOEXCEPT
-    {
-      auto & x = std::get<Index - 1>( static_cast<std::tuple<ChainElements...> &>( *this ) );
-      x.pNext  = &std::get<Index>( static_cast<std::tuple<ChainElements...> &>( *this ) );
-      link<Index - 1>();
-    }
-
-    template <size_t Index>
-    typename std::enable_if<Index == 0, void>::type link() VULKAN_HPP_NOEXCEPT
-    {
-    }
-
-    void link( void * dstBase, void const * srcBase, VkBaseOutStructure * dst, VkBaseInStructure const * src )
-    {
-      while ( src->pNext )
-      {
-        std::ptrdiff_t offset = reinterpret_cast<char const *>( src->pNext ) - reinterpret_cast<char const *>( srcBase );
-        dst->pNext            = reinterpret_cast<VkBaseOutStructure *>( reinterpret_cast<char *>( dstBase ) + offset );
-        dst                   = dst->pNext;
-        src                   = src->pNext;
-      }
-      dst->pNext = nullptr;
-    }
-
-    void unlink( VkBaseOutStructure const * pNext ) VULKAN_HPP_NOEXCEPT
-    {
-      VkBaseOutStructure * elementPtr = reinterpret_cast<VkBaseOutStructure *>( &std::get<0>( static_cast<std::tuple<ChainElements...> &>( *this ) ) );
-      while ( elementPtr && ( elementPtr->pNext != pNext ) )
-      {
-        elementPtr = elementPtr->pNext;
-      }
-      if ( elementPtr )
-      {
-        elementPtr->pNext = pNext->pNext;
-      }
-      else
-      {
-        VULKAN_HPP_ASSERT( false );  // fires, if the ClassType member has already been unlinked !
-      }
-    }
-  };
-)" };
-
 static constexpr char const *RES_UNIQUE_HANDLE{ R"(
 
   template <typename Type, typename Dispatch>
@@ -872,262 +622,260 @@ static constexpr char const *RES_RESULT_CHECK{ R"(
 )" };
 
 static constexpr char const *RES_ARRAY_PROXY{ R"(
-  template <typename T>
-  class ArrayProxy
-  {
-  public:
-    VULKAN_HPP_CONSTEXPR ArrayProxy() VULKAN_HPP_NOEXCEPT
-      : m_count( 0 )
-      , m_ptr( nullptr )
-    {}
+template <typename T>
+ class ArrayProxy
+ {
+ public:
+   VULKAN_HPP_CONSTEXPR ArrayProxy() VULKAN_HPP_NOEXCEPT
+     : m_count( 0 )
+     , m_ptr( nullptr )
+   {
+   }
 
-    VULKAN_HPP_CONSTEXPR ArrayProxy( std::nullptr_t ) VULKAN_HPP_NOEXCEPT
-      : m_count( 0 )
-      , m_ptr( nullptr )
-    {}
+   VULKAN_HPP_CONSTEXPR ArrayProxy( std::nullptr_t ) VULKAN_HPP_NOEXCEPT
+     : m_count( 0 )
+     , m_ptr( nullptr )
+   {
+   }
 
-    ArrayProxy( T & value ) VULKAN_HPP_NOEXCEPT
-      : m_count( 1 )
-      , m_ptr( &value )
-    {}
+   ArrayProxy( T const & value ) VULKAN_HPP_NOEXCEPT
+     : m_count( 1 )
+     , m_ptr( &value )
+   {
+   }
 
-    template <typename B = T, typename std::enable_if<std::is_const<B>::value, int>::type = 0>
-    ArrayProxy( typename std::remove_const<T>::type & value ) VULKAN_HPP_NOEXCEPT
-      : m_count( 1 )
-      , m_ptr( &value )
-    {}
+   ArrayProxy( uint32_t count, T const * ptr ) VULKAN_HPP_NOEXCEPT
+     : m_count( count )
+     , m_ptr( ptr )
+   {
+   }
 
-    ArrayProxy( uint32_t count, T * ptr ) VULKAN_HPP_NOEXCEPT
-      : m_count( count )
-      , m_ptr( ptr )
-    {}
-
-    template <typename B = T, typename std::enable_if<std::is_const<B>::value, int>::type = 0>
-    ArrayProxy( uint32_t count, typename std::remove_const<T>::type * ptr ) VULKAN_HPP_NOEXCEPT
-      : m_count( count )
-      , m_ptr( ptr )
-    {}
+   template <std::size_t C>
+   ArrayProxy( T const ( &ptr )[C] ) VULKAN_HPP_NOEXCEPT
+     : m_count( C )
+     , m_ptr( ptr )
+   {
+   }
 
 #  if __GNUC__ >= 9
 #    pragma GCC diagnostic push
 #    pragma GCC diagnostic ignored "-Winit-list-lifetime"
 #  endif
 
-    ArrayProxy( std::initializer_list<T> const & list ) VULKAN_HPP_NOEXCEPT
-      : m_count( static_cast<uint32_t>( list.size() ) )
-      , m_ptr( list.begin() )
-    {}
+   ArrayProxy( std::initializer_list<T> const & list ) VULKAN_HPP_NOEXCEPT
+     : m_count( static_cast<uint32_t>( list.size() ) )
+     , m_ptr( list.begin() )
+   {
+   }
 
-    template <typename B = T, typename std::enable_if<std::is_const<B>::value, int>::type = 0>
-    ArrayProxy( std::initializer_list<typename std::remove_const<T>::type> const & list ) VULKAN_HPP_NOEXCEPT
-      : m_count( static_cast<uint32_t>( list.size() ) )
-      , m_ptr( list.begin() )
-    {}
-
-    ArrayProxy( std::initializer_list<T> & list ) VULKAN_HPP_NOEXCEPT
-      : m_count( static_cast<uint32_t>( list.size() ) )
-      , m_ptr( list.begin() )
-    {}
-
-    template <typename B = T, typename std::enable_if<std::is_const<B>::value, int>::type = 0>
-    ArrayProxy( std::initializer_list<typename std::remove_const<T>::type> & list ) VULKAN_HPP_NOEXCEPT
-      : m_count( static_cast<uint32_t>( list.size() ) )
-      , m_ptr( list.begin() )
-    {}
+   template <typename B = T, typename std::enable_if<std::is_const<B>::value, int>::type = 0>
+   ArrayProxy( std::initializer_list<typename std::remove_const<T>::type> const & list ) VULKAN_HPP_NOEXCEPT
+     : m_count( static_cast<uint32_t>( list.size() ) )
+     , m_ptr( list.begin() )
+   {
+   }
 
 #  if __GNUC__ >= 9
 #    pragma GCC diagnostic pop
 #  endif
 
-    // Any type with a .data() return type implicitly convertible to T*, and a .size() return type implicitly
-    // convertible to size_t. The const version can capture temporaries, with lifetime ending at end of statement.
-    template <typename V,
-              typename std::enable_if<
-                std::is_convertible<decltype( std::declval<V>().data() ), T *>::value &&
-                std::is_convertible<decltype( std::declval<V>().size() ), std::size_t>::value>::type * = nullptr>
-    ArrayProxy( V const & v ) VULKAN_HPP_NOEXCEPT
-      : m_count( static_cast<uint32_t>( v.size() ) )
-      , m_ptr( v.data() )
-    {}
+   // Any type with a .data() return type implicitly convertible to T*, and a .size() return type implicitly
+   // convertible to size_t. The const version can capture temporaries, with lifetime ending at end of statement.
+   template <typename V,
+             typename std::enable_if<std::is_convertible<decltype( std::declval<V>().data() ), T *>::value &&
+                                     std::is_convertible<decltype( std::declval<V>().size() ), std::size_t>::value>::type * = nullptr>
+   ArrayProxy( V const & v ) VULKAN_HPP_NOEXCEPT
+     : m_count( static_cast<uint32_t>( v.size() ) )
+     , m_ptr( v.data() )
+   {
+   }
 
-    template <typename V,
-              typename std::enable_if<
-                std::is_convertible<decltype( std::declval<V>().data() ), T *>::value &&
-                std::is_convertible<decltype( std::declval<V>().size() ), std::size_t>::value>::type * = nullptr>
-    ArrayProxy( V & v ) VULKAN_HPP_NOEXCEPT
-      : m_count( static_cast<uint32_t>( v.size() ) )
-      , m_ptr( v.data() )
-    {}
+   const T * begin() const VULKAN_HPP_NOEXCEPT
+   {
+     return m_ptr;
+   }
 
-    const T * begin() const VULKAN_HPP_NOEXCEPT
-    {
-      return m_ptr;
-    }
+   const T * end() const VULKAN_HPP_NOEXCEPT
+   {
+     return m_ptr + m_count;
+   }
 
-    const T * end() const VULKAN_HPP_NOEXCEPT
-    {
-      return m_ptr + m_count;
-    }
+   const T & front() const VULKAN_HPP_NOEXCEPT
+   {
+     VULKAN_HPP_ASSERT( m_count && m_ptr );
+     return *m_ptr;
+   }
 
-    const T & front() const VULKAN_HPP_NOEXCEPT
-    {
-      VULKAN_HPP_ASSERT( m_count && m_ptr );
-      return *m_ptr;
-    }
+   const T & back() const VULKAN_HPP_NOEXCEPT
+   {
+     VULKAN_HPP_ASSERT( m_count && m_ptr );
+     return *( m_ptr + m_count - 1 );
+   }
 
-    const T & back() const VULKAN_HPP_NOEXCEPT
-    {
-      VULKAN_HPP_ASSERT( m_count && m_ptr );
-      return *( m_ptr + m_count - 1 );
-    }
+   bool empty() const VULKAN_HPP_NOEXCEPT
+   {
+     return ( m_count == 0 );
+   }
 
-    bool empty() const VULKAN_HPP_NOEXCEPT
-    {
-      return ( m_count == 0 );
-    }
+   uint32_t size() const VULKAN_HPP_NOEXCEPT
+   {
+     return m_count;
+   }
 
-    uint32_t size() const VULKAN_HPP_NOEXCEPT
-    {
-      return m_count;
-    }
+   T const * data() const VULKAN_HPP_NOEXCEPT
+   {
+     return m_ptr;
+   }
 
-    T * data() const VULKAN_HPP_NOEXCEPT
-    {
-      return m_ptr;
-    }
+ private:
+   uint32_t  m_count;
+   T const * m_ptr;
+ };
 
-  private:
-    uint32_t m_count;
-    T *      m_ptr;
-  };
+template <typename T>
+ class ArrayProxyNoTemporaries
+ {
+ public:
+   VULKAN_HPP_CONSTEXPR ArrayProxyNoTemporaries() VULKAN_HPP_NOEXCEPT
+     : m_count( 0 )
+     , m_ptr( nullptr )
+   {
+   }
 
-  template <typename T>
-  class ArrayProxyNoTemporaries
-  {
-  public:
-    VULKAN_HPP_CONSTEXPR ArrayProxyNoTemporaries() VULKAN_HPP_NOEXCEPT
-      : m_count( 0 )
-      , m_ptr( nullptr )
-    {}
+   VULKAN_HPP_CONSTEXPR ArrayProxyNoTemporaries( std::nullptr_t ) VULKAN_HPP_NOEXCEPT
+     : m_count( 0 )
+     , m_ptr( nullptr )
+   {
+   }
 
-    VULKAN_HPP_CONSTEXPR ArrayProxyNoTemporaries( std::nullptr_t ) VULKAN_HPP_NOEXCEPT
-      : m_count( 0 )
-      , m_ptr( nullptr )
-    {}
+   template <typename B = T, typename std::enable_if<std::is_convertible<B, T>::value && std::is_lvalue_reference<B>::value, int>::type = 0>
+   ArrayProxyNoTemporaries( B && value ) VULKAN_HPP_NOEXCEPT
+     : m_count( 1 )
+     , m_ptr( &value )
+   {
+   }
 
-    ArrayProxyNoTemporaries( T & value ) VULKAN_HPP_NOEXCEPT
-      : m_count( 1 )
-      , m_ptr( &value )
-    {}
+   ArrayProxyNoTemporaries( uint32_t count, T * ptr ) VULKAN_HPP_NOEXCEPT
+     : m_count( count )
+     , m_ptr( ptr )
+   {
+   }
 
-    template <typename V>
-    ArrayProxyNoTemporaries( V && value ) = delete;
+   template <std::size_t C>
+   ArrayProxyNoTemporaries( T ( &ptr )[C] ) VULKAN_HPP_NOEXCEPT
+     : m_count( C )
+     , m_ptr( ptr )
+   {
+   }
 
-    template <typename B = T, typename std::enable_if<std::is_const<B>::value, int>::type = 0>
-    ArrayProxyNoTemporaries( typename std::remove_const<T>::type & value ) VULKAN_HPP_NOEXCEPT
-      : m_count( 1 )
-      , m_ptr( &value )
-    {}
+   template <std::size_t C>
+   ArrayProxyNoTemporaries( T ( &&ptr )[C] ) = delete;
 
-    template <typename B = T, typename std::enable_if<std::is_const<B>::value, int>::type = 0>
-    ArrayProxyNoTemporaries( typename std::remove_const<T>::type && value ) = delete;
+   // Any l-value reference with a .data() return type implicitly convertible to T*, and a .size() return type implicitly convertible to size_t.
+   template <typename V,
+             typename std::enable_if<!std::is_convertible<decltype( std::declval<V>().begin() ), T *>::value &&
+                                       std::is_convertible<decltype( std::declval<V>().data() ), T *>::value &&
+                                       std::is_convertible<decltype( std::declval<V>().size() ), std::size_t>::value && std::is_lvalue_reference<V>::value,
+                                     int>::type = 0>
+   ArrayProxyNoTemporaries( V && v ) VULKAN_HPP_NOEXCEPT
+     : m_count( static_cast<uint32_t>( v.size() ) )
+     , m_ptr( v.data() )
+   {
+   }
 
-    ArrayProxyNoTemporaries( uint32_t count, T * ptr ) VULKAN_HPP_NOEXCEPT
-      : m_count( count )
-      , m_ptr( ptr )
-    {}
+   // Any l-value reference with a .begin() return type implicitly convertible to T*, and a .size() return type implicitly convertible to size_t.
+   template <typename V,
+             typename std::enable_if<std::is_convertible<decltype( std::declval<V>().begin() ), T *>::value &&
+                                       std::is_convertible<decltype( std::declval<V>().size() ), std::size_t>::value && std::is_lvalue_reference<V>::value,
+                                     int>::type = 0>
+   ArrayProxyNoTemporaries( V && v ) VULKAN_HPP_NOEXCEPT
+     : m_count( static_cast<uint32_t>( v.size() ) )
+     , m_ptr( v.begin() )
+   {
+   }
 
-    template <typename B = T, typename std::enable_if<std::is_const<B>::value, int>::type = 0>
-    ArrayProxyNoTemporaries( uint32_t count, typename std::remove_const<T>::type * ptr ) VULKAN_HPP_NOEXCEPT
-      : m_count( count )
-      , m_ptr( ptr )
-    {}
+   const T * begin() const VULKAN_HPP_NOEXCEPT
+   {
+     return m_ptr;
+   }
 
-    ArrayProxyNoTemporaries( std::initializer_list<T> const & list ) VULKAN_HPP_NOEXCEPT
-      : m_count( static_cast<uint32_t>( list.size() ) )
-      , m_ptr( list.begin() )
-    {}
+   const T * end() const VULKAN_HPP_NOEXCEPT
+   {
+     return m_ptr + m_count;
+   }
 
-    ArrayProxyNoTemporaries( std::initializer_list<T> const && list ) = delete;
+   const T & front() const VULKAN_HPP_NOEXCEPT
+   {
+     VULKAN_HPP_ASSERT( m_count && m_ptr );
+     return *m_ptr;
+   }
 
-    template <typename B = T, typename std::enable_if<std::is_const<B>::value, int>::type = 0>
-    ArrayProxyNoTemporaries( std::initializer_list<typename std::remove_const<T>::type> const & list )
-      VULKAN_HPP_NOEXCEPT
-      : m_count( static_cast<uint32_t>( list.size() ) )
-      , m_ptr( list.begin() )
-    {}
+   const T & back() const VULKAN_HPP_NOEXCEPT
+   {
+     VULKAN_HPP_ASSERT( m_count && m_ptr );
+     return *( m_ptr + m_count - 1 );
+   }
 
-    template <typename B = T, typename std::enable_if<std::is_const<B>::value, int>::type = 0>
-    ArrayProxyNoTemporaries( std::initializer_list<typename std::remove_const<T>::type> const && list ) = delete;
+   bool empty() const VULKAN_HPP_NOEXCEPT
+   {
+     return ( m_count == 0 );
+   }
 
-    ArrayProxyNoTemporaries( std::initializer_list<T> & list ) VULKAN_HPP_NOEXCEPT
-      : m_count( static_cast<uint32_t>( list.size() ) )
-      , m_ptr( list.begin() )
-    {}
+   uint32_t size() const VULKAN_HPP_NOEXCEPT
+   {
+     return m_count;
+   }
 
-    ArrayProxyNoTemporaries( std::initializer_list<T> && list ) = delete;
+   T * data() const VULKAN_HPP_NOEXCEPT
+   {
+     return m_ptr;
+   }
 
-    template <typename B = T, typename std::enable_if<std::is_const<B>::value, int>::type = 0>
-    ArrayProxyNoTemporaries( std::initializer_list<typename std::remove_const<T>::type> & list ) VULKAN_HPP_NOEXCEPT
-      : m_count( static_cast<uint32_t>( list.size() ) )
-      , m_ptr( list.begin() )
-    {}
+ private:
+   uint32_t m_count;
+   T *      m_ptr;
+ };
 
-    template <typename B = T, typename std::enable_if<std::is_const<B>::value, int>::type = 0>
-    ArrayProxyNoTemporaries( std::initializer_list<typename std::remove_const<T>::type> && list ) = delete;
+ template <typename T>
+ class StridedArrayProxy : protected ArrayProxy<T>
+ {
+ public:
+   using ArrayProxy<T>::ArrayProxy;
 
-    // Any type with a .data() return type implicitly convertible to T*, and a // .size() return type implicitly
-    // convertible to size_t.
-    template <typename V,
-              typename std::enable_if<
-                std::is_convertible<decltype( std::declval<V>().data() ), T *>::value &&
-                std::is_convertible<decltype( std::declval<V>().size() ), std::size_t>::value>::type * = nullptr>
-    ArrayProxyNoTemporaries( V & v ) VULKAN_HPP_NOEXCEPT
-      : m_count( static_cast<uint32_t>( v.size() ) )
-      , m_ptr( v.data() )
-    {}
+   StridedArrayProxy( uint32_t count, T const * ptr, uint32_t stride ) VULKAN_HPP_NOEXCEPT
+     : ArrayProxy<T>( count, ptr )
+     , m_stride( stride )
+   {
+     VULKAN_HPP_ASSERT( sizeof( T ) <= stride );
+   }
 
-    const T * begin() const VULKAN_HPP_NOEXCEPT
-    {
-      return m_ptr;
-    }
+   using ArrayProxy<T>::begin;
 
-    const T * end() const VULKAN_HPP_NOEXCEPT
-    {
-      return m_ptr + m_count;
-    }
+   const T * end() const VULKAN_HPP_NOEXCEPT
+   {
+     return reinterpret_cast<T const *>( static_cast<uint8_t const *>( begin() ) + size() * m_stride );
+   }
 
-    const T & front() const VULKAN_HPP_NOEXCEPT
-    {
-      VULKAN_HPP_ASSERT( m_count && m_ptr );
-      return *m_ptr;
-    }
+   using ArrayProxy<T>::front;
 
-    const T & back() const VULKAN_HPP_NOEXCEPT
-    {
-      VULKAN_HPP_ASSERT( m_count && m_ptr );
-      return *( m_ptr + m_count - 1 );
-    }
+   const T & back() const VULKAN_HPP_NOEXCEPT
+   {
+     VULKAN_HPP_ASSERT( begin() && size() );
+     return *reinterpret_cast<T const *>( static_cast<uint8_t const *>( begin() ) + ( size() - 1 ) * m_stride );
+   }
 
-    bool empty() const VULKAN_HPP_NOEXCEPT
-    {
-      return ( m_count == 0 );
-    }
+   using ArrayProxy<T>::empty;
+   using ArrayProxy<T>::size;
+   using ArrayProxy<T>::data;
 
-    uint32_t size() const VULKAN_HPP_NOEXCEPT
-    {
-      return m_count;
-    }
+   uint32_t stride() const
+   {
+     return m_stride;
+   }
 
-    T * data() const VULKAN_HPP_NOEXCEPT
-    {
-      return m_ptr;
-    }
-
-  private:
-    uint32_t m_count;
-    T *      m_ptr;
-  };
+ private:
+   uint32_t m_stride = sizeof( T );
+ };
 )" };
 
 static constexpr char const *RES_ARRAY_WRAPPER{ R"(
@@ -2304,7 +2052,33 @@ namespace vkgen
 #else
 #  define VULKAN_HPP_CPLUSPLUS __cplusplus
 #endif
-
+)";
+        if (cfg.gen.cppStd == 20) {
+            output += R"(
+#if 202002L < VULKAN_HPP_CPLUSPLUS
+#  define VULKAN_HPP_CPP_VERSION 23
+#elif 201703L < VULKAN_HPP_CPLUSPLUS
+#  define VULKAN_HPP_CPP_VERSION 20
+#else
+#  error "vulkan.hpp needs at least c++ standard version 20"
+#endif
+)";
+        }
+        else if (cfg.gen.cppStd == 17) {
+                output += R"(
+#if 202002L < VULKAN_HPP_CPLUSPLUS
+#  define VULKAN_HPP_CPP_VERSION 23
+#elif 201703L < VULKAN_HPP_CPLUSPLUS
+#  define VULKAN_HPP_CPP_VERSION 20
+#elif 201402L < VULKAN_HPP_CPLUSPLUS
+#  define VULKAN_HPP_CPP_VERSION 17
+#else
+#  error "vulkan.hpp needs at least c++ standard version 17"
+#endif
+)";
+        }
+        else {
+            output += R"(
 #if 202002L < VULKAN_HPP_CPLUSPLUS
 #  define VULKAN_HPP_CPP_VERSION 23
 #elif 201703L < VULKAN_HPP_CPLUSPLUS
@@ -2318,8 +2092,9 @@ namespace vkgen
 #else
 #  error "vulkan.hpp needs at least c++ standard version 11"
 #endif
-
-
+)";
+        }
+        output += R"(
 #if defined( VULKAN_HPP_DISABLE_ENHANCED_MODE )
 #  if !defined( VULKAN_HPP_NO_SMART_HANDLE )
 #    define VULKAN_HPP_NO_SMART_HANDLE
@@ -2612,10 +2387,22 @@ import std;
 )";
         }
 
+        if (cfg.gen.cppStd >= 20) {
+            output += R"(
+#include <bit>   // std::bit_cast
+)";
+        }
+
         output += R"(
 #include <algorithm>
 #include <array>   // ArrayWrapperND
+)";
+        if (!cfg.gen.globalMode) {
+            output += R"(
 #include <cstring> // strcmp, std::memcpy
+)";
+        }
+        output += R"(
 #include <string>  // std::string
 
 /*
@@ -2643,6 +2430,32 @@ import std;
 #endif
 */
 )";
+
+        if (cfg.gen.globalMode) {
+            output += R"(
+#  include <cstdio>   // std::snprintf
+)";
+        }
+        else if (cfg.gen.expApi) {
+            output += R"(
+#ifdef VULKAN_HPP_EXPERIMENTAL_HEX
+#  include <cstdio>   // std::snprintf
+#elif __cpp_lib_format
+#  include <format>   // std::format
+#else
+#  include <sstream>  // std::stringstream
+#endif
+)";
+        } else {
+            output += R"(
+#if __cpp_lib_format
+#  include <format>   // std::format
+#else
+#  include <sstream>  // std::stringstream
+#endif
+)";
+        }
+
         if (cfg.gen.importStdMacro) {
             output += R"(
 #endif
@@ -3051,7 +2864,268 @@ import std;
 )";
         }
 
-        output += RES_STRUCT_CHAIN;
+        output += R"(
+
+template <typename X, typename Y>
+  struct StructExtends
+  {
+    enum
+    {
+      value = false
+    };
+  };
+
+  template <typename Type, class...>
+  struct IsPartOfStructureChain
+  {
+    static const bool valid = false;
+  };
+
+  template <typename Type, typename Head, typename... Tail>
+  struct IsPartOfStructureChain<Type, Head, Tail...>
+  {
+    static const bool valid = std::is_same<Type, Head>::value || IsPartOfStructureChain<Type, Tail...>::valid;
+  };
+
+  template <size_t Index, typename T, typename... ChainElements>
+  struct StructureChainContains
+  {
+    static const bool value = std::is_same<T, typename std::tuple_element<Index, std::tuple<ChainElements...>>::type>::value ||
+                              StructureChainContains<Index - 1, T, ChainElements...>::value;
+  };
+
+  template <typename T, typename... ChainElements>
+  struct StructureChainContains<0, T, ChainElements...>
+  {
+    static const bool value = std::is_same<T, typename std::tuple_element<0, std::tuple<ChainElements...>>::type>::value;
+  };
+
+  template <size_t Index, typename... ChainElements>
+  struct StructureChainValidation
+  {
+    using TestType          = typename std::tuple_element<Index, std::tuple<ChainElements...>>::type;
+    static const bool valid = StructExtends<TestType, typename std::tuple_element<0, std::tuple<ChainElements...>>::type>::value &&
+                              ( /*TestType::allowDuplicate ||*/ !StructureChainContains<Index - 1, TestType, ChainElements...>::value ) &&
+                              StructureChainValidation<Index - 1, ChainElements...>::valid;
+  };
+
+  template <typename... ChainElements>
+  struct StructureChainValidation<0, ChainElements...>
+  {
+    static const bool valid = true;
+  };
+
+  template <typename... ChainElements>
+  class StructureChain : public std::tuple<ChainElements...>
+  {
+  public:
+    StructureChain() VULKAN_HPP_NOEXCEPT
+    {
+      static_assert( StructureChainValidation<sizeof...( ChainElements ) - 1, ChainElements...>::valid, "The structure chain is not valid!" );
+)";
+        if (cfg.gen.globalMode) {
+            output += R"(      init<sizeof...( ChainElements ) - 1>();
+)";
+        }
+
+        output += R"(
+      link<sizeof...( ChainElements ) - 1>();
+    }
+
+    StructureChain( StructureChain const & rhs ) VULKAN_HPP_NOEXCEPT : std::tuple<ChainElements...>( rhs )
+    {
+      static_assert( StructureChainValidation<sizeof...( ChainElements ) - 1, ChainElements...>::valid, "The structure chain is not valid!" );
+      link( &std::get<0>( *this ),
+            &std::get<0>( rhs ),
+            reinterpret_cast<VkBaseOutStructure *>( &std::get<0>( *this ) ),
+            reinterpret_cast<VkBaseInStructure const *>( &std::get<0>( rhs ) ) );
+    }
+
+    StructureChain( StructureChain && rhs ) VULKAN_HPP_NOEXCEPT : std::tuple<ChainElements...>( std::forward<std::tuple<ChainElements...>>( rhs ) )
+    {
+      static_assert( StructureChainValidation<sizeof...( ChainElements ) - 1, ChainElements...>::valid, "The structure chain is not valid!" );
+      link( &std::get<0>( *this ),
+            &std::get<0>( rhs ),
+            reinterpret_cast<VkBaseOutStructure *>( &std::get<0>( *this ) ),
+            reinterpret_cast<VkBaseInStructure const *>( &std::get<0>( rhs ) ) );
+    }
+
+    StructureChain( ChainElements const &... elems ) VULKAN_HPP_NOEXCEPT : std::tuple<ChainElements...>( elems... )
+    {
+      static_assert( StructureChainValidation<sizeof...( ChainElements ) - 1, ChainElements...>::valid, "The structure chain is not valid!" );
+      link<sizeof...( ChainElements ) - 1>();
+    }
+
+    StructureChain & operator=( StructureChain const & rhs ) VULKAN_HPP_NOEXCEPT
+    {
+      std::tuple<ChainElements...>::operator=( rhs );
+      link( &std::get<0>( *this ),
+            &std::get<0>( rhs ),
+            reinterpret_cast<VkBaseOutStructure *>( &std::get<0>( *this ) ),
+            reinterpret_cast<VkBaseInStructure const *>( &std::get<0>( rhs ) ) );
+      return *this;
+    }
+
+    // StructureChain & operator=( StructureChain && rhs ) = delete;
+
+    template <typename T = typename std::tuple_element<0, std::tuple<ChainElements...>>::type, size_t Which = 0>
+    T & get() VULKAN_HPP_NOEXCEPT
+    {
+      return std::get<ChainElementIndex<0, T, Which, void, ChainElements...>::value>( static_cast<std::tuple<ChainElements...> &>( *this ) );
+    }
+
+    template <typename T = typename std::tuple_element<0, std::tuple<ChainElements...>>::type, size_t Which = 0>
+    T const & get() const VULKAN_HPP_NOEXCEPT
+    {
+      return std::get<ChainElementIndex<0, T, Which, void, ChainElements...>::value>( static_cast<std::tuple<ChainElements...> const &>( *this ) );
+    }
+
+    template <typename T0, typename T1, typename... Ts>
+    std::tuple<T0 &, T1 &, Ts &...> get() VULKAN_HPP_NOEXCEPT
+    {
+      return std::tie( get<T0>(), get<T1>(), get<Ts>()... );
+    }
+
+    template <typename T0, typename T1, typename... Ts>
+    std::tuple<T0 const &, T1 const &, Ts const &...> get() const VULKAN_HPP_NOEXCEPT
+    {
+      return std::tie( get<T0>(), get<T1>(), get<Ts>()... );
+    }
+
+    template <typename ClassType, size_t Which = 0>
+    typename std::enable_if<std::is_same<ClassType, typename std::tuple_element<0, std::tuple<ChainElements...>>::type>::value && ( Which == 0 ), bool>::type
+      isLinked() const VULKAN_HPP_NOEXCEPT
+    {
+      return true;
+    }
+
+    template <typename ClassType, size_t Which = 0>
+    typename std::enable_if<!std::is_same<ClassType, typename std::tuple_element<0, std::tuple<ChainElements...>>::type>::value || ( Which != 0 ), bool>::type
+      isLinked() const VULKAN_HPP_NOEXCEPT
+    {
+      static_assert( IsPartOfStructureChain<ClassType, ChainElements...>::valid, "Can't unlink Structure that's not part of this StructureChain!" );
+      return isLinked( reinterpret_cast<VkBaseInStructure const *>( &get<ClassType, Which>() ) );
+    }
+
+    template <typename ClassType, size_t Which = 0>
+    typename std::enable_if<!std::is_same<ClassType, typename std::tuple_element<0, std::tuple<ChainElements...>>::type>::value || ( Which != 0 ), void>::type
+      relink() VULKAN_HPP_NOEXCEPT
+    {
+      static_assert( IsPartOfStructureChain<ClassType, ChainElements...>::valid, "Can't relink Structure that's not part of this StructureChain!" );
+      auto pNext = reinterpret_cast<VkBaseInStructure *>( &get<ClassType, Which>() );
+      VULKAN_HPP_ASSERT( !isLinked( pNext ) );
+      auto & headElement = std::get<0>( static_cast<std::tuple<ChainElements...> &>( *this ) );
+      pNext->pNext       = reinterpret_cast<VkBaseInStructure const *>( headElement.pNext );
+      headElement.pNext  = pNext;
+    }
+
+    template <typename ClassType, size_t Which = 0>
+    typename std::enable_if<!std::is_same<ClassType, typename std::tuple_element<0, std::tuple<ChainElements...>>::type>::value || ( Which != 0 ), void>::type
+      unlink() VULKAN_HPP_NOEXCEPT
+    {
+      static_assert( IsPartOfStructureChain<ClassType, ChainElements...>::valid, "Can't unlink Structure that's not part of this StructureChain!" );
+      unlink( reinterpret_cast<VkBaseOutStructure const *>( &get<ClassType, Which>() ) );
+    }
+
+  private:
+    template <int Index, typename T, int Which, typename, class First, class... Types>
+    struct ChainElementIndex : ChainElementIndex<Index + 1, T, Which, void, Types...>
+    {
+    };
+
+    template <int Index, typename T, int Which, class First, class... Types>
+    struct ChainElementIndex<Index, T, Which, typename std::enable_if<!std::is_same<T, First>::value, void>::type, First, Types...>
+      : ChainElementIndex<Index + 1, T, Which, void, Types...>
+    {
+    };
+
+    template <int Index, typename T, int Which, class First, class... Types>
+    struct ChainElementIndex<Index, T, Which, typename std::enable_if<std::is_same<T, First>::value, void>::type, First, Types...>
+      : ChainElementIndex<Index + 1, T, Which - 1, void, Types...>
+    {
+    };
+
+    template <int Index, typename T, class First, class... Types>
+    struct ChainElementIndex<Index, T, 0, typename std::enable_if<std::is_same<T, First>::value, void>::type, First, Types...>
+      : std::integral_constant<int, Index>
+    {
+    };
+
+    bool isLinked( VkBaseInStructure const * pNext ) const VULKAN_HPP_NOEXCEPT
+    {
+      VkBaseInStructure const * elementPtr =
+        reinterpret_cast<VkBaseInStructure const *>( &std::get<0>( static_cast<std::tuple<ChainElements...> const &>( *this ) ) );
+      while ( elementPtr )
+      {
+        if ( elementPtr->pNext == pNext )
+        {
+          return true;
+        }
+        elementPtr = elementPtr->pNext;
+      }
+      return false;
+    }
+)";
+        if (cfg.gen.globalMode) {
+            output += R"(
+    template <size_t Index>
+    void init() VULKAN_HPP_NOEXCEPT
+    {
+        auto &x = std::get<Index>( static_cast<std::tuple<ChainElements...> &>( *this ) );
+        x.sType = vk::structureType<typename std::tuple_element<Index, std::tuple<ChainElements...>>::type>::value;
+        if constexpr (Index != 0) {
+            init<Index - 1>();
+        }
+    }
+)";
+        }
+        output += R"(
+    template <size_t Index>
+    typename std::enable_if<Index != 0, void>::type link() VULKAN_HPP_NOEXCEPT
+    {
+      auto & x = std::get<Index - 1>( static_cast<std::tuple<ChainElements...> &>( *this ) );
+      x.pNext  = &std::get<Index>( static_cast<std::tuple<ChainElements...> &>( *this ) );
+      link<Index - 1>();
+    }
+
+    template <size_t Index>
+    typename std::enable_if<Index == 0, void>::type link() VULKAN_HPP_NOEXCEPT
+    {
+    }
+
+    void link( void * dstBase, void const * srcBase, VkBaseOutStructure * dst, VkBaseInStructure const * src )
+    {
+      while ( src->pNext )
+      {
+        std::ptrdiff_t offset = reinterpret_cast<char const *>( src->pNext ) - reinterpret_cast<char const *>( srcBase );
+        dst->pNext            = reinterpret_cast<VkBaseOutStructure *>( reinterpret_cast<char *>( dstBase ) + offset );
+        dst                   = dst->pNext;
+        src                   = src->pNext;
+      }
+      dst->pNext = nullptr;
+    }
+
+    void unlink( VkBaseOutStructure const * pNext ) VULKAN_HPP_NOEXCEPT
+    {
+      VkBaseOutStructure * elementPtr = reinterpret_cast<VkBaseOutStructure *>( &std::get<0>( static_cast<std::tuple<ChainElements...> &>( *this ) ) );
+      while ( elementPtr && ( elementPtr->pNext != pNext ) )
+      {
+        elementPtr = elementPtr->pNext;
+      }
+      if ( elementPtr )
+      {
+        elementPtr->pNext = pNext->pNext;
+      }
+      else
+      {
+        VULKAN_HPP_ASSERT( false );  // fires, if the ClassType member has already been unlinked !
+      }
+    }
+  };
+)";
+
+
+
         output += expEndif("VULKAN_HPP_NO_STRUCT_CHAIN");
         // }
 
@@ -3096,16 +3170,67 @@ import std;
             g.generate(output);
         });
 
-        generateDispatch(output);
+        if (!cfg.gen.globalMode) {
+            generateDispatch(output);
+        }
         output += RES_BASE_TYPES;
 
+        if (cfg.gen.globalMode) {
+            output += R"(
+  VULKAN_HPP_INLINE std::string toHexString( uint32_t value )
+  {
+    std::string str;
+    str.resize(6);
+    int n = std::snprintf(str.data(), str.size(), "%x", value);
+    VULKAN_HPP_ASSERT( n > 0 );
+    return str;
+  }
+)";
+
+        }
+        else if (cfg.gen.expApi) {
+            output += R"(
+  VULKAN_HPP_INLINE std::string toHexString( uint32_t value )
+  {
+#ifdef VULKAN_HPP_EXPERIMENTAL_HEX
+    std::string str;
+    str.resize(6);
+    int n = std::snprintf(str.data(), str.size(), "%x", value);
+    VULKAN_HPP_ASSERT( n > 0 );
+    return str;
+#elif __cpp_lib_format
+    return std::format( "{:x}", value );
+#else
+    std::stringstream stream;
+    stream << std::hex << value;
+    return stream.str();
+#endif
+  }
+)";
+        } else {
+            output += R"(
+  VULKAN_HPP_INLINE std::string toHexString( uint32_t value )
+  {
+#if __cpp_lib_format
+    return std::format( "{:x}", value );
+#else
+    std::stringstream stream;
+    stream << std::hex << value;
+    return stream.str();
+#endif
+  }
+)";
+        }
+
+
         output += endNamespace();
-        output += "#include \"vulkan_enums.hpp\"\n";
-        output += R"(#if !defined( VULKAN_HPP_NO_TO_STRING )
+        if (!cfg.gen.globalMode) {
+            output += "#include \"vulkan_enums.hpp\"\n";
+            output += R"(#if !defined( VULKAN_HPP_NO_TO_STRING )
 #  include "vulkan_to_string.hpp"
 #endif
 )";
-
+        }
         output += beginNamespace();
         generateErrorClasses(output);
         output += "\n";
@@ -4170,9 +4295,47 @@ namespace std {
             // to_stream += beginNamespace();
             for (const Enum &e: this->enums.ordered) {
                 genOptional(to_stream, e, [&](auto &output) {
+
                     output += "  " + m_inline + " std::string to_string_" + e.name.original + "(" + e.name.original + " value)";
                     output += "  {\n";
-                    output += "    return\"test\";\n";
+                        if (e.isBitmask()) {
+                            if (e.members.empty()) {
+                                output += "     return \"{}\";\n";
+                            }
+                            else {
+                                output += R"(
+    if ( !value )
+      return "{}";
+    std::string result;
+)";
+                                for (const auto &m : e.members) {
+                                    if (m.isAlias) {
+                                        continue;
+                                    }
+                                    genOptional(output, m, [&](auto &output) {
+                                        output += "    if (value & " + m.name.original + ")\n";
+                                        output += "       result += \"" + m.name.original + " | \";\n";
+                                    });
+                                }
+                                output += "    return \"{ \" + result.substr( 0, result.size() - 3 ) + \" }\";\n";
+                            }
+                        }
+                        else {
+                            output += "    switch (value) {\n";
+                            if (e.members.empty()) {
+                                output += "      // no values\n";
+                            }
+                            for (const auto &m : e.members) {
+                                if (m.isAlias) {
+                                    continue;
+                                }
+                                genOptional(output, m, [&](auto &output) {
+                                    output += "      case " + m.name.original + ": return \"" + m.name.original + "\";\n";
+                                });
+                            }
+                            output += "      default: return \"invalid ( \" + vk::toHexString(value)  + \" )\";\n";
+                            output += "    }\n";
+                        }
                     output += "  }\n";
 
                     for (const auto &a : e.aliases) {
@@ -4206,6 +4369,17 @@ namespace std {
                     output += "  }\n";
                 });
             }
+
+            /*
+            for (const Enum &e: this->enums.ordered) {
+                to_stream += "// " + e.name.original + "\n";
+                for (const auto &m : e.members) {
+                    to_stream += "  // " + m.name.original + "    " + m.name + "\n";
+
+                }
+                to_stream += "\n";
+            }
+            */
             // to_stream += endNamespace();
         }
 
@@ -4359,38 +4533,20 @@ namespace std {
 
     std::string Generator::generateToStringInclude() const {
         std::string output;
+        output += "#include \"vulkan_enums.hpp\"\n";
+        /*
         if (cfg.gen.importStdMacro) {
             output += R"(
 #ifndef USE_IMPORT_STD
 )";
         }
 
-        if (cfg.gen.expApi) {
-            output += R"(
-#ifdef VULKAN_HPP_EXPERIMENTAL_HEX
-#  include <cstdio>   // std::snprintf
-#elif __cpp_lib_format
-#  include <format>   // std::format
-#else
-#  include <sstream>  // std::stringstream
-#endif
-)";
-        } else {
-            output += R"(
-#if __cpp_lib_format
-#  include <format>   // std::format
-#else
-#  include <sstream>  // std::stringstream
-#endif
-)";
-        }
-
         if (cfg.gen.importStdMacro) {
             output += R"(
 #endif
 )";
         }
-
+        */
         return output;
     }
 
@@ -4412,40 +4568,6 @@ namespace std {
   {};
 )";
             });
-        }
-
-        if (cfg.gen.expApi) {
-            to_string_output += R"(
-  VULKAN_HPP_INLINE std::string toHexString( uint32_t value )
-  {
-#ifdef VULKAN_HPP_EXPERIMENTAL_HEX
-    std::string str;
-    str.resize(6);
-    int n = std::snprintf(str.data(), str.size(), "%x", value);
-    VULKAN_HPP_ASSERT( n > 0 );
-    return str;
-#elif __cpp_lib_format
-    return std::format( "{:x}", value );
-#else
-    std::stringstream stream;
-    stream << std::hex << value;
-    return stream.str();
-#endif
-  }
-)";
-        } else {
-            to_string_output += R"(
-  VULKAN_HPP_INLINE std::string toHexString( uint32_t value )
-  {
-#if __cpp_lib_format
-    return std::format( "{:x}", value );
-#else
-    std::stringstream stream;
-    stream << std::hex << value;
-    return stream.str();
-#endif
-  }
-)";
         }
 
         std::unordered_set<std::string> generated;
@@ -4574,7 +4696,7 @@ namespace std {
         output += expEndif("VULKAN_HPP_EXPERIMENTAL_NO_FLAG_TRAITS");
 
         if (str.size() == 0) {
-            to_string_code = "    return {};\n";
+            to_string_code = "    return \"{}\";\n";
         } else {
             std::stringstream temp;
             temp << str;  // TODO
@@ -4722,9 +4844,9 @@ namespace std {
     {
       return std::tuple<Result &, T &>( result, value );
     }
+  };
 )";
 
-            output += R"()";
         }
         else {
             output += R"(
@@ -5270,7 +5392,7 @@ VULKAN_HPP_INLINE typename ResultValueType<void>::type createResultValueType( Vk
 
         for (Handle &h : handles.ordered) {
             // std::cout << "gen class " << e.name << '\n';
-            if (false && cfg.gen.expApi && !h.isSubclass) {
+            if (!cfg.gen.globalMode && cfg.gen.expApi && !h.isSubclass) {
                 generateClassWithPFN(output, h);
             } else {
                 genPlatform(output, h, [&](auto &output) { generateClass(output, h, false); });
@@ -5416,6 +5538,7 @@ VULKAN_HPP_INLINE typename ResultValueType<void>::type createResultValueType( Vk
             }
         }
 
+
         for (const Struct &s : structs.ordered) {
 
             if (s.extends.empty()) {
@@ -5455,7 +5578,9 @@ VULKAN_HPP_INLINE typename ResultValueType<void>::type createResultValueType( Vk
                 }
             });
         }
+        output += "#ifndef VULKAN_HPP_NO_STRUCT_EXTENDS\n";
         output += out.toString();
+        output += "#endif // VULKAN_HPP_NO_STRUCT_EXTENDS\n";
     }
 
     bool Generator::generateStructConstructor(OutputBuffer &output, const Struct &data, bool transform) {
@@ -5475,8 +5600,8 @@ VULKAN_HPP_INLINE typename ResultValueType<void>::type createResultValueType( Vk
             std::string id = p->identifier() + "_";
             std::string type = p->fullType(*this);
 
-            bool const toProxy = transform && p->hasLengthVar();
-            if (p->hasLengthVar()) {
+            bool const toProxy = transform && p->hasLengthVar() && !p->hasArrayLength();
+            if (p->hasLengthVar() && !p->hasArrayLength()) {
                 hasProxy = true;
             }
 
@@ -6685,7 +6810,7 @@ VULKAN_HPP_CONSTEXPR_14 {0}({1}{2}) : {3}( {4} ) {{}}
                                          data.vkhandle.identifier());
         }
 
-        if (false) {
+        if (!cfg.gen.globalMode) {
             const auto &superclass = data.superclass;
 
             for (auto &m : const_cast<Handle &>(data).vectorCmds) {
@@ -7051,6 +7176,7 @@ VULKAN_HPP_CONSTEXPR_14 {0}({1}{2}) : {3}( {4} ) {{}}
 
     void Generator::generateClassTypeInfo(const Handle &h, OutputBuffer &output, OutputClass &out) {
         std::string debugReportValue;
+        bool unknown = false;
         {
             auto en = enums.find("VkDebugReportObjectTypeEXT");
             if (en != enums.end()) {
@@ -7060,6 +7186,7 @@ VULKAN_HPP_CONSTEXPR_14 {0}({1}{2}) : {3}( {4} ) {{}}
                 }
             }
             if (debugReportValue.empty()) {
+                unknown = true;
                 debugReportValue = cfg.gen.globalMode? "VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT" : "eUnknown";
             }
         }
@@ -7107,11 +7234,11 @@ VULKAN_HPP_CONSTEXPR_14 {0}({1}{2}) : {3}( {4} ) {{}}
                                         m_ns,
                                         out.name);
 
-                if (debugReportValue != "Unknown") {
+                if (!unknown) {
                     output += vkgen::format(R"(
   template <>
   struct CppType<{0}::DebugReportObjectTypeEXT,
-                 {0}::DebugReportObjectTypeEXT::e{2}>
+                 {0}::DebugReportObjectTypeEXT::{2}>
   {{
     using Type = {0}::{1};
   }};

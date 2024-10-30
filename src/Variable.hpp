@@ -379,6 +379,11 @@ namespace vkgen
             optional = value;
         }
 
+        void overrideOptional(bool value) {
+            optional = value;
+            saved.optional = value;
+        }
+
         bool hasArrayLength() const {
             return arrayAttrib != ArraySize::NONE;
         }

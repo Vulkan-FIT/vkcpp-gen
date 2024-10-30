@@ -819,12 +819,12 @@ namespace vkgen
         {
             std::string value;
             std::string alias;
-            uint64_t    numericValue = {};
+            int64_t     numericValue = {};
             bool        isAlias = {};
 
             EnumValue(const Registry &reg, std::string name, const std::string &value, const std::string &enumName, bool isBitmask = false);
 
-            void setValue(uint64_t value, const vkr::Enum &parent);
+            void setValue(uint64_t value, bool negative, const vkr::Enum &parent);
 
             static std::string toHex(uint64_t value, bool is64bit);
         };

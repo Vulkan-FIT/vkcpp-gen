@@ -445,31 +445,6 @@ namespace vkgen
             void render(GUI &g) override;
         };
 
-        struct StandardSelector : public Renderable
-        {
-            Generator &gen;
-            bool       c11 = true;
-            bool       c20 = false;
-
-            StandardSelector(Generator &gen) : gen(gen) {}
-
-            void render(GUI &g) override {
-                ImGui::Text("");
-                if (ImGui::Checkbox("c++11", &c11)) {
-                    c11 = true;
-                    c20 = false;
-                    g.queueRedraw();
-                    gen.cfg.gen.cppStd.data = 11;
-                }
-                if (ImGui::Checkbox("c++20", &c20)) {
-                    c20 = true;
-                    c11 = false;
-                    g.queueRedraw();
-                    gen.cfg.gen.cppStd.data = 20;
-                }
-            }
-        };
-
         template <typename T>
         struct LevelRenderable : public T
         {
@@ -720,8 +695,6 @@ namespace vkgen
         AsyncButton generateButton;
         AsyncButton loadConfigButton;
         AsyncButton saveConfigButton;
-
-        // StandardSelector *standardSelector = {};
 
         QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device);
 

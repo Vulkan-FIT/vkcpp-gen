@@ -109,9 +109,9 @@ namespace vkgen
     void Registry::loadRegistryPath() {
         loadSystemRegistryPath();
         loadLocalRegistryPath();
-        std::cout << "Lookup paths: \n";
-        std::cout << systemRegistryPath << "\n";
-        std::cout << localRegistryPath << "\n";
+//        std::cout << "Lookup paths: \n";
+//        std::cout << systemRegistryPath << "\n";
+//        std::cout << localRegistryPath << "\n";
     }
 
     void Registry::loadSystemRegistryPath() {
@@ -225,15 +225,14 @@ namespace vkgen
             strStripPrefix(enumSnake, "VK_");
 
             const auto &tokens = split(enumSnake, "_");
-
-            for (const auto &it : tokens) {
-                const std::string token = it + "_";
-                if (!value.starts_with(token)) {
-                    break;
+            for (const auto &token  : tokens) {
+                if (value.starts_with(token)) {
+                    value.erase(0, token.size());
+                    if (value.starts_with('_')) {
+                        value.erase(0, 1);
+                    }
                 }
-                value.erase(0, token.size());
             }
-
             if (value.ends_with(tag)) {
                 value.erase(value.size() - tag.size());
             }
@@ -251,9 +250,12 @@ namespace vkgen
 
         out += strFirstUpper(snakeToCamel(value));
         if (isBitmask) {
+            std::string tag       = strRemoveTag(out);
             strStripSuffix(out, "Bit");
+            if (!tag.empty()) {
+                out += tag;
+            }
         }
-        // std::cout << "ecc: " << dbg << " -> " << out << "\n";
         return out;
     }
 
@@ -551,8 +553,7 @@ namespace vkgen
 
     void Registry::orderCommands() {
         std::sort(commands.ordered.begin(), commands.ordered.end(), [](const Command &a, const Command &b){ return a.successCodes.size() < b.successCodes.size(); });
-
-        return;
+        /*
         const auto findCode = [](const Command &cmd, const std::string_view code) {
             for (const auto &c : cmd.successCodes) {
                 if (c == code) {
@@ -598,6 +599,7 @@ namespace vkgen
             std::cout << k.first << " ret functions: " << k.second << "\n";
         }
         std::cout << "vector ret functions: " << arraycnt << "\n";
+         */
     }
 
     void Registry::assignCommands(Generator &gen) {
@@ -892,12 +894,20 @@ namespace vkgen
         const auto alias = elem.optional("alias");
         if (alias) {
             type->alias = alias.value();
+            type->isAlias = true;
             return;
+        }
+
+        bool neg = false;
+        const auto dir = elem.optional("dir");
+        if (dir == "-") {
+            neg = true;
         }
 
         const auto value = elem.optional("value");
         if (value) {
-            type->value = value.value();
+            type->value = neg? "-" : "";
+            type->value += value.value();
         }
         else  {
             uint64_t eval = 0;
@@ -914,11 +924,11 @@ namespace vkgen
             const auto offset = elem.optional("offset");
             if (bitpos) {
                 eval += 1ULL << toInt(std::string(bitpos.value()));
-                type->setValue(eval, e);
+                type->setValue(eval, neg, e);
             }
             else if (offset) {
                 eval += toInt(std::string(offset.value()));
-                type->setValue(eval, e);
+                type->setValue(eval, neg, e);
             }
         }
         type->bind(feature, ext, protect);
@@ -1340,6 +1350,15 @@ namespace vkgen
         assignCommands(gen);
         orderStructs();
         orderHandles();
+
+        for (auto &c : commands) {
+            if (c.destroysObject()) {
+                auto *handle = c.getLastHandleVar();
+                if (handle) {
+                    handle->overrideOptional(false);
+                }
+            }
+        }
 
         for (auto &f : features) {
             DependencySorter<Struct> sorter;
@@ -1916,14 +1935,15 @@ namespace vkgen::vkr
         return str;
     }
 
-    void EnumValue::setValue(uint64_t v, const vkr::Enum &parent) {
+    void EnumValue::setValue(uint64_t v, bool negative, const vkr::Enum &parent) {
+        value = negative? "-" : "";
         if (parent.isBitmask()) {
-            value = std::move(toHex(v, parent.is64bit()));
+            value += toHex(v, parent.is64bit());
         }
         else {
-            value = std::move(std::to_string(v));
+            value += std::to_string(v);
         }
-        numericValue = v;
+        numericValue = negative? -v : v;
     }
 
     Enum::Enum(Generator &gen, xml::Element elem, const std::string_view name, const std::string_view type, bool isBitmask)
@@ -2002,7 +2022,7 @@ namespace vkgen::vkr
         std::string dbg;
         std::string name;
         // add more space to prevent reallocating later
-        _params.reserve(8);
+        _params.reserve(16);
         for (const auto &child : xml::View(elem.firstChild())) {
             // <proto> section
             dbg += std::string(child->Value()) + "\n";
