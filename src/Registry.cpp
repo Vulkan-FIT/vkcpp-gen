@@ -92,7 +92,7 @@ namespace vkgen
                 protect = ext->protect;
             }
             this->ext = ext;
-            this->feature = ext;
+            // this->feature = ext;
         }
     }
 
@@ -553,7 +553,7 @@ namespace vkgen
 
     void Registry::orderCommands() {
         std::sort(commands.ordered.begin(), commands.ordered.end(), [](const Command &a, const Command &b){ return a.successCodes.size() < b.successCodes.size(); });
-        /*
+
         const auto findCode = [](const Command &cmd, const std::string_view code) {
             for (const auto &c : cmd.successCodes) {
                 if (c == code) {
@@ -581,9 +581,10 @@ namespace vkgen
                 arraycnt++;
             }
 
-            // if (c.successCodes.size() <= 2 || retarray)
+            if (c.successCodes.size() < 2 || retarray)
                 continue;
 
+            continue;
             if (c.pfnReturn == vkr::Command::PFNReturnCategory::VOID) {
                 std::cout << "void ";
             }
@@ -599,7 +600,6 @@ namespace vkgen
             std::cout << k.first << " ret functions: " << k.second << "\n";
         }
         std::cout << "vector ret functions: " << arraycnt << "\n";
-         */
     }
 
     void Registry::assignCommands(Generator &gen) {
@@ -756,8 +756,8 @@ namespace vkgen
                 std::cerr << "  " << c.name << '\n';
             }
         }
-        // std::cout << "instance: " << instance.members.size() << " commands\n";
-        // std::cout << "device: " << device.members.size() << " commands\n";
+        std::cout << "instance: " << instance.members.size() * 8<< " commands\n";
+        std::cout << "device: " << device.members.size() * 8<< " commands\n";
         if (verbose)
             std::cout << "Assign commands done" << '\n';
     }
@@ -1085,7 +1085,7 @@ namespace vkgen
         };
 
         std::vector<xml::Element> unsupported;
-
+        features.items.reserve(parse->xmlSupportedFeatures.size());
         for (const auto &elem : parse->xmlSupportedFeatures) {
 
             const auto name   = elem["name"];
@@ -1131,6 +1131,15 @@ namespace vkgen
 
             const auto name = elem["name"];
             Extension *ext = &extensions[name];
+            Feature *feature = nullptr;
+
+            const auto promote = elem.optional("promotedto");
+            if (promote) {
+                auto it = features.find(promote.value());
+                if (it != features.end()) {
+                    feature = &*it;
+                }
+            }
 
             const auto depends = elem.optional("depends");
             if (depends) {
@@ -1149,7 +1158,7 @@ namespace vkgen
                     unsupported.emplace_back(require);
                 }
                 else {
-                    assignVersions(require, nullptr, ext);
+                    assignVersions(require, feature, ext);
                 }
             }
         }
@@ -1183,13 +1192,34 @@ namespace vkgen
                 }
             }
         }
-
         for (const auto &elem : parse->xmlSupportedFeatures) {
             const auto name = elem["name"];
             Feature *feature = &features[name];
 
             for (const auto &require : xml::elements(elem.firstChild(), "require")) {
                 assignTypes(require, feature);
+            }
+        }
+
+        for (const auto &elem : parse->xmlSupportedExtensions) {
+            const auto name      = elem["name"];
+            Extension *extension = &extensions[name];
+
+            const auto promote = elem.optional("promotedto");
+            if (promote) {
+                auto it = features.find(promote.value());
+                if (it != features.end()) {
+                    auto &feature = *it;
+                    for (Command &c : extension->commands) {
+                        feature.promotedTypes.emplace_back(std::ref(c));
+                    }
+                    for (Struct &s : extension->structs) {
+                        feature.promotedTypes.emplace_back(std::ref(s));
+                    }
+                    for (Enum &e : extension->enums) {
+                        feature.promotedTypes.emplace_back(std::ref(e));
+                    }
+                }
             }
         }
     }
@@ -1495,6 +1525,7 @@ namespace vkgen
         lockDependency("VkResult");
         lockDependency("VkObjectType");
         lockDependency("VkDebugReportObjectTypeEXT");
+        lockDependency("vkEnumerateInstanceVersion");
 
         for (auto &c : enums) {
             c.setEnabled(true);
@@ -1536,6 +1567,28 @@ namespace vkgen
                 }
             }
         }
+
+
+//        for (const Command &c : commands.ordered) {
+//            std::cout << c.name.original << ": ";
+//            auto *f = c.getFeature();
+//            if (f) {
+//                std::cout << "F: " << f->name.original;
+//            }
+//            auto *e = c.getExtension();
+//            if (e) {
+//                std::cout << "   E: " << e->name.original;
+//            }
+//            std::cout << "\n";
+//        }
+
+//        for (const Extension &e : extensions) {
+//            std::cout << e.name.original << "\n";
+//            for (auto &d : e.depends) {
+//                std::cout << "  " << d->name.original << "\n";
+//            }
+//        }
+
 
         parse = nullptr;
         registryPath = xmlPath;
@@ -1703,6 +1756,19 @@ namespace vkgen
                 topLevelHandles.emplace_back(std::ref(h));
             }
         }
+
+        const auto setForward = [&](const std::string_view name) {
+            auto s = structs.find(name);
+            if (s != structs.end()) {
+                auto *extension = s->getExtension();
+                if (extension) {
+                    Feature::insert(extension->forwardStructs, *s);
+                }
+            }
+        };
+
+        setForward("VkDebugUtilsMessengerCallbackDataEXT");
+        setForward("VkDeviceMemoryReportCallbackDataEXT");
 
         return result;
     }

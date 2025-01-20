@@ -127,6 +127,7 @@ namespace vkgen
         ConfigWrapper<bool> expApi  { "exp_api", false };
         // ConfigWrapper<bool> expApi  { "vkg_api", false };
         ConfigWrapper<bool> globalMode  { "global_mode", true };
+        ConfigWrapper<bool> onlyC{ "only_c", false };
 
         ConfigWrapper<bool> internalFunctions{ "internal_functions", false };
         ConfigWrapper<bool> internalVkResult{ "internal_vkresult", true };
@@ -141,7 +142,7 @@ namespace vkgen
 
         ConfigWrapper<bool> functionsVecAndArray{ "functions_vec_array", { false } };
         ConfigWrapper<bool> noStdVector{ "no_std_vector", { true } };
-
+        ConfigWrapper<bool> splitFiles{ "split_files", { true } };
 
         ConfigWrapper<bool>    spaceshipOperator{ "spaceship_operator", true };
         ConfigWrapper<bool>    branchHint{ "branch_hint", false };
@@ -175,6 +176,7 @@ namespace vkgen
         ConfigWrapper<int> cppStd{ "cpp_standard", 20 };
 
         ConfigWrapper<int> structMock{ "struct_mock", 0 };
+        ConfigWrapper<int> enumMock{ "enum_mock",   0 };
 
         ConfigGroupRAII raii;
 
@@ -188,6 +190,7 @@ namespace vkgen
                             expApi,
                             cppStd,
                             globalMode,
+                            onlyC,
                             // internalFunctions,
                             allocatorParam,
                             resultValueType,
@@ -211,6 +214,7 @@ namespace vkgen
                             classMethods,
                             raii,
                             structMock,
+                            enumMock,
                             expandMacros
                             );
         }
@@ -309,6 +313,8 @@ namespace vkgen
         std::vector<std::string>        ordered;
         std::unordered_set<std::string> filter;
         std::vector<std::regex>         regexes;
+        bool found = false;
+        bool all = false;
 
         virtual ~AbstractWhitelistBinding() {}
 

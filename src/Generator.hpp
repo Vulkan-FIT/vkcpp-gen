@@ -135,6 +135,8 @@ namespace vkgen
 
         std::string outputFilePath;
 
+        GuardedOutput outputToStringDecl;
+        GuardedOutput outputToStringDef;
         GuardedOutputFuncs outputFuncs;
         GuardedOutputFuncs outputFuncsRAII;
 
@@ -166,7 +168,7 @@ namespace vkgen
 
         void generateFlags(OutputBuffer &) const;
 
-        void generateMainFile(OutputBuffer &);
+        void generateMainFile(GenOutput &);
 
         void generateModuleEnums(OutputBuffer &);
 
@@ -186,15 +188,17 @@ namespace vkgen
 
         void generateForwardHandles(OutputBuffer &output);
 
-        void generateEnumStr(const Enum &data, OutputBuffer &output, OutputBuffer &to_string_output);
+        void generateEnumStr(const Enum &data, OutputBuffer &output);
 
-        void generateEnum(const Enum &data, OutputBuffer &output, OutputBuffer &output_forward, OutputBuffer &to_string_output);
+        void generateEnum(const Enum &data, OutputBuffer &output, OutputBuffer &output_forward);
 
         std::string generateToStringInclude() const;
 
         void generateCore(OutputBuffer &output);
 
-        void generateEnums(OutputBuffer &output, OutputBuffer &output_forward, OutputBuffer &to_string_output);
+        void generateEnums(OutputBuffer &output, OutputBuffer &output_forward);
+
+        std::string generateAllFlagsValue(const Enum &data);
 
         void genFlagTraits(const Enum &data, std::string name, OutputBuffer &output, std::string &to_string_code);
 
@@ -255,6 +259,8 @@ namespace vkgen
             return "::";
         }
 
+        void generateUnit(const std::string_view file, GenOutput &out, OutputBuffer &parent, OutputBuffer &&code);
+
         void generateStructDecl(OutputBuffer &output, const Struct &d) const;
 
         void generateClassDecl(OutputBuffer &output, const Handle &data) const;
@@ -265,6 +271,8 @@ namespace vkgen
 
         std::string generateForwardInclude(GenOutput &out) const;
 
+        void generateGlobalFuncs(GuardedOutputFuncs &output, bool useC);
+
         void generateHandles(OutputBuffer &output, OutputBuffer &output_smart, GenOutput &out);
 
         void generateUniqueHandles(OutputBuffer &output);
@@ -272,6 +280,14 @@ namespace vkgen
         std::string generateStructsInclude() const;
 
         void generateStructs(OutputBuffer &output, bool exp = false);
+
+        void generateMacros(OutputBuffer &output);
+
+        void generateArrays(GenOutput &files, OutputBuffer &parent);
+
+        void generateVector(GenOutput &files, OutputBuffer &parent);
+
+        void generateStructChain(GenOutput &files, OutputBuffer &parent);
 
         void generateStructChains(OutputBuffer &output, bool ctype = false);
 
@@ -372,11 +388,15 @@ namespace vkgen
 
         std::string beginNamespace(bool noExport = false) const;
 
+        std::string beginNamespaceStandalone() const;
+
         std::string beginNamespaceRAII(bool noExport = false) const;
 
         std::string beginNamespace(const Macro &ns, bool noExport = false) const;
 
         std::string endNamespace() const;
+
+        std::string endNamespaceStandalone() const;
 
         std::string endNamespaceRAII() const;
 

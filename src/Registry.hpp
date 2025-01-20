@@ -459,6 +459,7 @@ namespace vkgen
                 CREATES_TOP_HANDLE     = 1 << 4,
                 CPP_VARIANT            = 1 << 5,
                 OVERLOADED_DESTROY     = 1 << 6,
+                VK_PARAM               = 1 << 7,
             };
 
             enum class PFNReturnCategory
@@ -744,6 +745,7 @@ namespace vkgen
             std::vector<std::reference_wrapper<vkr::BaseType>>       baseTypes;
             std::vector<std::reference_wrapper<vkr::FuncPointer>>    funcPointers;
             std::vector<std::reference_wrapper<GenericType>>         aliases;
+            std::vector<std::reference_wrapper<GenericType>>         promotedTypes;
             unsigned int                                             elements = 0;
 
             Feature(const std::string_view name) : GenericType(MetaType::Feature) {

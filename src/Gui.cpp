@@ -258,7 +258,7 @@ void vkgen::GUI::createWindow() {
 
     width      = mode->width * 3 / 4;
     height     = mode->height * 3 / 4;
-    glfwWindow = glfwCreateWindow(width, height, "Vulkan C++20 generator", NULL, NULL);
+    glfwWindow = glfwCreateWindow(width, height, "Vulkan C++ API generator", NULL, NULL);
     if (!glfwWindow) {
         throw std::runtime_error("GLFW error: window init");
     }
@@ -302,7 +302,7 @@ void vkgen::GUI::createInstance() {
                                .apiVersion         = VK_API_VERSION_1_0 };
 
     static std::vector<const char *> layers;
-
+    // layers.push_back("VK_LAYER_LUNARG_monitor");
     // layers.push_back("VK_LAYER_KHRONOS_validation");
 
     VkInstanceCreateInfo instanceInfo{ .sType                   = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
@@ -971,15 +971,29 @@ void vkgen::GUI::guiBoolOption(BoolGUI &data) {
 }
 
 template <typename T>
+void filterCollection(std::vector<std::reference_wrapper<vkgen::Extension>> &data, const std::regex &rgx, std::atomic_bool &abort) {
+    if (abort) {
+        return;
+    }
+    for (vkgen::Extension &c : data) {
+        c.filtered = std::regex_search(c.name.original, rgx);
+
+        for (const auto &cmd : c.commands) {
+            c.filtered |= std::regex_search(cmd.get().name.original, rgx);
+        }
+        if (abort) {
+            break;
+        }
+    }
+}
+
+template <typename T>
 void filterCollection(std::vector<std::reference_wrapper<T>> &data, const std::regex &rgx, std::atomic_bool &abort) {
     if (abort) {
         return;
     }
     for (T &c : data) {
         c.filtered = std::regex_search(c.name.original, rgx);
-        //        if (std::regex_search(c.name, rgx)) {
-        //            std::cout << "  " << c.name << "\n";
-        //        }
         if (abort) {
             break;
         }
@@ -1039,6 +1053,9 @@ void vkgen::GUI::onLoad() {
     collection.structs.data    = &gen->getStructs().ordered;
     collection.enums.data      = &gen->getEnums().ordered;
     collection.commands.data   = &gen->getCommands().ordered;
+#ifdef GENERATOR_TOOL
+    vkgen::tools::init(*gen);
+#endif
 }
 
 vkgen::GUI::GUI(vkgen::Generator &gen) {
@@ -1103,20 +1120,22 @@ vkgen::GUI::GUI(vkgen::Generator &gen) {
       "##TableNS",
       "General",
       0,
-      std::make_unique<RenderableColumn<10>>(
+      std::make_unique<RenderableColumn<11>>(
         0,
+        std::make_unique<RenderableText>("Variant"),
+        make_config_option(0, BoolGUI{ &cfg.gen.globalMode.data, "vkg mode" }, "Vulkan with global functions"),
         std::make_unique<RenderableText>("Code generation"),
         make_config_option(0, BoolGUI{ &cfg.gen.cppModules.data, "C++ module" }, "Generate C++20 module (vulkan.cppm)"),
-        make_config_option(0, BoolGUI{ &cfg.gen.globalMode.data, "Global mode" }, "Vulkan with global functions"),
+        make_config_option(0, BoolGUI{ &cfg.gen.functionsVecAndArray.data, "Small vector" }, "Functions returning vk::Vector instead of std::vector"),
+        make_config_option(Level::L2, BoolGUI{ &cfg.gen.raii.enabled.data, "RAII header" }, "Generate vk::raii header (vulkan_raii.hpp)"),
         make_config_option(0, BoolGUI{ &cfg.gen.expandMacros.data, "Expand macros" }, "Expand preprocessor macros whenever possible"),
         // make_config_option(0, BoolGUI{&cfg.gen.exceptions.data, "exceptions"}, "enable vulkan exceptions"),
-        make_config_option(Level::L2, BoolGUI{ &cfg.gen.raii.enabled.data, "RAII header" }, "Generate vk::raii header (vulkan_raii.hpp)"),
-        make_config_option(0, BoolGUI{ &cfg.gen.expApi.data, "Dynamic PFN linking" }, "PFN dispatcher will be embedded to Device and Instance"),
+        // make_config_option(0, BoolGUI{ &cfg.gen.expApi.data, "Dynamic PFN linking" }, "PFN dispatcher will be embedded to Device and Instance"),
         make_config_option(Level::L2, 0, NestedOption<BoolGUI>{ &cfg.gen.integrateVma.data, "Integrate VMA" }, "PFN dispatcher can be used with VMA"),
         make_config_option(Level::L2, 0, BoolGUI{ &cfg.gen.proxyPassByCopy.data, "Pass ArrayProxy as copy" }, "Pass ArrayProxy parameter as copy instead of reference"),
         make_config_option(Level::L2, 0, BoolGUI{ &cfg.gen.unifiedException.data, "Unified exception" }, "Generates only vk::Error exeption"),
         make_config_option(Level::L2, 0, BoolGUI{ &cfg.gen.branchHint.data, "Branch hints" }, "Add compiler C++20 hints (likely, unlikely)")),
-      std::make_unique<RenderableColumn<9>>(
+      std::make_unique<RenderableColumn<8>>(
         1,
         std::make_unique<RenderableText>("Handles"),
         make_config_option(Level::L0, 0, BoolDefineGUI(&cfg.gen.handleConstructors.data, "constructors", "Removes handle constructors")),
@@ -1125,7 +1144,6 @@ vkgen::GUI::GUI(vkgen::Generator &gen) {
         std::make_unique<RenderableText>("Functions"),
         make_config_option(0, BoolGUI{ &cfg.gen.dispatchParam.data, "Dispatch parameter" }, "Removes dispatch from handles and functions"),
         make_config_option(0, BoolGUI{ &cfg.gen.allocatorParam.data, "Allocator parameter" }, "Removes allocationcallbacks from handles and functions"),
-        make_config_option(0, BoolGUI{ &cfg.gen.functionsVecAndArray.data, "Array & small vector variant" }, "Functions returning vector will also return vk::Vector or std::array"),
         make_config_option(Level::L2, 0, BitSelector{ cfg.gen.classMethods.data, 1, "Methods from subobjects" }, "Methods from subobjects will be added to top level handle")),
       std::make_unique<RenderableColumn<9>>(
         2,
@@ -1227,8 +1245,24 @@ void vkgen::GUI::updateImgui() {
         Text("FPS %d, avg: %d", fps, static_cast<int>(GetIO().Framerate));
     }
 
+
     if (gen->isLoaded()) {
+#ifdef GENERATOR_TOOL
+        if (showToolScreen) {
+            ImGui::Dummy({0, 1});
+            unloadRegButton.render(*this);
+            SameLine();
+            std::string loadedText = "Current registry: " + gen->getRegistryPath();
+            showHelpMarker(loadedText.c_str(), "i");
+
+            toolScreen();
+        }
+        else {
+            mainScreen();
+        }
+#else
         mainScreen();
+#endif
     } else {
         loadScreen();
     }
@@ -1538,20 +1572,23 @@ void vkgen::GUI::drawFrame() {
 }
 
 void vkgen::GUI::run() {
-    double target = 1.0 / 60.0;
+    double target = 1.0 / 30.0;
     double next   = 0.0;
 
     while (!glfwWindowShouldClose(glfwWindow)) {
+        auto t = glfwGetTime();
         if (redraw) {
-            redraw = false;
             glfwPollEvents();
-            drawFrame();
+            if (t >= next) {
+                redraw = false;
+                drawFrame();
+                next = t + target;
+            }
         } else {
             glfwWaiting = true;
             glfwWaitEvents();
             glfwWaiting = false;
         }
-        auto t = glfwGetTime();
         if (t >= next) {
             drawFrame();
             next = t + target;
@@ -1684,7 +1721,17 @@ static void draw(vkgen::Feature *data, bool filterNested) {
         for (const vkgen::Command &c : data->commands) {
             PushID(i++);
             // ::draw(&e, filterNested);
-            std::string text = c.name + " (" + c.metaTypeString() + "), " + (c.version? c.version : "-") +"\n";
+            // + " (" + c.metaTypeString() + "), " + (c.version? c.version : "-")
+            std::string text = c.name.original + "\n";
+            ImGui::Text("%s", text.c_str());
+            PopID();
+        }
+
+        for (vkgen::GenericType &t : data->promotedTypes) {
+            PushID(i++);
+            // ::draw(&e, filterNested);
+            // + " (" + c.metaTypeString() + "), " + (c.version? c.version : "-")
+            std::string text = t.name.original + " (p)\n";
             ImGui::Text("%s", text.c_str());
             PopID();
         }
@@ -1750,7 +1797,7 @@ static void draw(vkgen::Extension *data, bool filterNested) {
         for (const vkgen::Command &c : data->commands) {
             PushID(i++);
             // ::draw(&e, filterNested);
-            std::string text = c.name + " (" + c.metaTypeString() + "), " + (c.version? c.version : "-") +"\n";
+            std::string text = c.name.original + "\n";
             ImGui::Text("%s", text.c_str());
             PopID();
         }
@@ -1826,25 +1873,38 @@ static void draw(vkgen::GenericType *data, bool filterNested) {
     SameLine();
     drawSelectable(n.c_str(), data);
 
-    std::string text = "(" + data->metaTypeString() + ")\n";
+    std::string text;
+    auto* feat = data->getFeature();
+    if (feat) {
+        text += feat->name.original;
+        text += "\n";
+    }
+
+    auto* ext = data->getExtension();
+    if (ext) {
+        text += "Extension: ";
+        text += ext->name.original;
+        text += "\n";
+    }
 
     if (!disabler.empty()) {
         text += disabler + " is disabled\n\n";
     }
     text += "Requires:\n";
     for (const auto &d : data->dependencies) {
-        text += "  " + d->name;
-        text += " (" + d->metaTypeString() + ")";
+        text += "  " + d->name.original;
+        // text += " (" + d->metaTypeString() + ")";
         text += "\n";
     }
     if (!data->subscribers.empty()) {
         text += "\nRequired by:\n";
         for (const auto &d : data->subscribers) {
-            text += "  " + d->name;
-            text += " (" + d->metaTypeString() + ")";
+            text += "  " + d->name.original;
+            // text += " (" + d->metaTypeString() + ")";
             text += "\n";
         }
     }
+    text += "[" + data->metaTypeString() + "]\n";
 
     if (!text.empty()) {
         SameLine();
@@ -1868,7 +1928,7 @@ static void draw(vkgen::GenericType *data, bool filterNested) {
 
 template <typename T>
 void vkgen::GUI::Container<T>::draw(int id, bool filterNested) {
-    auto &elements = *this;
+    auto &elements = *this->data;
     //    if (Type::drawFiltered) {
     //        bool hasNone = true;
     //        for (size_t i = 0; i < elements.size(); i++) {
@@ -1890,38 +1950,42 @@ void vkgen::GUI::Container<T>::draw(int id, bool filterNested) {
 
     size_t total = 0;
     size_t cnt   = 0;
-    //    for (size_t i = 0; i < elements.size(); i++) {
-    //         if constexpr (std::is_pointer_v<T>) {
-    //            if (elements[i]->data->isSuppored() && elements[i]->data->vulkanSpec > 0) {
-    //                total++;
-    //                if (elements[i]->data->isEnabled()) {
-    //                    cnt++;
-    //                }
-    //            }
-    //         } else {
-    //            if (elements[i].data->isSuppored() && elements[i].data->vulkanSpec > 0) {
-    //                total++;
-    //                if (elements[i].data->isEnabled()) {
-    //                    cnt++;
-    //                }
-    //            }
-    //         }
-    //    }
+    for (size_t i = 0; i < elements.size(); i++) {
+         if constexpr (std::is_pointer_v<T>) {
+            if (elements[i]->isSuppored()) {
+                total++;
+                if (elements[i]->isEnabled()) {
+                    cnt++;
+                }
+            }
+         } else {
+            if (elements[i].get().isSupported()) {
+                total++;
+                if (elements[i].get().isEnabled()) {
+                    cnt++;
+                }
+            }
+         }
+    }
     std::string info;
     if (total > 0) {
         info = std::to_string(cnt) + " / " + std::to_string(total);
     }
 
     PushID(id);
-    bool open = false;
     if (!name.empty()) {
         std::string n = name;
-        n += " (";
-        n += std::to_string(this->data->size());
-        n += ")";
+        n += "  ";
+        n += std::to_string(cnt);
+        n += " / ";
+        n += std::to_string(total);
+        // n += " (";
+        // n += std::to_string(this->data->size());
+        // n += ")";
         open = drawContainerHeader(n.c_str(), this, false, info);
     }
     if (open) {
+
         int i = 0;
         for (T &e : *this->data) {
             PushID(i++);

@@ -49,6 +49,7 @@ namespace vkgen
         bool      staticVector               = {};
         bool      structureChain             = {};
         bool      globalModeStatic           = {};
+        bool      globalUseCAPI              = {};
         bool      exp                        = {};
     };
 
@@ -233,7 +234,15 @@ namespace vkgen
 
         std::string createArgument(const VariableData &var, bool useOrignal) const;
 
-        bool returnsTemplate();
+        bool returnsTemplate() const;
+
+        bool returnsVkVector() const;
+
+        bool hasVkParam() const;
+
+        bool hasVkProxy() const;
+
+        bool hasParam() const;
 
         void setGenInline(bool value);
 
@@ -367,6 +376,14 @@ namespace vkgen
         std::string generateMemberBody() override;
     };
 
+    class MemberResolverInit : public MemberResolverCtor
+    {
+      public:
+        MemberResolverInit(const Generator &gen, ClassCommand &d, MemberContext &refCtx);
+
+        std::string generateMemberBody() override;
+    };
+
     class MemberResolverVectorCtor final : public MemberResolverCtor
     {
       public:
@@ -423,7 +440,13 @@ namespace vkgen
       private:
         template <typename T>
         void generate(T &resolver, const std::span<Protect> protects = {}) {
-            resolver.generate(decl, out, protects);
+//            if (ctx.globalModeStatic) {
+//                bool p = resolver.hasVkParam();
+//                if (ctx.globalUseCAPI && ((!p && !resolver.returnsVkVector()) || !resolver.hasParam())) {
+//                    return;
+//                }
+//            }
+            resolver.generate(out.decl, out, protects);
         }
 
         template <typename T>

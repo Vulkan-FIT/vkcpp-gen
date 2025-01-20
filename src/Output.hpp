@@ -80,11 +80,13 @@ namespace vkgen
 
     struct GuardedOutputFuncs
     {
+        GuardedOutput decl;
         GuardedOutput def;
         GuardedOutput templ;
         GuardedOutput platform;
 
         void clear() {
+            decl.clear();
             def.clear();
             templ.clear();
             platform.clear();
@@ -224,24 +226,11 @@ namespace vkgen
             }
         }
 
-        std::string getFileNameProtect(const std::string &name) const {
-            std::string out;
-            for (const auto &c : name) {
-                if (c == '.') {
-                    out += '_';
-                } else {
-                    out += std::toupper(c);
-                }
-            }
-            if (cguard) {
-                out += '_';
-            }
-            return out;
-        };
-
         void writeFile(Generator &gen, OutputFile &file);
 
-        void writeFile(Generator &gen, const std::string &filename, const OutputBuffer &content, bool addProtect = true);
+        void writeFile(Generator &gen, const std::string_view filename, const OutputBuffer &content, bool addProtect = true);
+
+        static std::string getFileNameProtect(const std::string_view name, bool cguard);
     };
 
 }  // namespace vkgen

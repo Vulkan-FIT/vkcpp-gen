@@ -98,9 +98,10 @@ extern "C"
 )"
 };
 
+// // VK_VERSION_1_0 is a preprocessor guard. Do not pass it to API calls.
+// #define VK_VERSION_1_0 1
 static constexpr char const *RES_HEADER_C{
-    R"(// VK_VERSION_1_0 is a preprocessor guard. Do not pass it to API calls.
-#define VK_VERSION_1_0 1
+    R"(
 #include "vk_platform.h"
 
 #define VK_DEFINE_HANDLE(object) typedef struct object##_T* object;
@@ -613,10 +614,12 @@ static constexpr char const *RES_RESULT_CHECK{ R"(
     ignore( successCodes );  // just in case VULKAN_HPP_ASSERT_ON_RESULT is empty
     VULKAN_HPP_ASSERT_ON_RESULT( std::find( successCodes.begin(), successCodes.end(), result ) != successCodes.end() );
 #else
-    if ( std::find( successCodes.begin(), successCodes.end(), result ) == successCodes.end() ){0}
-    {{
-      detail::throwResultException( result, message );
+    for (const auto &r : successCodes) {{
+        if (result == r) {{
+            return;
+        }}
     }}
+    detail::throwResultException( result, message );
 #endif
   }}
 )" };
@@ -1022,51 +1025,57 @@ static constexpr char const *RES_ARRAY_WRAPPER{ R"(
 static constexpr char const *RES_VECTOR{ R"(
 
 namespace detail {
-    template<typename X>
-    class Iterator
-    {
-    public:
-        using value_type = X;
-        using pointer    = X*;
-        using reference  = X&;
-        using difference_type = std::ptrdiff_t;
-        using iterator_category = std::random_access_iterator_tag;
+  template<typename T>
+  class Iterator
+  {
+  public:
+    using value_type = std::remove_cv<T>::type;
+    using element_type = std::add_cv<T>::type;
+    using pointer    = T*;
+    using reference  = T&;
+    using difference_type = std::ptrdiff_t;
+    using iterator_category=std::random_access_iterator_tag;
+    using iterator_concept=std::contiguous_iterator_tag;
 
-        Iterator() : v(nullptr) {}
-        Iterator(reference r) : v(&r) {}
-        Iterator(pointer p) : v(p) {}
+    Iterator() : v(nullptr) {}
+    Iterator(reference r) : v(&r) {}
+    Iterator(pointer p) : v(p) {}
 
-        reference                 operator*()             { return *v; }
-        std::add_const<reference> operator*()       const { return *v; }
-        pointer                   operator->()            { return v; }
-        std::add_const<pointer>   operator->()      const { return v; }
-        reference                 operator[](int m)       { return *(v + m); }
-        std::add_const<reference> operator[](int m) const { return *(v + m); }
+    reference                 operator*()             { return *v; }
+    // std::add_const<reference> operator*()       const { return *v; }
+    pointer                   operator->()  const          { return v; }
+    // std::add_const<pointer>   operator->()      const { return v; }
+    reference                 operator[](difference_type m) const { return *(v + m); }
+    // std::add_const<reference> operator[](difference_type m) const { return *(v + m); }
 
+    friend reference operator*(const Iterator& it) { return *(it.v); }
 
-        Iterator& operator++()       { ++v; return *this; }
-        Iterator& operator--()       { --v; return *this; }
-        Iterator  operator++(int)    { Iterator r(*this); ++v; return r; }
-        Iterator  operator--(int)    { Iterator r(*this); --v; return r; }
+    friend Iterator operator+(difference_type diff, const Iterator& it) { return it + diff; }
+    friend Iterator operator-(difference_type diff, const Iterator& it) { return it - diff; }
 
-        Iterator& operator+=(int n)  { v += n; return *this; }
-        Iterator& operator-=(int n)  { v -= n; return *this; }
+    Iterator& operator++()       { ++v; return *this; }
+    Iterator& operator--()       { --v; return *this; }
+    Iterator  operator++(int)    { Iterator it(*this); ++v; return it; }
+    Iterator  operator--(int)    { Iterator it(*this); --v; return it; }
 
-        Iterator operator+(int n)   const { Iterator r(*this); return r += n;}
-        Iterator operator-(int n)   const { Iterator r(*this); return r -= n;}
+    Iterator& operator+=(difference_type  n)  { v += n; return *this; }
+    Iterator& operator-=(difference_type  n)  { v -= n; return *this; }
 
-        difference_type operator-(Iterator const& r) const { return v - r.v; }
+    Iterator operator+(difference_type  n)   const { Iterator it(*this); return it += n;}
+    Iterator operator-(difference_type  n)   const { Iterator it(*this); return it -= n;}
 
-        bool operator<(Iterator const& r)  const { return v <  r.v; }
-        bool operator<=(Iterator const& r) const { return v <= r.v; }
-        bool operator>(Iterator const& r)  const { return v >  r.v; }
-        bool operator>=(Iterator const& r) const { return v >= r.v; }
-        bool operator!=(const Iterator &r) const { return v != r.v; }
-        bool operator==(const Iterator &r) const { return v == r.v; }
+    difference_type operator-(const Iterator& it) const { return v - it.v; }
 
-    private:
-        pointer v;
-    };
+    bool operator<(Iterator const& it)  const { return v <  it.v; }
+    bool operator<=(Iterator const& it) const { return v <= it.v; }
+    bool operator>(Iterator const& it)  const { return v >  it.v; }
+    bool operator>=(Iterator const& it) const { return v >= it.v; }
+    bool operator!=(const Iterator &it) const { return v != it.v; }
+    bool operator==(const Iterator &it) const { return v == it.v; }
+
+  private:
+    pointer v;
+  };
 }
 
 template<typename T, size_t N, bool s = N != 0>
@@ -1663,15 +1672,15 @@ static constexpr char const *RES_BASE_TYPES{ R"(
 )" };
 
 static constexpr char const *RES_FLAG_TRAITS{ R"(
-template <typename FlagBitsType>
-struct FlagTraits
-{
-  static VULKAN_HPP_CONST_OR_CONSTEXPR bool isBitmask = false;
-};
+  template <typename FlagBitsType>
+  struct FlagTraits
+  {
+    static VULKAN_HPP_CONST_OR_CONSTEXPR bool isBitmask = false;
+  };
 )" };
 
 static constexpr char const *RES_FLAGS_1{ R"(
-template <typename BitType>
+  template <typename BitType>
   class Flags
   {
   public:
@@ -1966,12 +1975,12 @@ namespace vkgen
 
     void Generator::genPlatform(OutputBuffer &output, const GenericType &type, const std::function<void(OutputBuffer&)> &function) {
         const auto &p = type.getProtect();
-        if (!p.empty()) {
-            outputFuncs.platform.add(type, function);
-        }
-        else {
+        // if (!p.empty()) {
+            // outputFuncs.platform.add(type, function);
+//        }
+//        else {
             genOptional(output, type, function);
-        }
+        // }
     }
 
 //    std::string Generator::genPlatform(const GenericType &type, std::function<void(std::string &)> function, bool bypass) {
@@ -2043,9 +2052,7 @@ namespace vkgen
         return output;
     }
 
-    std::string Generator::generateDefines() {
-        std::string output;
-
+    void Generator::generateMacros(OutputBuffer &output) {
         output += R"(
 #if defined( _MSVC_LANG )
 #  define VULKAN_HPP_CPLUSPLUS _MSVC_LANG
@@ -2065,7 +2072,7 @@ namespace vkgen
 )";
         }
         else if (cfg.gen.cppStd == 17) {
-                output += R"(
+            output += R"(
 #if 202002L < VULKAN_HPP_CPLUSPLUS
 #  define VULKAN_HPP_CPP_VERSION 23
 #elif 201703L < VULKAN_HPP_CPLUSPLUS
@@ -2119,6 +2126,12 @@ namespace vkgen
 #  endif
 #endif
 
+#if defined( __clang__ )
+#include <cassert>
+#else
+#include <assert.h>
+#endif
+
 #if !defined( VULKAN_HPP_ASSERT )
 #  define VULKAN_HPP_ASSERT assert
 #endif
@@ -2140,7 +2153,7 @@ namespace vkgen
 #endif
 
 )";
-        if (cfg.gen.spaceshipOperator) {
+        if (cfg.gen.spaceshipOperator && !cfg.gen.globalMode) {
             output += R"(
 //#if ( 201907 <= __cpp_lib_three_way_comparison ) && __has_include( <compare> ) && !defined( VULKAN_HPP_NO_SPACESHIP_OPERATOR )
 //#  define VULKAN_HPP_HAS_SPACESHIP_OPERATOR
@@ -2179,6 +2192,15 @@ namespace vkgen
         output += R"(
 #if ( 201803 <= __cpp_lib_span )
 #  define VULKAN_HPP_SUPPORT_SPAN
+#endif
+
+#ifndef VK_USE_64_BIT_PTR_DEFINES
+#  if defined( __LP64__ ) || defined( _WIN64 ) || ( defined( __x86_64__ ) && !defined( __ILP32__ ) ) || defined( _M_X64 ) || defined( __ia64 ) || \
+    defined( _M_IA64 ) || defined( __aarch64__ ) || defined( __powerpc64__ ) || ( defined( __riscv ) && __riscv_xlen == 64 )
+#    define VK_USE_64_BIT_PTR_DEFINES 1
+#  else
+#    define VK_USE_64_BIT_PTR_DEFINES 0
+#  endif
 #endif
 
 // 32-bit vulkan is not typesafe for non-dispatchable handles, so don't allow copy constructors on this platform by default.
@@ -2340,45 +2362,19 @@ namespace vkgen
         }
 
         output += "\n";
-        return output;
     }
 
     std::string Generator::generateHeader() {
         std::string output;
 
-        // output += "#include <vulkan/vulkan.h>\n";
         output += "#include \"vulkan.h\"\n";
+        output += "#include \"vulkan_hpp_macros.hpp\"\n";
+        // output += "#include <vulkan/vulkan.h>\n";
 
         output += vkgen::format(R"(
 static_assert(VK_HEADER_VERSION == {0}, "Wrong VK_HEADER_VERSION!");
 )",
                                 headerVersion);
-
-        output += generateDefines();
-
-        output += R"(
-#if VULKAN_HPP_ENABLE_DYNAMIC_LOADER_TOOL == 1
-#  if defined( __unix__ ) || defined( __APPLE__ ) || defined( __QNXNTO__ ) || defined( __Fuchsia__ )
-#    include <dlfcn.h>
-#  elif defined( _WIN32 )
-typedef struct HINSTANCE__ * HINSTANCE;
-#    if defined( _WIN64 )
-typedef int64_t( __stdcall * FARPROC )();
-#    else
-typedef int( __stdcall * FARPROC )();
-#    endif
-extern "C" __declspec( dllimport ) HINSTANCE __stdcall LoadLibraryA( char const * lpLibFileName );
-extern "C" __declspec( dllimport ) int __stdcall FreeLibrary( HINSTANCE hLibModule );
-extern "C" __declspec( dllimport ) FARPROC __stdcall GetProcAddress( HINSTANCE hModule, const char * lpProcName );
-#  endif
-#endif
-
-#if defined( __clang__ )
-#include <cassert>
-#else
-#include <assert.h>
-#endif
-)";
         if (cfg.gen.importStdMacro) {
             output += R"(
 #ifdef USE_IMPORT_STD
@@ -2393,10 +2389,21 @@ import std;
 )";
         }
 
-        output += R"(
+        if (!cfg.gen.globalMode) {
+            output += R"(
 #include <algorithm>
+)";
+        }
+        else {
+            output += R"(
+#include <type_traits>
+)";
+        }
+        if (!cfg.gen.globalMode) {
+            output += R"(
 #include <array>   // ArrayWrapperND
 )";
+        }
         if (!cfg.gen.globalMode) {
             output += R"(
 #include <cstring> // strcmp, std::memcpy
@@ -2467,33 +2474,280 @@ import std;
     }
 
     void Generator::generateFlags(vkgen::OutputBuffer &output) const {
+        if (cfg.gen.enumMock >= 2) {
+            output += R"(
+  template <typename BitType>
+  class Flags
+  {
+  public:
+    using MaskType = typename std::underlying_type<BitType>::type;
+
+    // constructors
+    VULKAN_HPP_CONSTEXPR Flags() VULKAN_HPP_NOEXCEPT : m_mask( 0 ) {}
+
+    VULKAN_HPP_CONSTEXPR Flags( BitType bit ) VULKAN_HPP_NOEXCEPT : m_mask( static_cast<MaskType>( bit ) ) {}
+
+    VULKAN_HPP_CONSTEXPR Flags( Flags<BitType> const & rhs ) VULKAN_HPP_NOEXCEPT = default;
+
+    VULKAN_HPP_CONSTEXPR explicit Flags( MaskType flags ) VULKAN_HPP_NOEXCEPT : m_mask( flags ) {}
+
+    // relational operators
+  #if defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )
+    auto operator<=>( Flags<BitType> const & ) const = default;
+  #else
+    VULKAN_HPP_CONSTEXPR bool operator<( Flags<BitType> const & rhs ) const VULKAN_HPP_NOEXCEPT
+    {
+      return m_mask < rhs.m_mask;
+    }
+
+    VULKAN_HPP_CONSTEXPR bool operator<=( Flags<BitType> const & rhs ) const VULKAN_HPP_NOEXCEPT
+    {
+      return m_mask <= rhs.m_mask;
+    }
+
+    VULKAN_HPP_CONSTEXPR bool operator>( Flags<BitType> const & rhs ) const VULKAN_HPP_NOEXCEPT
+    {
+      return m_mask > rhs.m_mask;
+    }
+
+    VULKAN_HPP_CONSTEXPR bool operator>=( Flags<BitType> const & rhs ) const VULKAN_HPP_NOEXCEPT
+    {
+      return m_mask >= rhs.m_mask;
+    }
+
+    VULKAN_HPP_CONSTEXPR bool operator==( Flags<BitType> const & rhs ) const VULKAN_HPP_NOEXCEPT
+    {
+      return m_mask == rhs.m_mask;
+    }
+
+    VULKAN_HPP_CONSTEXPR bool operator!=( Flags<BitType> const & rhs ) const VULKAN_HPP_NOEXCEPT
+    {
+      return m_mask != rhs.m_mask;
+    }
+  #endif
+
+    // logical operator
+    VULKAN_HPP_CONSTEXPR bool operator!() const VULKAN_HPP_NOEXCEPT
+    {
+      return !m_mask;
+    }
+
+    // bitwise operators
+    VULKAN_HPP_CONSTEXPR Flags<BitType> operator&( Flags<BitType> const & rhs ) const VULKAN_HPP_NOEXCEPT
+    {
+      return Flags<BitType>( m_mask & rhs.m_mask );
+    }
+
+    VULKAN_HPP_CONSTEXPR Flags<BitType> operator|( Flags<BitType> const & rhs ) const VULKAN_HPP_NOEXCEPT
+    {
+      return Flags<BitType>( m_mask | rhs.m_mask );
+    }
+
+    VULKAN_HPP_CONSTEXPR Flags<BitType> operator^( Flags<BitType> const & rhs ) const VULKAN_HPP_NOEXCEPT
+    {
+      return Flags<BitType>( m_mask ^ rhs.m_mask );
+    }
+
+    VULKAN_HPP_CONSTEXPR Flags<BitType> operator~() const VULKAN_HPP_NOEXCEPT
+    {
+      return Flags<BitType>( m_mask ^ static_cast<MaskType>(BitType::allFlags) );
+    }
+
+    // assignment operators
+    VULKAN_HPP_CONSTEXPR_14 Flags<BitType> & operator=( Flags<BitType> const & rhs ) VULKAN_HPP_NOEXCEPT = default;
+
+    VULKAN_HPP_CONSTEXPR_14 Flags<BitType> & operator|=( Flags<BitType> const & rhs ) VULKAN_HPP_NOEXCEPT
+    {
+      m_mask |= rhs.m_mask;
+      return *this;
+    }
+
+    VULKAN_HPP_CONSTEXPR_14 Flags<BitType> & operator&=( Flags<BitType> const & rhs ) VULKAN_HPP_NOEXCEPT
+    {
+      m_mask &= rhs.m_mask;
+      return *this;
+    }
+
+    VULKAN_HPP_CONSTEXPR_14 Flags<BitType> & operator^=( Flags<BitType> const & rhs ) VULKAN_HPP_NOEXCEPT
+    {
+      m_mask ^= rhs.m_mask;
+      return *this;
+    }
+
+    // cast operators
+    explicit VULKAN_HPP_CONSTEXPR operator bool() const VULKAN_HPP_NOEXCEPT
+    {
+      return !!m_mask;
+    }
+
+    explicit VULKAN_HPP_CONSTEXPR operator MaskType() const VULKAN_HPP_NOEXCEPT
+    {
+      return m_mask;
+    }
+
+  #if defined( VULKAN_HPP_FLAGS_MASK_TYPE_AS_PUBLIC )
+  public:
+  #else
+  private:
+  #endif
+    MaskType m_mask;
+  };
+
+  #if !defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )
+  // relational operators only needed for pre C++20
+  template <typename BitType>
+  VULKAN_HPP_CONSTEXPR bool operator<( BitType bit, Flags<BitType> const & flags ) VULKAN_HPP_NOEXCEPT
+  {
+    return flags.operator>( bit );
+  }
+
+  template <typename BitType>
+  VULKAN_HPP_CONSTEXPR bool operator<=( BitType bit, Flags<BitType> const & flags ) VULKAN_HPP_NOEXCEPT
+  {
+    return flags.operator>=( bit );
+  }
+
+  template <typename BitType>
+  VULKAN_HPP_CONSTEXPR bool operator>( BitType bit, Flags<BitType> const & flags ) VULKAN_HPP_NOEXCEPT
+  {
+    return flags.operator<( bit );
+  }
+
+  template <typename BitType>
+  VULKAN_HPP_CONSTEXPR bool operator>=( BitType bit, Flags<BitType> const & flags ) VULKAN_HPP_NOEXCEPT
+  {
+    return flags.operator<=( bit );
+  }
+
+  template <typename BitType>
+  VULKAN_HPP_CONSTEXPR bool operator==( BitType bit, Flags<BitType> const & flags ) VULKAN_HPP_NOEXCEPT
+  {
+    return flags.operator==( bit );
+  }
+
+  template <typename BitType>
+  VULKAN_HPP_CONSTEXPR bool operator!=( BitType bit, Flags<BitType> const & flags ) VULKAN_HPP_NOEXCEPT
+  {
+    return flags.operator!=( bit );
+  }
+  #endif
+
+  // bitwise operators
+  template <typename BitType>
+  VULKAN_HPP_CONSTEXPR Flags<BitType> operator&( BitType bit, Flags<BitType> const & flags ) VULKAN_HPP_NOEXCEPT
+  {
+    return flags.operator&( bit );
+  }
+
+  template <typename BitType>
+  VULKAN_HPP_CONSTEXPR Flags<BitType> operator|( BitType bit, Flags<BitType> const & flags ) VULKAN_HPP_NOEXCEPT
+  {
+    return flags.operator|( bit );
+  }
+
+  template <typename BitType>
+  VULKAN_HPP_CONSTEXPR Flags<BitType> operator^( BitType bit, Flags<BitType> const & flags ) VULKAN_HPP_NOEXCEPT
+  {
+    return flags.operator^( bit );
+  }
+
+
+  // bitwise operators on BitType
+  template <typename BitType>
+  VULKAN_HPP_INLINE VULKAN_HPP_CONSTEXPR Flags<BitType> operator&( BitType lhs, BitType rhs ) VULKAN_HPP_NOEXCEPT
+  {
+    return Flags<BitType>( lhs ) & rhs;
+  }
+  template <typename BitType>
+  VULKAN_HPP_INLINE VULKAN_HPP_CONSTEXPR Flags<BitType> operator~( BitType bit ) VULKAN_HPP_NOEXCEPT
+  {
+    return ~( Flags<BitType>( bit ) );
+  }
+
+  template <typename BitType>
+  VULKAN_HPP_INLINE VULKAN_HPP_CONSTEXPR Flags<BitType> operator|( BitType lhs, BitType rhs ) VULKAN_HPP_NOEXCEPT
+  {
+    return Flags<BitType>( lhs ) | rhs;
+  }
+
+  template <typename BitType>
+  VULKAN_HPP_INLINE VULKAN_HPP_CONSTEXPR Flags<BitType> operator^( BitType lhs, BitType rhs ) VULKAN_HPP_NOEXCEPT
+  {
+    return Flags<BitType>( lhs ) ^ rhs;
+  }
+)";
+            return;
+        }
+
+        if (cfg.gen.enumMock == 1) {
+            return;
+        }
+
         output += expIfndef("VULKAN_HPP_EXPERIMENTAL_NO_FLAG_TRAITS");
         output += RES_FLAG_TRAITS;
         output += expEndif("VULKAN_HPP_EXPERIMENTAL_NO_FLAG_TRAITS");
         output += RES_FLAGS_1;
         output += expIfndef("VULKAN_HPP_EXPERIMENTAL_NO_FLAG_TRAITS");
         output += R"(
-        VULKAN_HPP_CONSTEXPR Flags<BitType> operator~() const VULKAN_HPP_NOEXCEPT
-        {
-          return Flags<BitType>( m_mask ^ FlagTraits<BitType>::allFlags.m_mask );
-        }
+    VULKAN_HPP_CONSTEXPR Flags<BitType> operator~() const VULKAN_HPP_NOEXCEPT
+    {
+      return Flags<BitType>( m_mask ^ FlagTraits<BitType>::allFlags.m_mask );
+    }
 )";
         output += expEndif("VULKAN_HPP_EXPERIMENTAL_NO_FLAG_TRAITS");
         output += RES_FLAGS_2;
         output += expIfndef("VULKAN_HPP_EXPERIMENTAL_NO_FLAG_TRAITS");
         output += R"(
-     // bitwise operators on BitType
-     template <typename BitType, typename std::enable_if<FlagTraits<BitType>::isBitmask, bool>::type = true>
-     VULKAN_HPP_INLINE VULKAN_HPP_CONSTEXPR Flags<BitType> operator&( BitType lhs, BitType rhs ) VULKAN_HPP_NOEXCEPT
-     {
-       return Flags<BitType>( lhs ) & rhs;
-     }
-     template <typename BitType, typename std::enable_if<FlagTraits<BitType>::isBitmask, bool>::type = true>
-     VULKAN_HPP_INLINE VULKAN_HPP_CONSTEXPR Flags<BitType> operator~( BitType bit ) VULKAN_HPP_NOEXCEPT
-     {
-       return ~( Flags<BitType>( bit ) );
-     }
+  // bitwise operators on BitType
+  template <typename BitType, typename std::enable_if<FlagTraits<BitType>::isBitmask, bool>::type = true>
+  VULKAN_HPP_INLINE VULKAN_HPP_CONSTEXPR Flags<BitType> operator&( BitType lhs, BitType rhs ) VULKAN_HPP_NOEXCEPT
+  {
+    return Flags<BitType>( lhs ) & rhs;
+  }
+  template <typename BitType, typename std::enable_if<FlagTraits<BitType>::isBitmask, bool>::type = true>
+  VULKAN_HPP_INLINE VULKAN_HPP_CONSTEXPR Flags<BitType> operator~( BitType bit ) VULKAN_HPP_NOEXCEPT
+  {
+    return ~( Flags<BitType>( bit ) );
+  }
 )";
+
+        if (cfg.gen.expApi) {
+            output += R"(
+#ifndef VULKAN_HPP_EXPERIMENTAL_NO_FLAG_TRAITS
+  template <typename BitType, typename std::enable_if<FlagTraits<BitType>::isBitmask, bool>::type = true>
+#else
+  template <typename BitType>
+#endif
+  VULKAN_HPP_INLINE VULKAN_HPP_CONSTEXPR Flags<BitType> operator|( BitType lhs, BitType rhs ) VULKAN_HPP_NOEXCEPT
+  {
+    return Flags<BitType>( lhs ) | rhs;
+  }
+#ifndef VULKAN_HPP_EXPERIMENTAL_NO_FLAG_TRAITS
+  template <typename BitType, typename std::enable_if<FlagTraits<BitType>::isBitmask, bool>::type = true>
+#else
+  template <typename BitType>
+#endif
+  VULKAN_HPP_INLINE VULKAN_HPP_CONSTEXPR Flags<BitType> operator^( BitType lhs, BitType rhs ) VULKAN_HPP_NOEXCEPT
+  {
+    return Flags<BitType>( lhs ) ^ rhs;
+  }
+)";
+        } else {
+            output += R"(
+  template <typename BitType, typename std::enable_if<FlagTraits<BitType>::isBitmask, bool>::type = true>
+  VULKAN_HPP_INLINE VULKAN_HPP_CONSTEXPR Flags<BitType> operator|( BitType lhs, BitType rhs ) VULKAN_HPP_NOEXCEPT
+  {
+    return Flags<BitType>( lhs ) | rhs;
+  }
+
+  template <typename BitType, typename std::enable_if<FlagTraits<BitType>::isBitmask, bool>::type = true>
+  VULKAN_HPP_INLINE VULKAN_HPP_CONSTEXPR Flags<BitType> operator^( BitType lhs, BitType rhs ) VULKAN_HPP_NOEXCEPT
+  {
+    return Flags<BitType>( lhs ) ^ rhs;
+  }
+)";
+        }
+
         output += expEndif("VULKAN_HPP_EXPERIMENTAL_NO_FLAG_TRAITS");
     }
 
@@ -2801,333 +3055,17 @@ import std;
         }
     };
 
-    void Generator::generateMainFile(OutputBuffer &output) {
+    void Generator::generateMainFile(GenOutput &files) {
+        auto &output          = files.addFile("");
+
         output += generateHeader();
+
+        generateArrays(files, output);
+        generateVector(files, output);
 
         output += beginNamespace();
 
-        output += RES_ARRAY_PROXY;
-        // PROXY TEMPORARIES
-        output += RES_ARRAY_WRAPPER;
-        if (cfg.gen.functionsVecAndArray) {
-            output += RES_VECTOR;
-        }
-
-        generateFlags(output);
-
-        if (cfg.gen.expApi) {
-            output += R"(
-#ifndef VULKAN_HPP_EXPERIMENTAL_NO_FLAG_TRAITS
-  template <typename BitType, typename std::enable_if<FlagTraits<BitType>::isBitmask, bool>::type = true>
-#else
-  template <typename BitType>
-#endif
-  VULKAN_HPP_INLINE VULKAN_HPP_CONSTEXPR Flags<BitType> operator|( BitType lhs, BitType rhs ) VULKAN_HPP_NOEXCEPT
-  {
-    return Flags<BitType>( lhs ) | rhs;
-  }
-#ifndef VULKAN_HPP_EXPERIMENTAL_NO_FLAG_TRAITS
-  template <typename BitType, typename std::enable_if<FlagTraits<BitType>::isBitmask, bool>::type = true>
-#else
-  template <typename BitType>
-#endif
-  VULKAN_HPP_INLINE VULKAN_HPP_CONSTEXPR Flags<BitType> operator^( BitType lhs, BitType rhs ) VULKAN_HPP_NOEXCEPT
-  {
-    return Flags<BitType>( lhs ) ^ rhs;
-  }
-)";
-        } else {
-            output += R"(
-  template <typename BitType, typename std::enable_if<FlagTraits<BitType>::isBitmask, bool>::type = true>
-  VULKAN_HPP_INLINE VULKAN_HPP_CONSTEXPR Flags<BitType> operator|( BitType lhs, BitType rhs ) VULKAN_HPP_NOEXCEPT
-  {
-    return Flags<BitType>( lhs ) | rhs;
-  }
-
-  template <typename BitType, typename std::enable_if<FlagTraits<BitType>::isBitmask, bool>::type = true>
-  VULKAN_HPP_INLINE VULKAN_HPP_CONSTEXPR Flags<BitType> operator^( BitType lhs, BitType rhs ) VULKAN_HPP_NOEXCEPT
-  {
-    return Flags<BitType>( lhs ) ^ rhs;
-  }
-)";
-        }
         output += RES_OPTIONAL;
-        // if (cfg.gen.structChain) {
-        output += expIfndef("VULKAN_HPP_NO_STRUCT_CHAIN");
-        if (cfg.gen.globalMode) {
-            output += R"(
-  template <typename Type>
-  struct structureType
-  {
-    static VULKAN_HPP_CONST_OR_CONSTEXPR VkStructureType value = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-  };
-)";
-        }
-
-        output += R"(
-
-template <typename X, typename Y>
-  struct StructExtends
-  {
-    enum
-    {
-      value = false
-    };
-  };
-
-  template <typename Type, class...>
-  struct IsPartOfStructureChain
-  {
-    static const bool valid = false;
-  };
-
-  template <typename Type, typename Head, typename... Tail>
-  struct IsPartOfStructureChain<Type, Head, Tail...>
-  {
-    static const bool valid = std::is_same<Type, Head>::value || IsPartOfStructureChain<Type, Tail...>::valid;
-  };
-
-  template <size_t Index, typename T, typename... ChainElements>
-  struct StructureChainContains
-  {
-    static const bool value = std::is_same<T, typename std::tuple_element<Index, std::tuple<ChainElements...>>::type>::value ||
-                              StructureChainContains<Index - 1, T, ChainElements...>::value;
-  };
-
-  template <typename T, typename... ChainElements>
-  struct StructureChainContains<0, T, ChainElements...>
-  {
-    static const bool value = std::is_same<T, typename std::tuple_element<0, std::tuple<ChainElements...>>::type>::value;
-  };
-
-  template <size_t Index, typename... ChainElements>
-  struct StructureChainValidation
-  {
-    using TestType          = typename std::tuple_element<Index, std::tuple<ChainElements...>>::type;
-    static const bool valid = StructExtends<TestType, typename std::tuple_element<0, std::tuple<ChainElements...>>::type>::value &&
-                              ( /*TestType::allowDuplicate ||*/ !StructureChainContains<Index - 1, TestType, ChainElements...>::value ) &&
-                              StructureChainValidation<Index - 1, ChainElements...>::valid;
-  };
-
-  template <typename... ChainElements>
-  struct StructureChainValidation<0, ChainElements...>
-  {
-    static const bool valid = true;
-  };
-
-  template <typename... ChainElements>
-  class StructureChain : public std::tuple<ChainElements...>
-  {
-  public:
-    StructureChain() VULKAN_HPP_NOEXCEPT
-    {
-      static_assert( StructureChainValidation<sizeof...( ChainElements ) - 1, ChainElements...>::valid, "The structure chain is not valid!" );
-)";
-        if (cfg.gen.globalMode) {
-            output += R"(      init<sizeof...( ChainElements ) - 1>();
-)";
-        }
-
-        output += R"(
-      link<sizeof...( ChainElements ) - 1>();
-    }
-
-    StructureChain( StructureChain const & rhs ) VULKAN_HPP_NOEXCEPT : std::tuple<ChainElements...>( rhs )
-    {
-      static_assert( StructureChainValidation<sizeof...( ChainElements ) - 1, ChainElements...>::valid, "The structure chain is not valid!" );
-      link( &std::get<0>( *this ),
-            &std::get<0>( rhs ),
-            reinterpret_cast<VkBaseOutStructure *>( &std::get<0>( *this ) ),
-            reinterpret_cast<VkBaseInStructure const *>( &std::get<0>( rhs ) ) );
-    }
-
-    StructureChain( StructureChain && rhs ) VULKAN_HPP_NOEXCEPT : std::tuple<ChainElements...>( std::forward<std::tuple<ChainElements...>>( rhs ) )
-    {
-      static_assert( StructureChainValidation<sizeof...( ChainElements ) - 1, ChainElements...>::valid, "The structure chain is not valid!" );
-      link( &std::get<0>( *this ),
-            &std::get<0>( rhs ),
-            reinterpret_cast<VkBaseOutStructure *>( &std::get<0>( *this ) ),
-            reinterpret_cast<VkBaseInStructure const *>( &std::get<0>( rhs ) ) );
-    }
-
-    StructureChain( ChainElements const &... elems ) VULKAN_HPP_NOEXCEPT : std::tuple<ChainElements...>( elems... )
-    {
-      static_assert( StructureChainValidation<sizeof...( ChainElements ) - 1, ChainElements...>::valid, "The structure chain is not valid!" );
-      link<sizeof...( ChainElements ) - 1>();
-    }
-
-    StructureChain & operator=( StructureChain const & rhs ) VULKAN_HPP_NOEXCEPT
-    {
-      std::tuple<ChainElements...>::operator=( rhs );
-      link( &std::get<0>( *this ),
-            &std::get<0>( rhs ),
-            reinterpret_cast<VkBaseOutStructure *>( &std::get<0>( *this ) ),
-            reinterpret_cast<VkBaseInStructure const *>( &std::get<0>( rhs ) ) );
-      return *this;
-    }
-
-    // StructureChain & operator=( StructureChain && rhs ) = delete;
-
-    template <typename T = typename std::tuple_element<0, std::tuple<ChainElements...>>::type, size_t Which = 0>
-    T & get() VULKAN_HPP_NOEXCEPT
-    {
-      return std::get<ChainElementIndex<0, T, Which, void, ChainElements...>::value>( static_cast<std::tuple<ChainElements...> &>( *this ) );
-    }
-
-    template <typename T = typename std::tuple_element<0, std::tuple<ChainElements...>>::type, size_t Which = 0>
-    T const & get() const VULKAN_HPP_NOEXCEPT
-    {
-      return std::get<ChainElementIndex<0, T, Which, void, ChainElements...>::value>( static_cast<std::tuple<ChainElements...> const &>( *this ) );
-    }
-
-    template <typename T0, typename T1, typename... Ts>
-    std::tuple<T0 &, T1 &, Ts &...> get() VULKAN_HPP_NOEXCEPT
-    {
-      return std::tie( get<T0>(), get<T1>(), get<Ts>()... );
-    }
-
-    template <typename T0, typename T1, typename... Ts>
-    std::tuple<T0 const &, T1 const &, Ts const &...> get() const VULKAN_HPP_NOEXCEPT
-    {
-      return std::tie( get<T0>(), get<T1>(), get<Ts>()... );
-    }
-
-    template <typename ClassType, size_t Which = 0>
-    typename std::enable_if<std::is_same<ClassType, typename std::tuple_element<0, std::tuple<ChainElements...>>::type>::value && ( Which == 0 ), bool>::type
-      isLinked() const VULKAN_HPP_NOEXCEPT
-    {
-      return true;
-    }
-
-    template <typename ClassType, size_t Which = 0>
-    typename std::enable_if<!std::is_same<ClassType, typename std::tuple_element<0, std::tuple<ChainElements...>>::type>::value || ( Which != 0 ), bool>::type
-      isLinked() const VULKAN_HPP_NOEXCEPT
-    {
-      static_assert( IsPartOfStructureChain<ClassType, ChainElements...>::valid, "Can't unlink Structure that's not part of this StructureChain!" );
-      return isLinked( reinterpret_cast<VkBaseInStructure const *>( &get<ClassType, Which>() ) );
-    }
-
-    template <typename ClassType, size_t Which = 0>
-    typename std::enable_if<!std::is_same<ClassType, typename std::tuple_element<0, std::tuple<ChainElements...>>::type>::value || ( Which != 0 ), void>::type
-      relink() VULKAN_HPP_NOEXCEPT
-    {
-      static_assert( IsPartOfStructureChain<ClassType, ChainElements...>::valid, "Can't relink Structure that's not part of this StructureChain!" );
-      auto pNext = reinterpret_cast<VkBaseInStructure *>( &get<ClassType, Which>() );
-      VULKAN_HPP_ASSERT( !isLinked( pNext ) );
-      auto & headElement = std::get<0>( static_cast<std::tuple<ChainElements...> &>( *this ) );
-      pNext->pNext       = reinterpret_cast<VkBaseInStructure const *>( headElement.pNext );
-      headElement.pNext  = pNext;
-    }
-
-    template <typename ClassType, size_t Which = 0>
-    typename std::enable_if<!std::is_same<ClassType, typename std::tuple_element<0, std::tuple<ChainElements...>>::type>::value || ( Which != 0 ), void>::type
-      unlink() VULKAN_HPP_NOEXCEPT
-    {
-      static_assert( IsPartOfStructureChain<ClassType, ChainElements...>::valid, "Can't unlink Structure that's not part of this StructureChain!" );
-      unlink( reinterpret_cast<VkBaseOutStructure const *>( &get<ClassType, Which>() ) );
-    }
-
-  private:
-    template <int Index, typename T, int Which, typename, class First, class... Types>
-    struct ChainElementIndex : ChainElementIndex<Index + 1, T, Which, void, Types...>
-    {
-    };
-
-    template <int Index, typename T, int Which, class First, class... Types>
-    struct ChainElementIndex<Index, T, Which, typename std::enable_if<!std::is_same<T, First>::value, void>::type, First, Types...>
-      : ChainElementIndex<Index + 1, T, Which, void, Types...>
-    {
-    };
-
-    template <int Index, typename T, int Which, class First, class... Types>
-    struct ChainElementIndex<Index, T, Which, typename std::enable_if<std::is_same<T, First>::value, void>::type, First, Types...>
-      : ChainElementIndex<Index + 1, T, Which - 1, void, Types...>
-    {
-    };
-
-    template <int Index, typename T, class First, class... Types>
-    struct ChainElementIndex<Index, T, 0, typename std::enable_if<std::is_same<T, First>::value, void>::type, First, Types...>
-      : std::integral_constant<int, Index>
-    {
-    };
-
-    bool isLinked( VkBaseInStructure const * pNext ) const VULKAN_HPP_NOEXCEPT
-    {
-      VkBaseInStructure const * elementPtr =
-        reinterpret_cast<VkBaseInStructure const *>( &std::get<0>( static_cast<std::tuple<ChainElements...> const &>( *this ) ) );
-      while ( elementPtr )
-      {
-        if ( elementPtr->pNext == pNext )
-        {
-          return true;
-        }
-        elementPtr = elementPtr->pNext;
-      }
-      return false;
-    }
-)";
-        if (cfg.gen.globalMode) {
-            output += R"(
-    template <size_t Index>
-    void init() VULKAN_HPP_NOEXCEPT
-    {
-        auto &x = std::get<Index>( static_cast<std::tuple<ChainElements...> &>( *this ) );
-        x.sType = vk::structureType<typename std::tuple_element<Index, std::tuple<ChainElements...>>::type>::value;
-        if constexpr (Index != 0) {
-            init<Index - 1>();
-        }
-    }
-)";
-        }
-        output += R"(
-    template <size_t Index>
-    typename std::enable_if<Index != 0, void>::type link() VULKAN_HPP_NOEXCEPT
-    {
-      auto & x = std::get<Index - 1>( static_cast<std::tuple<ChainElements...> &>( *this ) );
-      x.pNext  = &std::get<Index>( static_cast<std::tuple<ChainElements...> &>( *this ) );
-      link<Index - 1>();
-    }
-
-    template <size_t Index>
-    typename std::enable_if<Index == 0, void>::type link() VULKAN_HPP_NOEXCEPT
-    {
-    }
-
-    void link( void * dstBase, void const * srcBase, VkBaseOutStructure * dst, VkBaseInStructure const * src )
-    {
-      while ( src->pNext )
-      {
-        std::ptrdiff_t offset = reinterpret_cast<char const *>( src->pNext ) - reinterpret_cast<char const *>( srcBase );
-        dst->pNext            = reinterpret_cast<VkBaseOutStructure *>( reinterpret_cast<char *>( dstBase ) + offset );
-        dst                   = dst->pNext;
-        src                   = src->pNext;
-      }
-      dst->pNext = nullptr;
-    }
-
-    void unlink( VkBaseOutStructure const * pNext ) VULKAN_HPP_NOEXCEPT
-    {
-      VkBaseOutStructure * elementPtr = reinterpret_cast<VkBaseOutStructure *>( &std::get<0>( static_cast<std::tuple<ChainElements...> &>( *this ) ) );
-      while ( elementPtr && ( elementPtr->pNext != pNext ) )
-      {
-        elementPtr = elementPtr->pNext;
-      }
-      if ( elementPtr )
-      {
-        elementPtr->pNext = pNext->pNext;
-      }
-      else
-      {
-        VULKAN_HPP_ASSERT( false );  // fires, if the ClassType member has already been unlinked !
-      }
-    }
-  };
-)";
-
-
-
-        output += expEndif("VULKAN_HPP_NO_STRUCT_CHAIN");
-        // }
 
         gen(output, cfg.gen.smartHandles, [&](auto &output) {
             if (cfg.gen.expApi) {
@@ -3172,8 +3110,8 @@ template <typename X, typename Y>
 
         if (!cfg.gen.globalMode) {
             generateDispatch(output);
+            output += RES_BASE_TYPES;
         }
-        output += RES_BASE_TYPES;
 
         if (cfg.gen.globalMode) {
             output += R"(
@@ -3224,7 +3162,7 @@ template <typename X, typename Y>
 
 
         output += endNamespace();
-        if (!cfg.gen.globalMode) {
+        if (!cfg.gen.onlyC) {
             output += "#include \"vulkan_enums.hpp\"\n";
             output += R"(#if !defined( VULKAN_HPP_NO_TO_STRING )
 #  include "vulkan_to_string.hpp"
@@ -3236,12 +3174,6 @@ template <typename X, typename Y>
         output += "\n";
         generateResultValue(output);
 
-        if (cfg.gen.globalMode) {
-            output += vkgen::format(RES_RESULT_CHECK, cfg.gen.branchHint ? "VULKAN_HPP_UNLIKELY" : "");
-        }
-        else {
-            output += vkgen::format(RES_RESULT_CHECK_CPP, cfg.gen.branchHint ? "VULKAN_HPP_UNLIKELY" : "");
-        }
         generateApiConstants(output);
 
         output += R"(
@@ -3311,18 +3243,58 @@ template <typename X, typename Y>
 
         output += endNamespace();
 
-        // output += "#include \"vulkan_structs_forward.hpp\"\n";
-
-        output += "#include \"vulkan_handles.hpp\"\n";
-        if (!cfg.gen.globalMode) {
+        if (cfg.gen.globalMode) {
+            output += "#include \"vulkan_types.hpp\"\n";
+        }
+        else {
+            output += "#include \"vulkan_handles.hpp\"\n";
             output += "#include \"vulkan_structs.hpp\"\n";
         }
+        if (cfg.gen.expApi || true) {
+            output += "#include \"vulkan_context.hpp\"\n";
+        }
+        if (cfg.gen.globalMode) {
+            output += "\n";
+            output += beginNamespace();
+            output += "  extern " + m_ns + "::" + loader.name + " " + strFirstLower(loader.name) + ";\n";
+            for (const Handle &t : topLevelHandles) {
+                output += "  extern " + m_ns + "::" + t.name + " " + strFirstLower(t.name) + ";\n";
+            }
+            // output += "  extern vk::Dispatch dispatch;\n";
+            output += "\n";
+            for (Handle &t : topLevelHandles) {
+                for (auto &cmd : t.ctorCmds) {
+                    output += "  // " + cmd.name.original + "\n";
+                    /* in progress
+                    GuardedOutput decl;
+                    MemberGeneratorExperimental g{ *this, cmd, decl, outputFuncs, true };
+                    g.generate();
+                    std::stringstream str;
+                    decl.write(str);
+                    output += std::move(str.str());
+                    */
+                }
+            }
+            output += endNamespace();
+            output += "\n";
+        }
+
+
+
+        // if (cfg.gen.structChain)
+        if (!cfg.gen.onlyC) {
+            output += "#ifndef VULKAN_HPP_NO_STRUCT_CHAIN\n";
+            generateStructChain(files, output);
+            output += "#endif // VULKAN_HPP_NO_STRUCT_CHAIN\n";
+        }
+
 
         // output += "#  ifndef VULKAN_HPP_EXPERIMENTAL_NO_VK_FUNCS\n";
         // output += "#  endif // VULKAN_HPP_EXPERIMENTAL_NO_VK_FUNCS\n";
-         if (cfg.gen.structMock > 0) {
-             return;
-         }
+//         if (cfg.gen.structMock > 0) {
+//             return;
+//         }
+        /*
         std::string ifdef;
         for (const auto &p : platforms) {
             const auto &protect = p.protect;
@@ -3343,30 +3315,9 @@ template <typename X, typename Y>
 )",
                                     ifdef);
         }
+        */
 
         output += "#include \"vulkan_funcs.hpp\"\n\n";
-
-        // if (cfg.gen.structChain)
-        {
-            output += "#ifndef VULKAN_HPP_NO_STRUCT_CHAIN\n";
-            output += beginNamespace();
-            generateStructChains(output, cfg.gen.globalMode);
-            output += endNamespace();
-            output += "#endif // VULKAN_HPP_NO_STRUCT_CHAIN\n";
-        }
-
-        if (cfg.gen.globalMode) {
-
-            output += R"(
-namespace std {
-  template<typename... ChainElements>
-  class tuple_size<vk::StructureChain<ChainElements...>>:public std::integral_constant<std::size_t, sizeof...(ChainElements)>{};
-
-  template<std::size_t I, typename... ChainElements>
-  class tuple_element<I,vk::StructureChain<ChainElements...>>:public tuple_element<I, std::tuple<ChainElements...>>{};
-}
-)";
-        }
 
 #ifdef INST
         output += Inst::mainFileEnd();
@@ -3907,6 +3858,12 @@ namespace std {
         void generate(const Feature &feature) {
             // output += "// " + feature.name.original;
             output += "\n";
+            output += "// ";
+            output += feature.name.original;
+            output += " is a preprocessor guard. Do not pass it to API calls.\n";
+            output += "#define ";
+            output += feature.name.original;
+            output += " 1\n";
             for (const Snippet &t : feature.defines) {
                 continue;
                 generate(t);
@@ -4247,11 +4204,15 @@ namespace std {
         auto &handles_forward = out.addFile("_handles_forward");
         auto &structs_forward = out.addFile("_structs_forward");
         auto &structs         = out.addFile("_structs");
-        auto &funcs           = out.addFile("_funcs");
-        auto &platforms       = out.addFile("_platforms");
-        auto &output          = out.addFile("");
+        auto &types           = out.addFile("_types");
 
-        generateEnums(enums, enums_forward, to_string);
+        // auto &platforms       = out.addFile("_platforms");
+        auto &macros          = out.addFile("_hpp_macros");
+
+        generateMacros(macros);
+
+        generateEnums(enums, enums_forward);
+
 
         generateForwardHandles(handles_forward);
 
@@ -4265,11 +4226,25 @@ namespace std {
         forward += "#include \"" + out.getFilename("_structs_forward") + "\"\n";
         forward += "#include \"" + out.getFilename("_handles_forward") + "\"\n";
 
+        types += "#include \"vulkan.h\"\n";
+        types += "#include \"vulkan_hpp_macros.hpp\"\n";
+        types += beginNamespace();
+        types += RES_BASE_TYPES;
+        types += "\n";
+        types += endNamespace();
+        if (!cfg.gen.onlyC) {
+            types += "#include \"vulkan_enums.hpp\"\n";
+        }
+        types += "#include \"vulkan_handles.hpp\"\n";
+        if (!cfg.gen.onlyC) {
+            types += "#include \"vulkan_structs.hpp\"\n";
+        }
+
         generateHandles(handles, smart_handles, out);
 
         generateStructs(structs);
 
-        generateMainFile(output);
+        generateMainFile(out);
 
         if (cfg.gen.globalMode) {
             auto &global         = out.addFile("_global");
@@ -4279,7 +4254,7 @@ namespace std {
             for (const Handle &t : topLevelHandles) {
                 global += "  " + t.name + " " + strFirstLower(t.name) + ";\n";
             }
-            global += "  Dispatch dispatch;\n";
+            // global += "  Dispatch dispatch;\n";
 //            for (const Handle &t : topLevelHandles) {
 //                global += "  " + t.name.original + " " + t.name + "::m_handle = {};\n";
 //            }
@@ -4289,20 +4264,21 @@ namespace std {
 //            }
             global += endNamespace();
 
-            auto &to_stream         = out.addFile("_to_stream");
-            to_stream += "#include <iostream>\n";
-            to_stream += "#include <vulkan/vulkan.h>\n";
-            // to_stream += beginNamespace();
-            for (const Enum &e: this->enums.ordered) {
-                genOptional(to_stream, e, [&](auto &output) {
-
-                    output += "  " + m_inline + " std::string to_string_" + e.name.original + "(" + e.name.original + " value)";
-                    output += "  {\n";
+            {
+                auto &output = out.addFile("_enum_string", ".h");
+                // output += "#include <iostream>\n";
+                // output += "#include \"vulkan.h\"\n";
+                output += "#include \"vulkan.hpp\"\n";
+                output += "#include <string>\n";
+                output += "\n";
+                for (const Enum &e : this->enums.ordered) {
+                    genOptional(output, e, [&](auto &output) {
+                        output += "  " + m_inline + " std::string string_" + e.name.original + "(" + e.name.original + " value)";
+                        output += "  {\n";
                         if (e.isBitmask()) {
                             if (e.members.empty()) {
                                 output += "     return \"{}\";\n";
-                            }
-                            else {
+                            } else {
                                 output += R"(
     if ( !value )
       return "{}";
@@ -4319,8 +4295,7 @@ namespace std {
                                 }
                                 output += "    return \"{ \" + result.substr( 0, result.size() - 3 ) + \" }\";\n";
                             }
-                        }
-                        else {
+                        } else {
                             output += "    switch (value) {\n";
                             if (e.members.empty()) {
                                 output += "      // no values\n";
@@ -4329,45 +4304,62 @@ namespace std {
                                 if (m.isAlias) {
                                     continue;
                                 }
-                                genOptional(output, m, [&](auto &output) {
-                                    output += "      case " + m.name.original + ": return \"" + m.name.original + "\";\n";
-                                });
+                                genOptional(
+                                  output, m, [&](auto &output) { output += "      case " + m.name.original + ": return \"" + m.name.original + "\";\n"; });
                             }
                             output += "      default: return \"invalid ( \" + vk::toHexString(value)  + \" )\";\n";
                             output += "    }\n";
                         }
-                    output += "  }\n";
-
-                    for (const auto &a : e.aliases) {
-                        output += "  " + m_inline + " std::string to_string_" +  a.name.original + "(" + e.name.original + " value) {\n";
-                        output += "    return to_string_" + e.name.original + "(value);\n";
                         output += "  }\n";
-                    }
-                });
+
+                        for (const auto &a : e.aliases) {
+                            output += "  " + m_inline + " std::string string_" + a.name.original + "(" + e.name.original + " value) {\n";
+                            output += "    return string_" + e.name.original + "(value);\n";
+                            output += "  }\n";
+                        }
+                    });
+                }
+
             }
 
-            for (const Struct &s: this->structs.ordered) {
-                genOptional(to_stream, s, [&](auto &output) {
-                    output += "  " + m_inline + " std::ostream& operator<< (std::ostream& stream, const " + s.name.original + " &value)";
-                    output += "  {\n";
-                    output += "    stream << \"" + s.name.original + "{\\n\";\n";
-                    for (const auto &m : s.members) {
-                        output += "    stream << \"  " + m->identifier() + ": \" << ";
-                        if (m->isPointer() || m->isArray() || m->hasArrayLength()) {
-                            output += "std::hex << value." + m->identifier() + " << std::dec << '\\n';\n";
+            {
+                auto &output = out.addFile("_struct_string", ".h");
+                output += "#include \"vulkan_enum_string.h\"\n";
+                output += beginNamespace();
+                for (const Struct &s : this->structs.ordered) {
+                    genOptional(output, s, [&](auto &output) {
+                        output += "  " + m_inline + " std::string to_string(const " + s.name.original + " &value)";
+                        output += "  {\n";
+                        output += "    std::string result;\n";
+                        output += "    result += \"" + s.name.original + " {\\n\";\n";
+                        for (const auto &m : s.members) {
+                            output += "    result.append(\"\\n  " + m->identifier() + ": \").append(";
+                            if (m->isPointer() || m->isArray() || m->hasArrayLength() || m->original.type().starts_with("PFN") || m->isHandle()) {
+                                // output += "std::hex << value." + m->identifier() + " << std::dec << '\\n';\n";
+                                // output += "\"Pointer\"";
+                                output += "std::to_string(reinterpret_cast<uintptr_t>(value." + m->identifier() + "))";
+                            }
+                            else if (m->isUnion()) {
+                                output += "\"Union: " + m->original.type() + "\"";
+                            }
+                            else if (m->isStruct()) {
+                                output += "to_string(value." + m->identifier() + ")";
+                            }
+                            else if (m->isEnum()) {
+                                std::string type = std::regex_replace(m->original.type(), std::regex("FlagBits"), "Flags");
+                                output += "string_" + type + "(value." + m->identifier() + ")";
+                            }
+                            else {
+                                output += "std::to_string(value." + m->identifier() + ")";
+                            }
+                            output += ");\n";
                         }
-                        else if (m->isEnum()) {
-                            std::string type = std::regex_replace(m->original.type(), std::regex("FlagBits"), "Flags");
-                            output += "to_string_" + type + "(value." + m->identifier() + ") << '\\n';\n";
-                        }
-                        else {
-                            output += "value." + m->identifier() + " << '\\n';\n";
-                        }
-                    }
-                    output += "    stream << \"}\\n\";";
-                    output += "    return stream;\n";
-                    output += "  }\n";
-                });
+                        output += "    result += \"\\n}\\n\";\n";
+                        output += "    return result;\n";
+                        output += "  }\n";
+                    });
+                }
+                output += endNamespace();
             }
 
             /*
@@ -4397,28 +4389,105 @@ namespace std {
             generateContext(context);
         }
 
-        funcs += beginNamespace();
-        if (cfg.gen.cppFiles) {
-            auto &impl = out.addFile("_impl", ".cpp");
-            impl += "#include \"vulkan.hpp\"\n";
-            impl += R"(
-#ifdef VULKAN_HPP_HAS_SPACESHIP_OPERATOR
-#  define VULKAN_HPP_USE_SPACESHIP_OPERATOR
-#endif
-)";
-            impl += beginNamespace();
-            impl += std::move(outputFuncs.def);
-            impl += endNamespace();
-        } else {
-            funcs += "// definitions: \n";
-            funcs += std::move(outputFuncs.def);
-        }
-        funcs += std::move(outputFuncs.templ);
-        funcs += endNamespace();
+        auto &funcs           = out.addFile("_funcs");
+        auto &funcs_impl           = out.addFile("_funcs_impl");
+        // auto &funcs2           = out.addFile("_funcs2");
 
-        platforms += beginNamespace();
-        platforms += std::move(outputFuncs.platform);
-        platforms += endNamespace();
+        // OutputBuffer *impl = nullptr;
+        // if (cfg.gen.cppFiles) {
+        if (cfg.gen.globalMode) {
+            auto& impl = out.addFile("_impl", ".cpp");
+            impl += "#include \"vulkan.hpp\"\n";
+//            impl += R"(
+//#ifdef VULKAN_HPP_HAS_SPACESHIP_OPERATOR
+//#  define VULKAN_HPP_USE_SPACESHIP_OPERATOR
+//#endif
+//)";
+            impl += "#undef VULKAN_HPP_INLINE\n";
+            impl += "#define VULKAN_HPP_INLINE\n";
+            impl += "#include \"vulkan_funcs_impl.hpp\"\n\n";
+            impl += "#include \"vulkan_to_string_impl.hpp\"\n\n";
+            // impl += beginNamespace();
+        }
+
+        const auto appendFuncs = [&](OutputBuffer &output, GuardedOutputFuncs &funcs) {
+
+//            if (impl) {
+//                *impl += std::move(funcs.def);
+//            } else {
+//                output += "// definitions: \n";
+//                output += std::move(funcs.def);
+//            }
+            funcs_impl += std::move(funcs.def);
+
+            output += std::move(funcs.decl);
+            output += std::move(funcs.templ);
+
+            output += std::move(funcs.platform);
+            // platforms += std::move(funcs.platform);
+
+        };
+
+        const auto genFuncs = [&](OutputBuffer &output, bool useC){
+            GuardedOutputFuncs funcs;
+            generateGlobalFuncs(funcs, useC);
+            appendFuncs(output, funcs);
+        };
+
+        if (cfg.gen.globalMode) {
+            funcs += "#include \"vulkan_context.hpp\"\n";
+            funcs += "#include \"vulkan_array.hpp\"\n";
+            funcs += "#include \"vulkan_types.hpp\"\n";
+        }
+
+        if (!cfg.gen.onlyC) {
+            funcs += "#include \"vulkan_enums.hpp\"\n";
+            funcs += "#include \"vulkan_structs.hpp\"\n";
+        }
+
+        // platforms += beginNamespace();
+        funcs  += beginNamespace();
+        funcs_impl += beginNamespace();
+
+        if (cfg.gen.globalMode) {
+            funcs += vkgen::format(RES_RESULT_CHECK, cfg.gen.branchHint ? "VULKAN_HPP_UNLIKELY" : "");
+        }
+        else {
+            funcs += vkgen::format(RES_RESULT_CHECK_CPP, cfg.gen.branchHint ? "VULKAN_HPP_UNLIKELY" : "");
+        }
+
+        // funcs2 += beginNamespace();
+        appendFuncs(funcs, outputFuncs);
+        genFuncs(funcs, cfg.gen.onlyC);
+        // genFuncs(funcs2, false);
+
+        funcs += endNamespace();
+        funcs += R"(
+#ifndef VULKAN_USE_CPP
+#include "vulkan_funcs_impl.hpp"
+#endif // VULKAN_USE_CPP
+)";
+
+        // funcs2 += endNamespace();
+        // platforms += endNamespace();
+        funcs_impl += endNamespace();
+
+//        if (impl) {
+//            *impl += endNamespace();
+//        }
+
+
+
+        if (cfg.gen.globalMode) {
+            auto& impl = out.addFile("_to_string_impl");
+            impl += "#include <string>\n";
+            impl += std::move(outputToStringDef);
+
+            to_string += std::move(outputToStringDecl);
+        }
+        else {
+            to_string += std::move(outputToStringDef);
+        }
 
         if (cfg.gen.cppModules) {
             generateModules(out, path);
@@ -4427,7 +4496,7 @@ namespace std {
         out.writeFiles(*this);
     }
 
-    void Generator::generateEnumStr(const Enum &data, OutputBuffer &output, OutputBuffer &to_string_output) {
+    void Generator::generateEnumStr(const Enum &data, OutputBuffer &output) {
         const auto & name = data.isBitmask()? data.bitmask : data.name;
 
         GuardedOutput members;
@@ -4440,15 +4509,26 @@ namespace std {
                 continue;
             }
             generated.insert(m.name);
-            members.add(m, [&](auto &output) {
-                output += "    " + m.name + " = " + m.value;
-                if (cfg.dbg.methodTags) {
-                    output += ", // " + m.name.original + "\n";
-                }
-                else {
-                    output += ",\n";
-                }
-            });
+            if (cfg.gen.enumMock == 1 && data.isBitmask()) {
+                members.add(m, [&](auto &output) {
+                    output += "    static constexpr const ";
+                    output += data.is64bit()? "VkFlags64 " : "VkFlags ";
+                    output += m.name;
+                    output += " = ";
+                    output += m.value;
+                    output += ";\n";
+                });
+            }
+            else {
+                members.add(m, [&](auto &output) {
+                    output += "    " + m.name + " = " + m.value;
+                    if (cfg.dbg.methodTags) {
+                        output += ", // " + m.name.original + "\n";
+                    } else {
+                        output += ",\n";
+                    }
+                });
+            }
 
             if (!m.isAlias) {
                 if (generatedCase.find(m.value) != generatedCase.end()) {
@@ -4465,13 +4545,25 @@ namespace std {
             }
         }
 
-        output += "  enum class " + name;
-        if (data.isBitmask()) {
-            output += " : " + data.name.original;
+        if (cfg.gen.enumMock == 1 && data.isBitmask()) {
+            output += "  namespace " + name + " {\n";
+            output += members.toString();
+            output += "  }\n";
         }
-        output += " {\n";
-        output += members.toString();
-        output += "\n  };\n";
+        else {
+            output += "  enum class " + name;
+            if (data.isBitmask()) {
+                output += " : " + data.name.original;
+            }
+            output += " {\n";
+            output += members.toString();
+            if (cfg.gen.enumMock == 2 && data.isBitmask()) {
+                output += "    allFlags = ";
+                output += std::move(generateAllFlagsValue(data));;
+                output += ",\n";
+            }
+            output += "\n  };\n";
+        }
 
         for (const auto &a : data.aliases) {
             const auto &name =
@@ -4483,6 +4575,7 @@ namespace std {
         if (data.isBitmask()) {
             genFlagTraits(data, name, output, str);
         }
+        /*
         FunctionGenerator fun(*this, "std::string", "to_string");
         fun.indent = "  ";
         fun.base = &data;
@@ -4490,18 +4583,19 @@ namespace std {
         fun.allowInline = true;
         fun.specifierInline = true;
         fun.add(data.name, "value");
+        */
 
         if (data.isBitmask()) {
-            fun.code = str;
+            // fun.code = str;
         }
         else {
             str = to_string.toString();
             if (str.empty()) {
-                fun.code = "    return \"\\\"(void)\\\"\";\n";
+                str = "    return \"\\\"(void)\\\"\";\n";
             } else {
                 str += "      default: return \"invalid ( \" + " + m_ns + "::toHexString(static_cast<uint32_t>(value))  + \" )\";";
 
-                fun.code = vkgen::format(R"(
+                str = vkgen::format(R"(
     switch (value) {{
 {0}
     }}
@@ -4509,18 +4603,39 @@ namespace std {
             }
         }
 
-        to_string_output += fun.generate(outputFuncs);
-    }
+        std::string proto = "std::string to_string(";
+        proto += data.name;
+        proto += " value)";
 
-    void Generator::generateEnum(const Enum &data, OutputBuffer &output, OutputBuffer &output_forward, OutputBuffer &to_string_output) {
-        auto p = data.getProtect();
-        if (!p.empty()) {
-            outputFuncs.platform.add(data, [&](auto &output) { generateEnumStr(data, output, output); });
-        } else {
-            genOptional(output, data, [&](auto &output) {
-                generateEnumStr(data, output, to_string_output);
+        // to_string_output += fun.generate(outputFuncs);
+        if (cfg.gen.globalMode) {
+            outputToStringDecl.add(data, [&](auto &output){
+                output += "  ";
+                output += proto;
+                output += ";\n\n";
             });
         }
+
+        outputToStringDef.add(data, [&](auto &output){
+            output += "  ";
+            output += cfg.macro.mInline.define;
+            output += " ";
+            output += proto;
+            output += " {\n";
+            output += str;
+            output += "  }\n";
+        });
+    }
+
+    void Generator::generateEnum(const Enum &data, OutputBuffer &output, OutputBuffer &output_forward) {
+        auto p = data.getProtect();
+//        if (!p.empty()) {
+//            outputFuncs.platform.add(data, [&](auto &output) { generateEnumStr(data, output); });
+//        } else {
+            genOptional(output, data, [&](auto &output) {
+                generateEnumStr(data, output);
+            });
+        // }
 
         genOptional(output_forward, data, [&](auto &output) {
             output += "  enum class " + data.name;
@@ -4550,15 +4665,25 @@ namespace std {
         return output;
     }
 
-    void Generator::generateEnums(OutputBuffer &output, OutputBuffer &output_forward, OutputBuffer &to_string_output) {
+    void Generator::generateEnums(OutputBuffer &output, OutputBuffer &output_forward) {
         if (verbose) {
             std::cout << "gen enums " << '\n';
         }
 
-        to_string_output += generateToStringInclude();
-        to_string_output += beginNamespace();
+        // outputToStringDecl += generateToStringInclude();
+
+        outputToStringDecl += "#include <string>\n";
+        outputToStringDecl += beginNamespace();
+        outputToStringDef += beginNamespace();
+
+        output += "#include <type_traits>\n";
+        output += "#include \"vulkan_hpp_macros.hpp\"\n";
+        output += "\n";
+
         output += beginNamespace();
         output_forward += beginNamespace();
+
+        generateFlags(output);
 
         if (!cfg.gen.globalMode) {
             gen(output, cfg.gen.handleTemplates, [&](auto &output) {
@@ -4575,11 +4700,12 @@ namespace std {
             if (generated.contains(e.name)) {
                 continue;
             }
-            generateEnum(e, output, output_forward, to_string_output);
+            generateEnum(e, output, output_forward);
             generated.insert(e.name);
         }
 
-        to_string_output += endNamespace();
+        outputToStringDecl += endNamespace();
+        outputToStringDef += endNamespace();
         output += endNamespace();
         output_forward += endNamespace();
 
@@ -4588,10 +4714,75 @@ namespace std {
         }
     }
 
+    std::string Generator::generateAllFlagsValue(const Enum &data) {
+        std::string output;
+
+        // std::map<std::string, std::string> temp;
+        std::map<std::string, uint64_t> values;
+
+        for (const auto & m : data.members) {
+            if (m.isAlias) {
+                continue;
+            }
+
+            const auto &p = m.getProtect();
+//            std::string &dst = temp[std::string(p)];
+//            if (!dst.empty()) {
+//                dst += "\n        | ";
+//            }
+//            dst += inherit + "::" + m.name + " // " + std::string(m.value) + ", " + std::to_string(m.numericValue);
+
+            values[std::string(p)] |= m.numericValue;
+        }
+
+        if (values.empty()) {
+            output += cfg.gen.enumMock < 2? "{}" : "0";
+        } else {
+            std::string name = std::regex_replace(data.name, std::regex("FlagBits"), "Flags");
+            if (cfg.gen.enumMock < 2) {
+                output += "static_cast<";
+                output += name;
+                output += ">(\n          ";
+            }
+            bool first = true;
+            bool hasProtect = false;
+            for (const auto &v : values) {
+                const auto &p = v.first;
+                hasProtect = !p.empty();
+                if (hasProtect) {
+                    if (cfg.gen.enumMock >= 2 && first) {
+                        output += "\n";
+                    }
+                    output += "#if defined(" + p + ")";
+                    if (first) {
+                        output += "\n";
+                    }
+                }
+                if (first) {
+                    first = false;
+                } else {
+                    output += "\n        | ";
+                }
+                output += EnumValue::toHex(v.second, data.is64bit());
+                output += "\n";
+                if (hasProtect) {
+                    output += "#endif // " + p + "\n";
+                }
+            }
+            if (cfg.gen.enumMock < 2) {
+                output += "    )";
+            }
+            else if (!hasProtect) {
+                strStripSuffix(output, "\n");
+            }
+        }
+
+        return output;
+    }
+
     void Generator::genFlagTraits(const Enum &data, std::string inherit, OutputBuffer &output, std::string &to_string_code) {
         std::string name = std::regex_replace(data.name, std::regex("FlagBits"), "Flags");
 
-        // OutputBuffer flags;
         OutputBuffer str;
 
         std::map<std::string, std::string> temp;
@@ -4631,69 +4822,35 @@ namespace std {
             });
         }
 
-        output += vkgen::format(R"(
-  using {0} = Flags<{1}>;
-)",
-                                name,
-                                inherit);
+        if (cfg.gen.enumMock == 1) {
+            output += vkgen::format(R"(  using {0} = {1};
 
-        output += expIfndef("VULKAN_HPP_EXPERIMENTAL_NO_FLAG_TRAITS");
-        output += vkgen::format(R"(
+)",
+                                    name,
+                                    data.is64bit()? "VkFlags64" : "VkFlags");
+        }
+        else {
+            output += vkgen::format(R"(  using {0} = Flags<{1}>;
+
+)",
+                                    name,
+                                    inherit);
+            if (cfg.gen.enumMock == 0) {
+                output += expIfndef("VULKAN_HPP_EXPERIMENTAL_NO_FLAG_TRAITS");
+                output += vkgen::format(R"(
   template <>
   struct FlagTraits<{0}> {{
 )",
-        inherit);
-        if (data.isBitmask()) {
-            output += "    static VULKAN_HPP_CONST_OR_CONSTEXPR bool             isBitmask = true;\n";
-        }
-        output += "    static VULKAN_HPP_CONST_OR_CONSTEXPR " + name + " allFlags = ";
-        if (values.empty()) {
-            output += "{};";
-        }
-        else {
-            output += "static_cast<";
-            output += name;
-            output += ">(\n          ";
-            bool first = true;
-            for (const auto &v : values) {
-                if (!v.first.empty()) {
-                    output += "#if defined(" + v.first + ")";
-                    if (first) {
-                        output += "\n";
-                    }
+                                        inherit);
+                if (data.isBitmask()) {
+                    output += "    static VULKAN_HPP_CONST_OR_CONSTEXPR bool             isBitmask = true;\n";
                 }
-                if (first) {
-                    first = false;
-                }
-                else {
-                    output += "\n        | ";
-                }
-                output += EnumValue::toHex(v.second, data.is64bit());
-                output += "\n";
-                if (!v.first.empty()) {
-                    output += "#endif // " + v.first + "\n";
-                }
+                output += "    static VULKAN_HPP_CONST_OR_CONSTEXPR " + name + " allFlags = ";
+                output += std::move(generateAllFlagsValue(data));
+                output += ";\n  };\n";
+                output += expEndif("VULKAN_HPP_EXPERIMENTAL_NO_FLAG_TRAITS");
             }
-            output += "    );";
         }
-//        output += "/*\n";
-//        if (temp.empty()) {
-//            output += "{}";
-//        }
-//        else {
-//            for (const auto &v : temp) {
-//                if (!v.first.empty()) {
-//                    output += "#if defined(" + v.first + ")\n";
-//                }
-//                output += v.second;
-//                if (!v.first.empty()) {
-//                    output += "#endif // " + v.first + "\n";
-//                }
-//            }
-//        }
-//        output += "*/\n";
-        output += "\n  };\n";
-        output += expEndif("VULKAN_HPP_EXPERIMENTAL_NO_FLAG_TRAITS");
 
         if (str.size() == 0) {
             to_string_code = "    return \"{}\";\n";
@@ -5173,6 +5330,21 @@ VULKAN_HPP_INLINE typename ResultValueType<void>::type createResultValueType( Vk
         output += "//#endif\n";
     }
 
+    void Generator::generateUnit(const std::string_view file, GenOutput &out, OutputBuffer &parent, OutputBuffer &&code) {
+        if (!cfg.gen.splitFiles) {
+            parent += beginNamespace();
+            parent += std::move(code);
+            parent += endNamespace();
+        }
+        else {
+            out.writeFile(*this, file, code);
+            parent += "#include \"";
+            parent += file;
+            parent += "\"\n";
+        }
+
+    }
+
     void Generator::generateStructDecl(OutputBuffer &output, const Struct &d) const {
         genOptional(output, d, [&](auto &output) {
             output += (d.isStruct()? "  struct " : "  union ");
@@ -5234,48 +5406,13 @@ VULKAN_HPP_INLINE typename ResultValueType<void>::type createResultValueType( Vk
         return output;
     }
 
-    void Generator::generateHandles(OutputBuffer &output, OutputBuffer &output_smart, GenOutput &out) {
-        if (verbose) {
-            std::cout << "gen handles " << '\n';
-        }
-
-        // if (!cfg.gen.cppModules) {
-        output += generateForwardInclude(out);
-        // }
-        if (cfg.gen.expApi || true) {
-            output += "#include \"vulkan_context.hpp\"\n";
-        }
-
-        // if (!cfg.gen.cppModules) {
-        output += beginNamespace();
-        // }
-
+    void Generator::generateGlobalFuncs(vkgen::GuardedOutputFuncs &output, bool useC) {
         if (cfg.gen.globalMode) {
-            output += "\n";
-            output += "  extern " + m_ns + "::" + loader.name + " " + strFirstLower(loader.name) + ";\n";
-            for (const Handle &t : topLevelHandles) {
-                output += "  extern " + m_ns + "::" + t.name + " " + strFirstLower(t.name) + ";\n";
-            }
-            output += "  extern vk::Dispatch dispatch;\n";
-            output += "\n";
-            for (Handle &t : topLevelHandles) {
-                for (auto &cmd : t.ctorCmds) {
-                    output += "  // " + cmd.name.original + "\n";
-                    /* in progress
-                    GuardedOutput decl;
-                    MemberGeneratorExperimental g{ *this, cmd, decl, outputFuncs, true };
-                    g.generate();
-                    std::stringstream str;
-                    decl.write(str);
-                    output += std::move(str.str());
-                    */
-                }
-            }
 
             const Handle   empty{ *this };
             GuardedOutput decl;
             for (const Command &s : staticCommands) {
-                outputFuncs.def += "  // static cmd: " + s.name.original + "\n";
+                output.def += "  // static cmd: " + s.name.original + "\n";
             }
 
             for (Command &c : commands.ordered) {
@@ -5289,21 +5426,73 @@ VULKAN_HPP_INLINE typename ResultValueType<void>::type createResultValueType( Vk
                         break;
                     }
                 }
-                if (m || c.name == "createDevice") {
+                if (m) {
+                    // continue;
+                }
+                if (c.name == "createInstance") {
                     continue;
                 }
+                if (c.name == "createDevice") {
+                    continue;
+                }
+                if (c.name == "enumerateInstanceVersion") {
+                    continue;
+                }
+
+
+//                if (!useC) {
+//                    if (c.params.empty()) {
+//                        continue;
+//                    }
+//                }
+
 
                 // outputFuncs.def += "  // cmd: " + c.name.original + "  " + std::to_string(c.successCodes.size()) + "\n";
 
                 ClassCommand d{ this, &empty, c };
-                MemberGenerator g{ *this, d, outputFuncs.def, outputFuncs, true };
+
+                MemberGenerator g{ *this, d, output.def, output, true };
                 g.ctx.globalModeStatic = true;
+                g.ctx.globalUseCAPI = useC;
                 g.generate();
 
             }
-
-            output += "\n";
         }
+    }
+
+    void Generator::generateHandles(OutputBuffer &output, OutputBuffer &output_smart, GenOutput &out) {
+        if (verbose) {
+            std::cout << "gen handles " << '\n';
+        }
+
+
+        output += "#include <cstddef>\n";
+        output += "#include \"vulkan_hpp_macros.hpp\"\n";
+        if (cfg.gen.globalMode) {
+            output += "#include \"vulkan_context.hpp\"\n";
+        }
+
+
+        // if (!cfg.gen.cppModules) {
+        output += generateForwardInclude(out);
+        // }
+
+        // if (!cfg.gen.cppModules) {
+        output += beginNamespace();
+        // }
+        if (cfg.gen.globalMode) {
+            output += "  struct InstanceCreateInfo;\n";
+            output += "  struct DeviceCreateInfo;\n";
+        }
+
+
+
+        output += "#ifndef VULKAN_HPP_NO_STRUCT_CHAIN\n";
+        output += R"(
+  template <typename... ChainElements>
+  class StructureChain;
+)";
+        output += "#endif // VULKAN_HPP_NO_STRUCT_CHAIN\n";
 
         gen(output, cfg.gen.handleTemplates, [&](auto &output) {
             output += R"(
@@ -5391,8 +5580,12 @@ VULKAN_HPP_INLINE typename ResultValueType<void>::type createResultValueType( Vk
         }
 
         for (Handle &h : handles.ordered) {
+            if (cfg.gen.onlyC && h.isSubclass) {
+                continue;
+            }
             // std::cout << "gen class " << e.name << '\n';
-            if (!cfg.gen.globalMode && cfg.gen.expApi && !h.isSubclass) {
+            // if (!cfg.gen.globalMode && cfg.gen.expApi && !h.isSubclass) {
+            if ((cfg.gen.globalMode || cfg.gen.expApi) && !h.isSubclass) {
                 generateClassWithPFN(output, h);
             } else {
                 genPlatform(output, h, [&](auto &output) { generateClass(output, h, false); });
@@ -5473,22 +5666,28 @@ VULKAN_HPP_INLINE typename ResultValueType<void>::type createResultValueType( Vk
     }
 
     std::string Generator::generateStructsInclude() const {
-        return "#include <cstring>  // strcmp\n";
+        std::string out =  "#include <cstring>  // strcmp\n";
+        return out;
     }
 
     void Generator::generateStructs(OutputBuffer &output, bool exp) {
+        output += "#include \"vulkan_hpp_macros.hpp\"\n";
+        if (cfg.gen.globalMode && cfg.gen.structMock < 5) {
+            output += "#include \"vulkan_enums.hpp\"\n";
+        }
         output += "#include \"vulkan_structs_forward.hpp\"\n";
-        output += R"(
+        if (!cfg.gen.globalMode) {
+            output += R"(
 #ifndef VULKAN_HPP_NO_STRUCT_COMPARE
 #if defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )
 #  include <compare>
 #endif
 #endif
 )";
-        if (!exp) {
-            output += "\n";
-            if (cfg.gen.importStdMacro) {
-                output += R"(
+            if (!exp) {
+                output += "\n";
+                if (cfg.gen.importStdMacro) {
+                    output += R"(
 #include <string.h> // TODO
 #ifndef USE_IMPORT_STD
 #  ifndef VULKAN_HPP_NO_STRUCT_COMPARE
@@ -5496,23 +5695,353 @@ VULKAN_HPP_INLINE typename ResultValueType<void>::type createResultValueType( Vk
 #  endif // VULKAN_HPP_NO_STRUCT_COMPARE
 #endif
 )";
-            } else {
-                gen(output, cfg.gen.structCompare, [&](auto &output) { output += generateStructsInclude(); });
+                } else {
+                    gen(output, cfg.gen.structCompare, [&](auto &output) { output += generateStructsInclude(); });
+                }
+                output += "\n";
             }
-            output += "\n";
         }
         output += beginNamespace();
         for (const Struct &e : structs.ordered) {
             genPlatform(output, e, [&](auto &output) { generateStruct(output, e, exp); });
         }
 
-        if (cfg.gen.globalMode) {
-            output += "#ifndef VULKAN_HPP_NO_STRUCT_CHAIN\n";
-            generateStructChains(output);
-            output += "#endif // VULKAN_HPP_NO_STRUCT_CHAIN\n";
-        }
+//        if (cfg.gen.globalMode) {
+//            output += "#ifndef VULKAN_HPP_NO_STRUCT_CHAIN\n";
+//            generateStructChains(output);
+//            output += "#endif // VULKAN_HPP_NO_STRUCT_CHAIN\n";
+//        }
 
         output += endNamespace();
+    }
+
+    void Generator::generateArrays(GenOutput &files, OutputBuffer &parent) {
+        OutputBuffer output;
+        if (cfg.gen.globalMode) {
+            output += "#include \"vulkan.h\"\n";
+            output += "#include \"vulkan_hpp_macros.hpp\"\n";
+        }
+        output += beginNamespace();
+        output += RES_ARRAY_PROXY;
+        // PROXY TEMPORARIES
+        if (!cfg.gen.globalMode) {
+            output += RES_ARRAY_WRAPPER;
+        }
+        output += endNamespace();
+        generateUnit("vulkan_array.hpp", files, parent, std::move(output));
+    }
+
+    void Generator::generateVector(GenOutput &files, OutputBuffer &parent) {
+        if (!cfg.gen.functionsVecAndArray) {
+            return;
+        }
+        OutputBuffer output;
+        if (cfg.gen.globalMode) {
+            output += R"(
+#include <memory>
+#include <stdexcept>
+#include <type_traits>
+#include "vulkan_hpp_macros.hpp"
+)";
+        }
+        output += beginNamespace();
+        output += RES_VECTOR;
+        output += endNamespace();
+        generateUnit("vulkan_vector.hpp", files, parent, std::move(output));
+    }
+
+    void Generator::generateStructChain(GenOutput &files, OutputBuffer &parent) {
+        OutputBuffer output;
+
+        bool cstyle = false; // cfg.gen.globalMode
+
+        output += beginNamespaceStandalone();
+        if (cstyle) {
+            output += R"(
+  template <typename Type>
+  struct structureType
+  {
+    static VULKAN_HPP_CONST_OR_CONSTEXPR VkStructureType value = VK_STRUCTURE_TYPE_APPLICATION_INFO;
+  };
+)";
+        }
+
+        output += R"(
+
+template <typename X, typename Y>
+  struct StructExtends
+  {
+    enum
+    {
+      value = false
+    };
+  };
+
+  template <typename Type, class...>
+  struct IsPartOfStructureChain
+  {
+    static const bool valid = false;
+  };
+
+  template <typename Type, typename Head, typename... Tail>
+  struct IsPartOfStructureChain<Type, Head, Tail...>
+  {
+    static const bool valid = std::is_same<Type, Head>::value || IsPartOfStructureChain<Type, Tail...>::valid;
+  };
+
+  template <size_t Index, typename T, typename... ChainElements>
+  struct StructureChainContains
+  {
+    static const bool value = std::is_same<T, typename std::tuple_element<Index, std::tuple<ChainElements...>>::type>::value ||
+                              StructureChainContains<Index - 1, T, ChainElements...>::value;
+  };
+
+  template <typename T, typename... ChainElements>
+  struct StructureChainContains<0, T, ChainElements...>
+  {
+    static const bool value = std::is_same<T, typename std::tuple_element<0, std::tuple<ChainElements...>>::type>::value;
+  };
+
+  template <size_t Index, typename... ChainElements>
+  struct StructureChainValidation
+  {
+    using TestType          = typename std::tuple_element<Index, std::tuple<ChainElements...>>::type;
+    static const bool valid = StructExtends<TestType, typename std::tuple_element<0, std::tuple<ChainElements...>>::type>::value &&
+                              ( /*TestType::allowDuplicate ||*/ !StructureChainContains<Index - 1, TestType, ChainElements...>::value ) &&
+                              StructureChainValidation<Index - 1, ChainElements...>::valid;
+  };
+
+  template <typename... ChainElements>
+  struct StructureChainValidation<0, ChainElements...>
+  {
+    static const bool valid = true;
+  };
+
+  template <typename... ChainElements>
+  class StructureChain : public std::tuple<ChainElements...>
+  {
+  public:
+    StructureChain() VULKAN_HPP_NOEXCEPT
+    {
+      static_assert( StructureChainValidation<sizeof...( ChainElements ) - 1, ChainElements...>::valid, "The structure chain is not valid!" );
+)";
+        if (cstyle) {
+            output += R"(      init<sizeof...( ChainElements ) - 1>();
+)";
+        }
+
+        output += R"(
+      link<sizeof...( ChainElements ) - 1>();
+    }
+
+    StructureChain( StructureChain const & rhs ) VULKAN_HPP_NOEXCEPT : std::tuple<ChainElements...>( rhs )
+    {
+      static_assert( StructureChainValidation<sizeof...( ChainElements ) - 1, ChainElements...>::valid, "The structure chain is not valid!" );
+      link( &std::get<0>( *this ),
+            &std::get<0>( rhs ),
+            reinterpret_cast<VkBaseOutStructure *>( &std::get<0>( *this ) ),
+            reinterpret_cast<VkBaseInStructure const *>( &std::get<0>( rhs ) ) );
+    }
+
+    StructureChain( StructureChain && rhs ) VULKAN_HPP_NOEXCEPT : std::tuple<ChainElements...>( std::forward<std::tuple<ChainElements...>>( rhs ) )
+    {
+      static_assert( StructureChainValidation<sizeof...( ChainElements ) - 1, ChainElements...>::valid, "The structure chain is not valid!" );
+      link( &std::get<0>( *this ),
+            &std::get<0>( rhs ),
+            reinterpret_cast<VkBaseOutStructure *>( &std::get<0>( *this ) ),
+            reinterpret_cast<VkBaseInStructure const *>( &std::get<0>( rhs ) ) );
+    }
+
+    StructureChain( ChainElements const &... elems ) VULKAN_HPP_NOEXCEPT : std::tuple<ChainElements...>( elems... )
+    {
+      static_assert( StructureChainValidation<sizeof...( ChainElements ) - 1, ChainElements...>::valid, "The structure chain is not valid!" );
+      link<sizeof...( ChainElements ) - 1>();
+    }
+
+    StructureChain & operator=( StructureChain const & rhs ) VULKAN_HPP_NOEXCEPT
+    {
+      std::tuple<ChainElements...>::operator=( rhs );
+      link( &std::get<0>( *this ),
+            &std::get<0>( rhs ),
+            reinterpret_cast<VkBaseOutStructure *>( &std::get<0>( *this ) ),
+            reinterpret_cast<VkBaseInStructure const *>( &std::get<0>( rhs ) ) );
+      return *this;
+    }
+
+    // StructureChain & operator=( StructureChain && rhs ) = delete;
+
+    template <typename T = typename std::tuple_element<0, std::tuple<ChainElements...>>::type, size_t Which = 0>
+    T & get() VULKAN_HPP_NOEXCEPT
+    {
+      return std::get<ChainElementIndex<0, T, Which, void, ChainElements...>::value>( static_cast<std::tuple<ChainElements...> &>( *this ) );
+    }
+
+    template <typename T = typename std::tuple_element<0, std::tuple<ChainElements...>>::type, size_t Which = 0>
+    T const & get() const VULKAN_HPP_NOEXCEPT
+    {
+      return std::get<ChainElementIndex<0, T, Which, void, ChainElements...>::value>( static_cast<std::tuple<ChainElements...> const &>( *this ) );
+    }
+
+    template <typename T0, typename T1, typename... Ts>
+    std::tuple<T0 &, T1 &, Ts &...> get() VULKAN_HPP_NOEXCEPT
+    {
+      return std::tie( get<T0>(), get<T1>(), get<Ts>()... );
+    }
+
+    template <typename T0, typename T1, typename... Ts>
+    std::tuple<T0 const &, T1 const &, Ts const &...> get() const VULKAN_HPP_NOEXCEPT
+    {
+      return std::tie( get<T0>(), get<T1>(), get<Ts>()... );
+    }
+
+    template <typename ClassType, size_t Which = 0>
+    typename std::enable_if<std::is_same<ClassType, typename std::tuple_element<0, std::tuple<ChainElements...>>::type>::value && ( Which == 0 ), bool>::type
+      isLinked() const VULKAN_HPP_NOEXCEPT
+    {
+      return true;
+    }
+
+    template <typename ClassType, size_t Which = 0>
+    typename std::enable_if<!std::is_same<ClassType, typename std::tuple_element<0, std::tuple<ChainElements...>>::type>::value || ( Which != 0 ), bool>::type
+      isLinked() const VULKAN_HPP_NOEXCEPT
+    {
+      static_assert( IsPartOfStructureChain<ClassType, ChainElements...>::valid, "Can't unlink Structure that's not part of this StructureChain!" );
+      return isLinked( reinterpret_cast<VkBaseInStructure const *>( &get<ClassType, Which>() ) );
+    }
+
+    template <typename ClassType, size_t Which = 0>
+    typename std::enable_if<!std::is_same<ClassType, typename std::tuple_element<0, std::tuple<ChainElements...>>::type>::value || ( Which != 0 ), void>::type
+      relink() VULKAN_HPP_NOEXCEPT
+    {
+      static_assert( IsPartOfStructureChain<ClassType, ChainElements...>::valid, "Can't relink Structure that's not part of this StructureChain!" );
+      auto pNext = reinterpret_cast<VkBaseInStructure *>( &get<ClassType, Which>() );
+      VULKAN_HPP_ASSERT( !isLinked( pNext ) );
+      auto & headElement = std::get<0>( static_cast<std::tuple<ChainElements...> &>( *this ) );
+      pNext->pNext       = reinterpret_cast<VkBaseInStructure const *>( headElement.pNext );
+      headElement.pNext  = pNext;
+    }
+
+    template <typename ClassType, size_t Which = 0>
+    typename std::enable_if<!std::is_same<ClassType, typename std::tuple_element<0, std::tuple<ChainElements...>>::type>::value || ( Which != 0 ), void>::type
+      unlink() VULKAN_HPP_NOEXCEPT
+    {
+      static_assert( IsPartOfStructureChain<ClassType, ChainElements...>::valid, "Can't unlink Structure that's not part of this StructureChain!" );
+      unlink( reinterpret_cast<VkBaseOutStructure const *>( &get<ClassType, Which>() ) );
+    }
+
+  private:
+    template <int Index, typename T, int Which, typename, class First, class... Types>
+    struct ChainElementIndex : ChainElementIndex<Index + 1, T, Which, void, Types...>
+    {
+    };
+
+    template <int Index, typename T, int Which, class First, class... Types>
+    struct ChainElementIndex<Index, T, Which, typename std::enable_if<!std::is_same<T, First>::value, void>::type, First, Types...>
+      : ChainElementIndex<Index + 1, T, Which, void, Types...>
+    {
+    };
+
+    template <int Index, typename T, int Which, class First, class... Types>
+    struct ChainElementIndex<Index, T, Which, typename std::enable_if<std::is_same<T, First>::value, void>::type, First, Types...>
+      : ChainElementIndex<Index + 1, T, Which - 1, void, Types...>
+    {
+    };
+
+    template <int Index, typename T, class First, class... Types>
+    struct ChainElementIndex<Index, T, 0, typename std::enable_if<std::is_same<T, First>::value, void>::type, First, Types...>
+      : std::integral_constant<int, Index>
+    {
+    };
+
+    bool isLinked( VkBaseInStructure const * pNext ) const VULKAN_HPP_NOEXCEPT
+    {
+      VkBaseInStructure const * elementPtr =
+        reinterpret_cast<VkBaseInStructure const *>( &std::get<0>( static_cast<std::tuple<ChainElements...> const &>( *this ) ) );
+      while ( elementPtr )
+      {
+        if ( elementPtr->pNext == pNext )
+        {
+          return true;
+        }
+        elementPtr = elementPtr->pNext;
+      }
+      return false;
+    }
+)";
+        if (cstyle) {
+            output += R"(
+    template <size_t Index>
+    void init() VULKAN_HPP_NOEXCEPT
+    {
+        auto &x = std::get<Index>( static_cast<std::tuple<ChainElements...> &>( *this ) );
+        x.sType = vk::structureType<typename std::tuple_element<Index, std::tuple<ChainElements...>>::type>::value;
+        if constexpr (Index != 0) {
+            init<Index - 1>();
+        }
+    }
+)";
+        }
+        output += R"(
+    template <size_t Index>
+    typename std::enable_if<Index != 0, void>::type link() VULKAN_HPP_NOEXCEPT
+    {
+      auto & x = std::get<Index - 1>( static_cast<std::tuple<ChainElements...> &>( *this ) );
+      x.pNext  = &std::get<Index>( static_cast<std::tuple<ChainElements...> &>( *this ) );
+      link<Index - 1>();
+    }
+
+    template <size_t Index>
+    typename std::enable_if<Index == 0, void>::type link() VULKAN_HPP_NOEXCEPT
+    {
+    }
+
+    void link( void * dstBase, void const * srcBase, VkBaseOutStructure * dst, VkBaseInStructure const * src )
+    {
+      while ( src->pNext )
+      {
+        std::ptrdiff_t offset = reinterpret_cast<char const *>( src->pNext ) - reinterpret_cast<char const *>( srcBase );
+        dst->pNext            = reinterpret_cast<VkBaseOutStructure *>( reinterpret_cast<char *>( dstBase ) + offset );
+        dst                   = dst->pNext;
+        src                   = src->pNext;
+      }
+      dst->pNext = nullptr;
+    }
+
+    void unlink( VkBaseOutStructure const * pNext ) VULKAN_HPP_NOEXCEPT
+    {
+      VkBaseOutStructure * elementPtr = reinterpret_cast<VkBaseOutStructure *>( &std::get<0>( static_cast<std::tuple<ChainElements...> &>( *this ) ) );
+      while ( elementPtr && ( elementPtr->pNext != pNext ) )
+      {
+        elementPtr = elementPtr->pNext;
+      }
+      if ( elementPtr )
+      {
+        elementPtr->pNext = pNext->pNext;
+      }
+      else
+      {
+        VULKAN_HPP_ASSERT( false );  // fires, if the ClassType member has already been unlinked !
+      }
+    }
+  };
+)";
+
+        generateStructChains(output, false && cfg.gen.globalMode);
+        output += endNamespaceStandalone();
+
+        if (cfg.gen.globalMode) {
+            output += R"(
+namespace std {
+  template<typename... ChainElements>
+  class tuple_size<vk::StructureChain<ChainElements...>>:public std::integral_constant<std::size_t, sizeof...(ChainElements)>{};
+
+  template<std::size_t I, typename... ChainElements>
+  class tuple_element<I,vk::StructureChain<ChainElements...>>:public tuple_element<I, std::tuple<ChainElements...>>{};
+}
+)";
+        }
+
+        generateUnit("vulkan_struct_chains.hpp", files, parent, std::move(output));
     }
 
     void Generator::generateStructChains(vkgen::OutputBuffer &output, bool ctype) {
@@ -5671,36 +6200,51 @@ VULKAN_HPP_INLINE typename ResultValueType<void>::type createResultValueType( Vk
 
     void Generator::generateStruct(OutputBuffer &output, const Struct &data, bool exp) {
 
-        const bool genSetters          = data.hasStructType() && !data.returnedonly;
-        const bool genSettersProxy     = genSetters;
+        bool genSetters          = data.hasStructType() && !data.returnedonly;
+        bool genSettersProxy     = genSetters;
         bool genCompareOperators = data.isStruct();
+        bool genConstructors = true;
+
+        if (cfg.gen.globalMode) {
+            genSetters = false;
+            genSettersProxy = false;
+            genCompareOperators = false;
+            genConstructors = false;
+        }
 
         std::string structureType;
 
         if (!data.structTypeValue.empty()) {
-            structureType = "StructureType::" + data.structTypeValue;
+            if (cfg.gen.structMock >= 5) {
+                structureType = data.structTypeValue.original;
+            }
+            else {
+                structureType = "StructureType::" + data.structTypeValue;
+            }
         }
 
-        const bool cstyle = cfg.gen.structMock == 2;
-
-        for (const auto &m : data.members) {
-            if (data.isStruct()) {
-                const auto &type       = m->original.type();
-                const auto &s = structs.find(type);
-                if (s != structs.end()) {
-                    if (s->isUnion()) {
-                        genCompareOperators = false;
+        if (!cfg.gen.globalMode) {
+            for (const auto &m : data.members) {
+                if (data.isStruct()) {
+                    const auto &type = m->original.type();
+                    const auto &s    = structs.find(type);
+                    if (s != structs.end()) {
+                        if (s->isUnion()) {
+                            genCompareOperators = false;
+                        }
                     }
                 }
-            }
-            if (m->hasArrayLength()) {
-                m->setSpecialType(VariableData::TYPE_ARRAY);
+                if (m->hasArrayLength()) {
+                    m->setSpecialType(VariableData::TYPE_ARRAY);
+                }
             }
         }
 
         output += "  " + data.metaTypeDeclaration() + " " + data.name + " {\n";
+        if (cfg.gen.structMock > 0) {
+            output += "#ifndef VULKAN_HPP_NO_STRUCT_TRAITS\n";
+        }
         output += "    using NativeType = " + data.name.original + ";\n";
-
         if (data.isStruct()) {
             if (!structureType.empty()) {
                 output +=
@@ -5709,92 +6253,100 @@ VULKAN_HPP_INLINE typename ResultValueType<void>::type createResultValueType( Vk
                 output += "    static VULKAN_HPP_CONST_OR_CONSTEXPR " + m_ns + "::StructureType structureType = " + structureType + ";\n";
             }
         }
+        if (cfg.gen.structMock > 0) {
+            output += "#endif // VULKAN_HPP_NO_STRUCT_TRAITS\n";
+        }
 
         // constructor
-        if (data.isStruct()) {
-            gen(output, cfg.gen.structConstructors, [&](auto &output) {
-                bool const hasProxy = generateStructConstructor(output, data, false);
+        if (genConstructors) {
+            if (data.isStruct()) {
+                gen(output, cfg.gen.structConstructors, [&](auto &output) {
+                    bool const hasProxy = generateStructConstructor(output, data, false);
 
-                if (hasProxy) {
-                    output += "#  if !defined( VULKAN_HPP_DISABLE_ENHANCED_MODE )\n";
-                    generateStructConstructor(output, data, true);
-                    output += "#  endif // VULKAN_HPP_DISABLE_ENHANCED_MODE \n";
-                }
-
-                // TODO
-                // OutputBuffer x;
-
-                // genFunction(x, "", data.name, std::move(std::string("")));
-
-                // copy constuctor
-                output += vkgen::format(R"(
-VULKAN_HPP_CONSTEXPR {0}( {0} const & rhs ) VULKAN_HPP_NOEXCEPT = default;
-
-)", data.name);
-                {
-                    // C style copy constuctor
-                    FunctionGenerator fun(*this, "", data.name);
-                    fun.className = data.name;
-                    fun.optionalProtect = Protect{"VULKAN_HPP_NO_STRUCT_CONSTRUCTORS", false};
-                    fun.specifierNoexcept = true;
-                    fun.add("Vk" + data.name + " const &", "rhs");
-                    fun.addInit(data.name, "*reinterpret_cast<" + data.name + " const *>( &rhs )");
-                    output += fun.generate(outputFuncs);
-                }
-
-            });
-        } else {
-            gen(output, cfg.gen.unionConstructors, [&](auto &output) {
-                std::map<std::string, uint8_t> types;
-                for (const auto &m : data.members) {
-                    auto it = types.find(m->type());
-                    if (it != types.end()) {
-                        it->second++;
-                        continue;
+                    if (hasProxy) {
+                        output += "#  if !defined( VULKAN_HPP_DISABLE_ENHANCED_MODE )\n";
+                        generateStructConstructor(output, data, true);
+                        output += "#  endif // VULKAN_HPP_DISABLE_ENHANCED_MODE \n";
                     }
-                    types.emplace(m->type(), 1);
-                }
 
-                bool first = true;
-                for (const auto &m : data.members) {
-                    if (m->original.type() == "VkBool32") {
-                        continue;
+                    // TODO
+                    // OutputBuffer x;
+
+                    // genFunction(x, "", data.name, std::move(std::string("")));
+
+                    // copy constuctor
+                    output += vkgen::format(R"(
+{1} {0}( {0} const & rhs ) {2} = default;
+
+)",
+                                            data.name,
+                                            m_constexpr14,
+                                            m_noexcept);
+                    {
+                        // C style copy constuctor
+                        FunctionGenerator fun(*this, "", data.name);
+                        fun.className         = data.name;
+                        fun.optionalProtect   = Protect{ "VULKAN_HPP_NO_STRUCT_CONSTRUCTORS", false };
+                        fun.specifierNoexcept = true;
+                        fun.add("Vk" + data.name + " const &", "rhs");
+                        fun.addInit(data.name, "*reinterpret_cast<" + data.name + " const *>( &rhs )");
+                        output += fun.generate(outputFuncs);
                     }
-                    const auto &type = m->type();
-                    std::string id   = m->identifier();
-
-                    auto it = types.find(type);
-                    // multiple same types, generate only once
-                    if (it != types.end()) {
-                        if (it->second == 0) {
+                });
+            } else {
+                gen(output, cfg.gen.unionConstructors, [&](auto &output) {
+                    std::map<std::string, uint8_t> types;
+                    for (const auto &m : data.members) {
+                        auto it = types.find(m->type());
+                        if (it != types.end()) {
+                            it->second++;
                             continue;
                         }
-                        if (it->second > 1) {
-                            it->second = 0;
-                            id         = strFirstLower(type);
+                        types.emplace(m->type(), 1);
+                    }
+
+                    bool first = true;
+                    for (const auto &m : data.members) {
+                        if (m->original.type() == "VkBool32") {
+                            continue;
                         }
-                    }
+                        const auto &type = m->type();
+                        std::string id   = m->identifier();
 
-                    VariableData var = *m;
-                    var.setIdentifier(id + "_");
-                    id = m->identifier();
+                        auto it = types.find(type);
+                        // multiple same types, generate only once
+                        if (it != types.end()) {
+                            if (it->second == 0) {
+                                continue;
+                            }
+                            if (it->second > 1) {
+                                it->second = 0;
+                                id         = strFirstLower(type);
+                            }
+                        }
 
-                    std::string arg = var.toString(*this);
-                    std::string assignment;
-                    if (first) {
-                        assignment = " = {}";
-                        first      = false;
-                    }
-                    output += vkgen::format(R"(
-VULKAN_HPP_CONSTEXPR_14 {0}({1}{2}) : {3}( {4} ) {{}}
+                        VariableData var = *m;
+                        var.setIdentifier(id + "_");
+                        id = m->identifier();
+
+                        std::string arg = var.toString(*this);
+                        std::string assignment;
+                        if (first) {
+                            assignment = " = {}";
+                            first      = false;
+                        }
+                        output += vkgen::format(R"(
+{5} {0}({1}{2}) : {3}( {4} ) {{}}
             )",
-                                            data.name,
-                                            arg,
-                                            assignment,
-                                            id,
-                                            var.identifier());
-                }
-            });
+                                                data.name,
+                                                arg,
+                                                assignment,
+                                                id,
+                                                var.identifier(),
+                                                m_constexpr14);
+                    }
+                });
+            }
         }
 
         if (genSetters || genSettersProxy) {
@@ -5882,8 +6434,10 @@ VULKAN_HPP_CONSTEXPR_14 {0}({1}{2}) : {3}( {4} ) {{}}
         }
 
         if (data.isStruct()) {
-            if (cfg.gen.structMock < 3 ) {
-                output += vkgen::format(R"(
+            if (cfg.gen.structMock > 0) {
+                output += "#ifndef VULKAN_HPP_NO_STRUCT_ASSIGNMENT\n";
+            }
+            output += vkgen::format(R"(
     {0} & operator=({0} const &rhs) VULKAN_HPP_NOEXCEPT = default;
 
     {0} & operator=({1} const &rhs) VULKAN_HPP_NOEXCEPT {{
@@ -5891,15 +6445,20 @@ VULKAN_HPP_CONSTEXPR_14 {0}({1}{2}) : {3}( {4} ) {{}}
       return *this;
     }}
 )",
-                                        data.name,
-                                        data.name.original,
-                                        m_ns);
+            data.name,
+            data.name.original,
+            m_ns);
+
+            if (cfg.gen.structMock > 0) {
+                output += "#endif // VULKAN_HPP_NO_STRUCT_ASSIGNMENT\n";
             }
         }
-        if (cfg.gen.structMock < 3 ) {
-            output += vkgen::format(R"(
+        if (cfg.gen.structMock > 0) {
+            output += "#ifndef VULKAN_HPP_NO_STRUCT_CONVERT\n";
+        }
+        output += vkgen::format(R"(
 
-    explicit operator {1} const &() const VULKAN_HPP_NOEXCEPT {{
+    operator {1} const &() const VULKAN_HPP_NOEXCEPT {{
       return *reinterpret_cast<const {1} *>(this);
     }}
 
@@ -5908,37 +6467,47 @@ VULKAN_HPP_CONSTEXPR_14 {0}({1}{2}) : {3}( {4} ) {{}}
     }}
 
 )",
-                                    data.name,
-                                    data.name.original);
+        data.name,
+        data.name.original);
+        if (cfg.gen.structMock > 0) {
+            output += "#endif // VULKAN_HPP_NO_STRUCT_CONVERT\n";
         }
 
-        gen(output, cfg.gen.structReflect, [&](auto &output) {
-            ArgumentBuilder types{ false };
-            ArgumentBuilder tie{ false };
-            for (const auto &m : data.members) {
-                types.append(m->fullType(*this), "");
-                tie.append("", m->identifier());
-            }
+        if (cfg.gen.structMock > 0) {
+            output += "#ifndef VULKAN_HPP_NO_REFLECT\n";
+        }
+        if (!cfg.gen.globalMode) {
+            gen(output, cfg.gen.structReflect, [&](auto &output) {
+                ArgumentBuilder types{ false };
+                ArgumentBuilder tie{ false };
+                for (const auto &m : data.members) {
+                    types.append(m->fullType(*this), "");
+                    tie.append("", m->identifier());
+                }
 
-            std::string type = vkgen::format(R"(
+                std::string type = vkgen::format(R"(
 #  if 14 <= VULKAN_HPP_CPP_VERSION
     auto
 #  else
     std::tuple<{0}>
 #  endif
-)",                             types.string());
+)",
+                                                 types.string());
 
-            FunctionGenerator fun(*this, type, "reflect");
-            fun.className         = data.name;
-            fun.base              = &data;
-            fun.optionalProtect   = Protect{ "VULKAN_HPP_USE_REFLECT", true };
-            fun.specifierNoexcept = true;
-            fun.specifierConst = true;
-            fun.code = "      return std::tie(" + tie.string() + ");\n";
+                FunctionGenerator fun(*this, type, "reflect");
+                fun.className         = data.name;
+                fun.base              = &data;
+                fun.optionalProtect   = Protect{ "VULKAN_HPP_USE_REFLECT", true };
+                fun.specifierNoexcept = true;
+                fun.specifierConst    = true;
+                fun.code              = "      return std::tie(" + tie.string() + ");\n";
 
-            output += fun.generate(outputFuncs);
-
-        });
+                output += fun.generate(outputFuncs);
+            });
+        }
+        if (cfg.gen.structMock > 0) {
+            output += "#endif // VULKAN_HPP_NO_REFLECT\n";
+        }
 
         std::string comp;
         for (const auto &m : data.members) {
@@ -6095,27 +6664,44 @@ VULKAN_HPP_CONSTEXPR_14 {0}({1}{2}) : {3}( {4} ) {{}}
             });
         }
 
+        const bool cstyle = cfg.gen.structMock >= 5;
+        bool cmock = cfg.gen.globalMode; // && cfg.gen.structMock >= 4;
         for (const auto &m : data.members) {
             if (data.isStruct()) {
                 std::string assignment = "{}";
                 const auto &type       = m->original.type();
                 if (type == "VkStructureType") {
                     assignment = structureType.empty() ?
-                                                       "StructureType::eApplicationInfo"
+                                                       (cfg.gen.structMock >= 5? "VK_STRUCTURE_TYPE_APPLICATION_INFO" : "StructureType::eApplicationInfo")
                                                        : structureType;
                 }
-
-                m->setAssignment(" = " + assignment);
-                if (cfg.gen.structMock >= 4) {
-                    output += "    " + m->originalFullType() + "    " + m->identifier() + m->optionalArraySuffix() + m->getNameSuffix() + ";\n";
+                if (cfg.gen.structMock >= 2) {
+                    if (cfg.gen.structMock != 3 && (type == "VkStructureType" || m->original.identifier() == "pNext")) {
+                        m->setAssignment(" = " + assignment);
+                    }
+                    else {
+                        assignment = "";
+                        m->setAssignment("");
+                    }
+                }
+                else {
+                    m->setAssignment(" = " + assignment);
+                }
+                if ((cmock && ((!m->isStructOrUnion() && !m->isEnum() && !m->isHandle()) || m->hasArrayLength())) && !cstyle) {
+                    output += "    " + m->fullType(*this) + "    " + m->identifier() + m->optionalArraySuffix() + m->getNameSuffix();
+                    if (!assignment.empty()) {
+                        output += " = ";
+                        output += assignment;
+                    }
+                    output += ";\n";
                 }
                 else {
                     output += "    " + m->toStructStringWithAssignment(*this, cstyle) + ";\n";
                 }
 
             } else {
-                if (cfg.gen.structMock >= 4) {
-                    output += "    " + m->originalFullType() + "    " + m->identifier() + m->optionalArraySuffix() + m->getNameSuffix() + ";\n";
+                if ((cmock && (!m->isStruct() && !m->isEnum() || m->hasArrayLength())) && !cstyle) {
+                    output += "    " + m->fullType(*this) + "    " + m->identifier() + m->optionalArraySuffix() + m->getNameSuffix() + ";\n";
                 }
                 else {
                     output += "    " + m->toStructString(*this, cstyle) + ";\n";
@@ -6125,7 +6711,7 @@ VULKAN_HPP_CONSTEXPR_14 {0}({1}{2}) : {3}( {4} ) {{}}
 
         output += "  };\n\n";
 
-        if (data.isStruct() && !structureType.empty()) {
+        if (data.isStruct() && !structureType.empty() && !cfg.gen.globalMode) {
             gen(output, cfg.gen.handleTemplates, [&](auto &output) {
                 output += vkgen::format(R"(
   template <>
@@ -6194,16 +6780,15 @@ VULKAN_HPP_CONSTEXPR_14 {0}({1}{2}) : {3}( {4} ) {{}}
         output += "    explicit " + name + "(std::nullptr_t) VULKAN_HPP_NOEXCEPT {}\n";
 
         GuardedOutput ctors;
-        GuardedOutput members{};
+        // GuardedOutput members{};
 
         for (auto &d : h.ctorCmds) {
             MemberContext ctx{ .ns = Namespace::VK };
             ctx.insertSuperclassVar = true;
-            ctx.generateInline      = true;
+            // ctx.generateInline      = true;
             ctx.disableDispatch     = true;
             ctx.exp                 = true;
             MemberResolverCtor resolver{ *this, d, ctx };
-
             if (!resolver.hasDependencies) {
                 std::cout << "[EXP] ctor skipped: class " << h.name
                           << ", p: "
@@ -6212,8 +6797,12 @@ VULKAN_HPP_CONSTEXPR_14 {0}({1}{2}) : {3}( {4} ) {{}}
                 continue;
             }
             resolver.generate(ctors, outputFuncs);
+
+            MemberResolverInit init{ *this, d, ctx };
+            init.generate(ctors, outputFuncs);
         }
 
+        /*
         const bool indirect = cfg.gen.classMethods & 2;
         for (auto &d : h.members) {
             if (!indirect && d.src->isIndirect()) {
@@ -6222,7 +6811,7 @@ VULKAN_HPP_CONSTEXPR_14 {0}({1}{2}) : {3}( {4} ) {{}}
             MemberGenerator g{ *this, d, members, outputFuncs };
             g.generate();
         }
-
+        */
         {
             std::stringstream temp;
             ctors.write(temp);  // TODO
@@ -6260,6 +6849,7 @@ VULKAN_HPP_CONSTEXPR_14 {0}({1}{2}) : {3}( {4} ) {{}}
         output += "    {\n";
         output += "      return &m_dispatcher;\n";
         output += "    }\n";
+        /*
         if (!h.isSubclass) {
             std::string src = "m_dispatcher";
             if (cfg.gen.dispatchTableAsUnique) {
@@ -6281,12 +6871,14 @@ VULKAN_HPP_CONSTEXPR_14 {0}({1}{2}) : {3}( {4} ) {{}}
             output += "      return " + m_cast + "<T>(getProcAddr(name.c_str()));\n";
             output += "    }\n";
         }
+        */
+        /*
         {
             std::stringstream temp;
             members.write(temp);
             output += temp.str();  // TODO
         }
-
+        */
         output += "  };\n";
     }
 
@@ -6294,6 +6886,31 @@ VULKAN_HPP_CONSTEXPR_14 {0}({1}{2}) : {3}( {4} ) {{}}
         if (cfg.gen.integrateVma) {
             output += "#include <vma/vk_mem_alloc.h>\n";
         }
+        if (cfg.gen.globalMode) {
+
+            if (cfg.gen.cppStd >= 20) {
+                output += "#include <bit>\n";
+            }
+            output += "#include \"vulkan_vector.hpp\"\n";
+        }
+
+        output += R"(
+#if VULKAN_HPP_ENABLE_DYNAMIC_LOADER_TOOL == 1
+#  if defined( __unix__ ) || defined( __APPLE__ ) || defined( __QNXNTO__ ) || defined( __Fuchsia__ )
+#    include <dlfcn.h>
+#  elif defined( _WIN32 )
+typedef struct HINSTANCE__ * HINSTANCE;
+#    if defined( _WIN64 )
+typedef int64_t( __stdcall * FARPROC )();
+#    else
+typedef int( __stdcall * FARPROC )();
+#    endif
+extern "C" __declspec( dllimport ) HINSTANCE __stdcall LoadLibraryA( char const * lpLibFileName );
+extern "C" __declspec( dllimport ) int __stdcall FreeLibrary( HINSTANCE hLibModule );
+extern "C" __declspec( dllimport ) FARPROC __stdcall GetProcAddress( HINSTANCE hModule, const char * lpProcName );
+#  endif
+#endif
+)";
 
         output += beginNamespace();
         generateDispatchRAII(output);
@@ -6470,7 +7087,7 @@ VULKAN_HPP_CONSTEXPR_14 {0}({1}{2}) : {3}( {4} ) {{}}
                 out.inherits += "public VmaVulkanFunctions";
                 initVmaMap(vma);
 
-                init += "      vkGetDeviceProcAddr = source.vkGetDeviceProcAddr;\n";
+                // init += "      vkGetDeviceProcAddr = source.vkGetDeviceProcAddr;\n";
 
                 for (auto *d : h.filteredMembers) {
                     const std::string &name = d->name.original;
@@ -6482,8 +7099,9 @@ VULKAN_HPP_CONSTEXPR_14 {0}({1}{2}) : {3}( {4} ) {{}}
 
                 for (auto &v : vma) {
                     if (!v.second.second) {
-                        init += "/**/";
-                        init += vkgen::format("      {0} = source.{0};\n", v.first);
+                        // init += "/**/";
+                        // init += vkgen::format("      {0} = source.{0};\n", v.first);
+                        init += vkgen::format("      {0} = PFN_{0}(vkGetDeviceProcAddr(device, \"{0}\"));\n", v.first);
                     } else {
                         init += "/*" + v.first + "*/\n";
                     }
@@ -6706,6 +7324,9 @@ VULKAN_HPP_CONSTEXPR_14 {0}({1}{2}) : {3}( {4} ) {{}}
         GuardedOutput tmp;
 
         MemberGenerator g{ *this, m, tmp, outFuncs };
+        if (ctx.globalUseCAPI) {
+            g.ctx.globalUseCAPI = true;
+        }
         g.generate();
 
         // TODO
@@ -7735,12 +8356,12 @@ VULKAN_HPP_CONSTEXPR_14 {0}({1}{2}) : {3}( {4} ) {{}}
     ~{0}() {{
       unload();
     }}
-
-    {0}(const std::string &libpath) {{
+    /*
+    {0}(const char *libpath) {{
       load(libpath);
     }}
-
-    {3}{1} const * getDispatcher(){4}
+    */
+    {3}{1} const* getDispatcher(){4}
     {{
       return &{2}m_dispatcher;
     }}
@@ -7763,20 +8384,15 @@ VULKAN_HPP_CONSTEXPR_14 {0}({1}{2}) : {3}( {4} ) {{}}
       return {0}<T>({1}vkGetInstanceProcAddr(nullptr, name));
     }}
 
-    template<typename T>
-    VULKAN_HPP_INLINE T getProcAddr(const std::string& name) const {{
-      return {0}<T>({1}vkGetInstanceProcAddr(nullptr, name.c_str()));
-    }}
-
-    void load(const std::string &libpath) {{
+    VULKAN_HPP_NODISCARD bool load(const char *libpath) VULKAN_HPP_NOEXCEPT {{
 
 #ifdef _WIN32
-      lib = LoadLibraryA(libpath.c_str());
+      lib = LoadLibraryA(libpath);
 #else
-      lib = dlopen(libpath.c_str(), RTLD_NOW);
+      lib = dlopen(libpath, RTLD_NOW);
 #endif
       if (!lib) {{
-        throw std::runtime_error("Cant load library: " + libpath);
+        return false;
       }}
 
 #ifdef _WIN32
@@ -7785,21 +8401,22 @@ VULKAN_HPP_CONSTEXPR_14 {0}({1}{2}) : {3}( {4} ) {{}}
       PFN_vkGetInstanceProcAddr getInstanceProcAddr = {0}<PFN_vkGetInstanceProcAddr>(dlsym(lib, "vkGetInstanceProcAddr"));
 #endif
       if (!getInstanceProcAddr) {{
-        throw std::runtime_error("vk::Context: Can't load vkGetInstanceProcAddr");
+        return false;
       }}
 )",
-                                     m_cast,
-                                     dispatchCall);
+            m_cast,
+            dispatchCall);
         if (cfg.gen.dispatchTableAsUnique) {
             out.sPublic += "      m_dispatcher.reset( new " + dispatcher + "( getInstanceProcAddr ) );\n";
         } else {
             out.sPublic += "      m_dispatcher.load( getInstanceProcAddr );\n";
         }
         out.sPublic += R"(
+      return true;
     }
 
-    void load() {
-      load(defaultLibpath);
+    VULKAN_HPP_NODISCARD bool load() VULKAN_HPP_NOEXCEPT {
+      return load(defaultLibpath);
     }
 
     void unload() {
@@ -7817,38 +8434,66 @@ VULKAN_HPP_CONSTEXPR_14 {0}({1}{2}) : {3}( {4} ) {{}}
         return lib;
     }
 
-    VULKAN_HPP_INLINE uint32_t enumerateInstanceVersion() const;
-
 )";
 
         auto &funcs = (cfg.gen.expApi || cfg.gen.globalMode) ? outputFuncs : outputFuncsRAII;
-        funcs.def += vkgen::format(R"(
-    uint32_t Context::enumerateInstanceVersion() const {{
-      if ({0}vkEnumerateInstanceVersion == nullptr) {{
+        if (cfg.gen.globalMode) {
+            funcs.decl += R"(
+    uint32_t enumerateInstanceVersion();
+
+)";
+            funcs.def += vkgen::format(R"(
+    {0} uint32_t enumerateInstanceVersion() {{
+      const auto &pfn = vk::context.getDispatcher()->vkEnumerateInstanceVersion;
+      if (pfn == nullptr) {{
         return VK_API_VERSION_1_0;
       }}
       uint32_t version;
-      {0}vkEnumerateInstanceVersion(&version);
+      auto result = pfn(&version);
+      resultCheck(result,
+                VULKAN_HPP_NAMESPACE_STRING "::enumerateInstanceVersion");
       return version;
     }}
 
 )",
-                                         dispatchCall);
+                                       cfg.macro.mInline.define);
+        }
+        else {
+            out.sPublic += R"(
+    uint32_t enumerateInstanceVersion() const;
 
+)";
+            funcs.def += vkgen::format(R"(
+    uint32_t Context::enumerateInstanceVersion() const noexcept {{
+      if ({0}vkEnumerateInstanceVersion == nullptr) {{
+        return VK_API_VERSION_1_0;
+      }}
+      uint32_t version;
+      auto result = {0}vkEnumerateInstanceVersion(&version);
+      resultCheck(result,
+                VULKAN_HPP_NAMESPACE_STRING "::enumerateInstanceVersion");
+      return version;
+    }}
 
+)",
+                                       dispatchCall);
+        }
 
-        for (auto &m : loader.members) {
-            if (!cfg.gen.globalMode && exp && m.name == "createInstance") {
-                continue;
+        if (!cfg.gen.globalMode) {
+            for (auto &m : loader.members) {
+                if (!cfg.gen.globalMode && exp && m.name == "createInstance") {
+                    continue;
+                }
+                if (m.name == "enumerateInstanceVersion") {
+                    continue;
+                }
+                MemberContext ctx{ .ns = Namespace::RAII };
+                if (m.src->nameCat == Command::NameCategory::CREATE) {
+                    ctx.insertClassVar = true;
+                }
+                ctx.globalUseCAPI = cfg.gen.onlyC;
+                generateClassMember(m, ctx, out, funcs);
             }
-            if (m.name == "enumerateInstanceVersion") {
-                continue;
-            }
-            MemberContext ctx{ .ns = Namespace::RAII };
-            if (m.src->nameCat == Command::NameCategory::CREATE) {
-                ctx.insertClassVar = true;
-            }
-            generateClassMember(m, ctx, out, funcs);
         }
 
         output += R"(
@@ -7897,9 +8542,18 @@ VULKAN_HPP_CONSTEXPR_14 {0}({1}{2}) : {3}( {4} ) {{}}
         return output + "namespace " + ns.getDefine() + " {\n";
     }
 
+    std::string Generator::beginNamespaceStandalone() const {
+        return cfg.gen.splitFiles? beginNamespace(cfg.macro.mNamespace) : "";
+    }
+
     std::string Generator::endNamespace() const {
         return endNamespace(cfg.macro.mNamespace);
     }
+
+    std::string Generator::endNamespaceStandalone() const {
+        return cfg.gen.splitFiles? endNamespace(cfg.macro.mNamespace) : "";
+    }
+
 
     std::string Generator::endNamespaceRAII() const {
         return endNamespace(cfg.macro.mNamespaceRAII);
@@ -8006,6 +8660,8 @@ VULKAN_HPP_CONSTEXPR_14 {0}({1}{2}) : {3}( {4} ) {{}}
             m_cast        = "reinterpret_cast";
         }
 
+        cfg.gen.expApi = cfg.gen.globalMode;
+
         auto start = std::chrono::system_clock::now();
 
         std::string p = outputFilePath;
@@ -8024,6 +8680,8 @@ VULKAN_HPP_CONSTEXPR_14 {0}({1}{2}) : {3}( {4} ) {{}}
 
         // TODO check existing files?
 
+        outputToStringDecl.clear();
+        outputToStringDef.clear();
         outputFuncs.clear();
         outputFuncsRAII.clear();
 

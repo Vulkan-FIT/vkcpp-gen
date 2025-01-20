@@ -64,10 +64,25 @@ namespace vkgen
         writeFile(gen, file.filename, file.content, true);
     }
 
-    void GenOutput::writeFile(Generator &gen, const std::string &filename, const OutputBuffer &content, bool addProtect) {
+    std::string GenOutput::getFileNameProtect(const std::string_view name, bool cguard) {
+        std::string out;
+        for (const auto &c : name) {
+            if (c == '.') {
+                out += '_';
+            } else {
+                out += std::toupper(c);
+            }
+        }
+        if (cguard) {
+            out += '_';
+        }
+        return out;
+    };
+
+    void GenOutput::writeFile(Generator &gen, const std::string_view filename, const OutputBuffer &content, bool addProtect) {
         std::string protect;
         if (addProtect) {
-            protect = getFileNameProtect(filename) + protectSuffix;
+            protect = getFileNameProtect(filename, cguard);
         }
         std::ofstream output;
 

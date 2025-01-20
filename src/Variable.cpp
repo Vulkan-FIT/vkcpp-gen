@@ -452,7 +452,13 @@ std::string vkgen::VariableData::fullType(const Generator &gen, bool forceNamesp
         type += namespaceString(gen, forceNamespace);
     }
     // type += "/*" + std::to_string((int)ns) + "*/";
-    type += fields[TYPE];
+    if (gen.getConfig().gen.enumMock == 1 && !fields[TYPE].starts_with("Vk")) {
+
+        type += std::regex_replace(fields[TYPE], std::regex("FlagBits"), "Flags");
+    }
+    else {
+        type += fields[TYPE];
+    }
     type += fields[SUFFIX];
     switch (specialType) {
         case TYPE_ARRAY:
@@ -499,7 +505,16 @@ std::string vkgen::VariableData::toString(const Generator &gen) const {
 
 std::string vkgen::VariableData::toStructString(const Generator &gen,  bool cstyle) const {
     if (cstyle) {
-        return toString(gen);
+        std::string out = originalFullType();
+        if (!out.ends_with(" ")) {
+            out += " ";
+        }
+        out += fields[IDENTIFIER];
+        if (specialType != TYPE_ARRAY) {
+            out += optionalArraySuffix();
+        }
+        out += nameSuffix;
+        return out;
     }
     const auto &id = fields[IDENTIFIER];
     switch (arrayAttrib) {

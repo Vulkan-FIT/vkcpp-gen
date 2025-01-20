@@ -23,9 +23,6 @@
 #ifdef GENERATOR_GUI
 #    include "Gui.hpp"
 #endif
-#ifdef GENERATOR_EXTENSION
-#include "tool/tool.hpp"
-#endif
 
 #include <iostream>
 #include <stdexcept>
@@ -63,6 +60,10 @@ int main(int argc, char **argv) {
         const auto &guifpsOption = p.add("", "--fps" );
         const auto &extensionOption = p.add("", "--ext" );
         const auto &dbgtagOption = p.add("", "--debug" );
+#ifdef GENERATOR_TOOL
+        const auto &toolOption = p.add("", "--tool" );
+        const auto &analyzeOption = p.add("", "--analyze", true );
+#endif
 
         p.parse(argc, argv);
         // help option block
@@ -125,6 +126,15 @@ int main(int argc, char **argv) {
         }
 
         Registry::loadRegistryPath();
+#ifdef GENERATOR_TOOL
+        if (analyzeOption.set) {
+            if (!loadRegistry()) {
+                return 1;
+            }
+            vkgen::tools::analyzeCode(gen, analyzeOption.value);
+            return 0;
+        }
+#endif
 #ifdef GENERATOR_GUI
         if (!noguiOption.set) {
             GUI gui{ gen };
@@ -132,6 +142,11 @@ int main(int argc, char **argv) {
             if (guifpsOption.set) {
                 gui.showFps = true;
             }
+#ifdef GENERATOR_TOOL
+            if (toolOption.set) {
+                gui.showToolScreen = true;
+            }
+#endif
             if (configOption.set) {
                 gui.setConfigPath(configOption.value);
             }

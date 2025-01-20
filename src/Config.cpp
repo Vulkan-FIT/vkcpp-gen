@@ -174,6 +174,7 @@ namespace vkgen
 
         configBuildList("platforms", gen.platforms.items, whitelist);
         configBuildList("extensions", gen.extensions.items, whitelist);
+        configBuildList("features", gen.features.items, whitelist);
         configBuildList("structs", gen.structs.items, whitelist);
         configBuildList("enums", gen.enums.items, whitelist);
         configBuildList("handles", gen.handles.items, whitelist);
@@ -220,10 +221,12 @@ namespace vkgen
         auto bEnums   = WhitelistBinding{ &gen.enums.items, "enums" };
         auto bPlats   = WhitelistBinding{ &gen.platforms.items, "platforms" };
         auto bExts    = WhitelistBinding{ &gen.extensions.items, "extensions" };
+        auto bFeatures = WhitelistBinding{ &gen.features.items, "features" };
         auto bStructs = WhitelistBinding{ &gen.structs.items, "structs" };
         auto bCmds    = WhitelistBinding{ &gen.commands.items, "commands" };
         auto bHandles = WhitelistBinding{ &gen.handles.items, "handles" };
         auto bindings = { dynamic_cast<AbstractWhitelistBinding *>(&bPlats),   dynamic_cast<AbstractWhitelistBinding *>(&bExts),
+                           dynamic_cast<AbstractWhitelistBinding *>(&bFeatures),
                           dynamic_cast<AbstractWhitelistBinding *>(&bEnums),   dynamic_cast<AbstractWhitelistBinding *>(&bStructs),
                           dynamic_cast<AbstractWhitelistBinding *>(&bHandles), dynamic_cast<AbstractWhitelistBinding *>(&bCmds) };
 
@@ -242,7 +245,10 @@ namespace vkgen
                     for (auto line : split2(value, "\n")) {
                         std::string const t = regex_replace(std::string{ line }, std::regex("(^\\s*)|(\\s*$)"), "");
                         if (!t.empty()) {
-                            if (!parent->add(t)) {
+                            if (t == "*") {
+                                parent->all = true;
+                            }
+                            else if (!parent->add(t)) {
                                 std::cerr << "[Config load] Duplicate: " << t << '\n';
                             }
                         }
@@ -272,6 +278,7 @@ namespace vkgen
 
                     ConfigVisitor prt(b);
                     n.Accept(&prt);
+                    b->found = true;
                 }
                 if (!accepted) {
                     std::cerr << "[Config load] Warning: unknown element: " << n.Value() << " at line " << n.GetLineNum() << '\n';
@@ -296,6 +303,42 @@ namespace vkgen
                     gen.orderedCommands.emplace_back(*it);
                 }
             }
+
+            if (bExts.found) {
+                for (auto &e : gen.extensions) {
+                    if (e.isEnabled()) {
+                        for (auto &c : e.commands) {
+                            c.get().setEnabled(true);
+                        }
+                        for (auto &s : e.structs) {
+                            s.get().setEnabled(true);
+                        }
+                        for (auto &e : e.enums) {
+                            e.get().setEnabled(true);
+                        }
+                    }
+                }
+            }
+
+            // if (!bCmds.found) {
+                for (auto &f : gen.features) {
+                    // std::cout << "F: " << f.isEnabled() << "\n";
+                    if (f.isEnabled()) {
+                        for (auto &c : f.commands) {
+                            c.get().setEnabled(true);
+                        }
+                        for (auto &s : f.structs) {
+                            s.get().setEnabled(true);
+                        }
+                        for (auto &e : f.enums) {
+                            e.get().setEnabled(true);
+                        }
+                        for (auto &t : f.promotedTypes) {
+                            t.get().setEnabled(true);
+                        }
+                    }
+                }
+            // }
 
             // std::cout << "[Config load] whitelist applied" << '\n';
         }
@@ -330,6 +373,11 @@ namespace vkgen
 
     template <typename T>
     void WhitelistBinding<T>::apply() noexcept {
+        if (all) {
+            for (auto &e : *dst) {
+                e.setEnabled(true);
+            }
+        }
         for (auto &e : *dst) {
             bool match = false;
             auto it    = filter.find(e.name.original);
@@ -337,10 +385,12 @@ namespace vkgen
                 match = true;
                 filter.erase(it);
             }
-            for (const auto &r : regexes) {
-                if (std::regex_match(e.name.original, r)) {
-                    match = true;
-                    break;
+            if (!match) {
+                for (const auto &r : regexes) {
+                    if (std::regex_match(e.name.original, r)) {
+                        match = true;
+                        break;
+                    }
                 }
             }
             if (match) {

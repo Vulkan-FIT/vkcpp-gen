@@ -22,6 +22,10 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+if ("${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang")
+    SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++ -fuse-ld=lld -march=native")
+endif()
+
 if(GENERATOR_GUI)
     set(IMGUI_DIR ${CMAKE_CURRENT_SOURCE_DIR}/imgui)
 
@@ -67,6 +71,15 @@ SET(SOURCES
 
 add_executable(${CMAKE_PROJECT_NAME} ${SOURCES} ${HEADERS} ${IMGUI_SOURCES})
 
+if(TRUE)
+    add_compile_definitions(GENERATOR_TOOL)
+    target_sources(${CMAKE_PROJECT_NAME}
+        PRIVATE
+        src/tool/tool.hpp
+        src/tool/tool.cpp
+    )
+endif ()
+
 target_link_libraries(${CMAKE_PROJECT_NAME} tinyxml2)
 
 set(tinyxml2_BUILD_TESTING OFF CACHE BOOL "Build tests for tinyxml2")
@@ -92,3 +105,5 @@ if(GENERATOR_GUI)
     target_link_libraries(${CMAKE_PROJECT_NAME} glfw ${Vulkan_LIBRARIES})
 endif(GENERATOR_GUI)
 
+
+# add_subdirectory(src/tool)

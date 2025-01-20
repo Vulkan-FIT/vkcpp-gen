@@ -30,6 +30,10 @@
 #include "Generator.hpp"
 #include "imgui.h"
 
+#ifdef GENERATOR_TOOL
+#include "tool/tool.hpp"
+#endif
+
 namespace vkgen
 {
 
@@ -565,6 +569,7 @@ namespace vkgen
             V *data = {};
 
             std::string name;
+            bool open = false;
 
             virtual void setEnabledChildren(bool value, bool ifSelected = false) {
                 for (T &e : *data) {
@@ -690,7 +695,6 @@ namespace vkgen
         size_t                   currentFrame = 0;
         uint32_t                 imageIndex   = 0;
 
-        // AsyncButton loadRegButton;
         AsyncButton unloadRegButton;
         AsyncButton generateButton;
         AsyncButton loadConfigButton;
@@ -821,7 +825,10 @@ namespace vkgen
 
         void setConfigPath(const std::string &path);
 
-        bool showFps = {};
+        bool showFps = false;
+#ifdef GENERATOR_TOOL
+        bool showToolScreen = false;
+#endif
     };
 
 }  // namespace vkgen

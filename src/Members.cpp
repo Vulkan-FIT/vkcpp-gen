@@ -417,7 +417,10 @@ namespace vkgen
             else if (ctx.globalModeStatic || ctx.exp || ctx.disableDispatch) {
                 if (gen.getConfig().gen.globalMode && (cls && cls->name != gen.loader.name)) {
                     output += gen.m_ns;
-                    output += "::dispatch.";
+                    // output += "::dispatch.";
+                    output += "::";
+                    output += strFirstLower(cmd->top->name);
+                    output += ".getDispatcher()->";
                 }
                 // if ((cls && cls->name == gen.loader.name) || !ctx.globalModeStatic/*!cls->name.empty() && !cls->isSubclass*/) {
                 else {
@@ -655,7 +658,12 @@ namespace vkgen
             output += "static ";
         }
         if (specifierInline && (!decl || ctx.generateInline)) {
-            output += gen.m_inline + " ";
+            if (!decl && cfg.gen.globalMode) {
+                output += cfg.macro.mInline.define + " ";
+            }
+            else {
+                output += gen.m_inline + " ";
+            }
         }
         if (specifierExplicit && decl) {
             output += cfg.macro.mExplicit.get() + " ";
@@ -778,8 +786,8 @@ namespace vkgen
             }
         }
 
-        if (gen.getConfig().gen.globalMode) {
-        // if (ctx.globalModeStatic) {
+        // if (gen.getConfig().gen.globalMode) {
+        if (ctx.globalUseCAPI) {
             for (VariableData &p : cmd->params) {
                 if (p.getNamespace() == Namespace::VK) {
                     p.setType(p.original.type());
@@ -1154,8 +1162,79 @@ namespace vkgen
         return createArgument(var, sameType, useOrignal);
     }
 
-    bool MemberResolver::returnsTemplate() {
+    bool MemberResolver::returnsTemplate() const {
         return last->isTemplated();
+    }
+
+    bool MemberResolver::returnsVkVector() const {
+        for (const Var &p : cmd->outParams) {
+            if ((p.isHandle() || p.isStructOrUnion() || p.isEnum()) /* && p.isArray()*/) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    bool MemberResolver::hasVkParam() const {
+/*
+        if (returnsStruct() || cmd->createsHandle()) {
+            return true;
+        }
+        if (!std::any_of(cmd->params.begin(), cmd->params.end(), [](Var &p){ return !p.getIgnoreProto();})) {
+            return false;
+        }
+        */
+/*
+        if (cmd->returnsVector()) {
+            for (const Var &p : cmd->outParams) {
+                if (p.isHandle() || p.isStructOrUnion() || p.isEnum()) {
+                    return true;
+                }
+            }
+        }
+*/
+        for (const Var &p : cmd->params) {
+            if (p.getIgnoreProto()) {
+                continue;
+            }
+            if (p.isEnum()) {
+                return true;
+            }
+            if ((p.isHandle() || p.isStructOrUnion() || (p.isEnum() && gen.getConfig().gen.enumMock != 1)) /* && p.isPointer()*/) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    bool MemberResolver::hasParam() const {
+        for (const Var &p : cmd->params) {
+            if (p.getIgnoreProto()) {
+                continue;
+            }
+//            if (!p.getIgnoreProto()) {
+//                return true;
+//            }
+            if ((p.isHandle() || p.isStructOrUnion() || (p.isEnum() && gen.getConfig().gen.enumMock != 1)) && p.getSpecialType() != VariableData::Type::TYPE_ARRAY_PROXY) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    bool MemberResolver::hasVkProxy() const {
+        for (const Var &p : cmd->params) {
+            if (p.getIgnoreProto()) {
+                continue;
+            }
+            //            if (!p.getIgnoreProto()) {
+            //                return true;
+            //            }
+            if ((p.isHandle() || p.isStructOrUnion() || p.isEnum()) && p.getSpecialType() == VariableData::Type::TYPE_ARRAY_PROXY) {
+                return true;
+            }
+        }
+        return false;
     }
 
     void MemberResolver::setGenInline(bool value) {
@@ -1276,16 +1355,12 @@ namespace vkgen
         if (ctx.staticVector) {
             // const auto &type = var.namespaceString(gen) + var.type();
             std::string assignment;
-            if (var.isLenAttribIndirect()) {
-                // var.setNamespace(Namespace::STD);
-                // var.setFullType("", "array<" + type + ", " + id + ">", "");
+            // if (var.isLenAttribIndirect()) {
                 var.setSpecialType(VariableData::TYPE_EXP_ARRAY);
-            } else {
-                // var.setNamespace(Namespace::VK);
-                // var.setFullType("", "Vector<" + type + ", " + id + ">", "");
+            // } else {
                 var.setSpecialType(VariableData::TYPE_VK_VECTOR);
                 assignment = " = 0";
-            }
+            // }
             var.sizeTemplate = {"size_t ", "N", assignment};
         }
         else {
@@ -1914,7 +1989,7 @@ namespace vkgen
                 output += "      " + declareReturnVar();
             }
         }
-        if (cfg.gen.globalMode) {
+        if (cfg.gen.globalMode && ctx.globalUseCAPI) {
             for (const VariableData &v : cmd->outParams) {
                 if (!v.isArray() && v.isStruct() && v.identifier() != "structureChain") {
                     auto s = gen.structs.find(v.original.type());
@@ -1970,7 +2045,7 @@ namespace vkgen
                     if (var) {
                         arg = var->identifier();
                     }
-                    if (v.getSpecialType() == VariableData::TYPE_VK_VECTOR && !v.isStructChain()) {
+                    if (false && v.getSpecialType() == VariableData::TYPE_VK_VECTOR && !v.isStructChain()) {
                         resizeCode += "          " + id + ".reserve( " + arg + " );\n";
                         downsizeCode += "      " + id + ".confirm( " + arg + " );\n";
 //                        if (v.isStructChain()) {
@@ -1979,6 +2054,32 @@ namespace vkgen
 //                        }
                     } else {
                         resizeCode += "          " + id + ".resize( " + arg + " );\n";
+                        if (v.type().starts_with("Vk")) {
+                            const auto vkstruct = gen.structs.find(v.type());
+                            if (vkstruct != gen.structs.end()) {
+                                bool hasNext = false;
+                                for (const auto &m : vkstruct->members) {
+                                    if (m->identifier() == "pNext") {
+                                        hasNext = true;
+                                        break;
+                                    }
+                                }
+                                if (ctx.globalUseCAPI) {
+                                    const auto &sType = vkstruct->structTypeValue.original;
+                                    if (!sType.empty() || hasNext) {
+                                        resizeCode += "          for (auto &s : " + v.identifier() + ") {\n";
+                                        if (!sType.empty()) {
+                                            resizeCode += "            s.sType = " + sType + ";\n";
+                                        }
+                                        if (hasNext) {
+                                            resizeCode += "            s.pNext = nullptr;\n";
+                                        }
+                                        resizeCode += "          }\n";
+                                    }
+                                }
+                                // resizeCode += " // " + v.type() + " " + vkstruct->structTypeValue.original + "\n";
+                            }
+                        }
                         if (v.isStructChain()) {
                             resizeCode += "          " + structChainIdentifier + ".resize( " + arg + " );\n";
                         }
@@ -1995,7 +2096,7 @@ namespace vkgen
                         // output += "// vsc: " + v.identifier() + "\n";
                         std::string type; // TODO refactor
                         std::string sType;
-                        if (structChainType.starts_with("Vk")) {
+                        if (ctx.globalUseCAPI && structChainType.starts_with("Vk")) {
                             type = structChainType;
                             const auto &s = gen.structs[structChainType];
                             sType = s.structTypeValue.original;
@@ -2385,7 +2486,7 @@ for (auto const &{2} : {3}) {
     }
 
     MemberResolverCtor::MemberResolverCtor(const Generator &gen, ClassCommand &d, MemberContext &refCtx)
-      : MemberResolverDefault(gen, d, refCtx, true)//, _name("")
+      : MemberResolverDefault(gen, d, refCtx, true)
     {
         // _name = gen.convertCommandName(name.original, cls->superclass);
         name.assign(cls->name);
@@ -2534,6 +2635,42 @@ for (auto const &{2} : {3}) {
 
         return output;
     }
+
+    MemberResolverInit::MemberResolverInit(const Generator &gen, ClassCommand &d, MemberContext &refCtx) :
+        MemberResolverCtor(gen, d, refCtx)
+    {
+        name.assign("init");
+
+        returnType = cmd->pfnReturn == Command::PFNReturnCategory::VK_RESULT ? (gen.getConfig().gen.onlyC? "VkResult" : "Result") : "void";
+    }
+
+    std::string MemberResolverInit::generateMemberBody() {
+        std::string output;
+
+        std::string call = generatePFNcall();
+
+        output += "      " + call + "\n";
+        bool hasResult = cmd->pfnReturn == Command::PFNReturnCategory::VK_RESULT;
+        if (hasResult) {
+            output += "      if(" + resultVar.identifier() + " == VK_SUCCESS) {\n  ";
+        }
+        output += vkgen::format("      m_dispatcher = {0}Dispatcher( {1}, {2} );\n", cls->name, src, cls->vkhandle.toArgument(gen));
+
+        if (hasResult) {
+            output += "      }\n";
+        }
+        if (hasResult) {
+            if (!gen.getConfig().gen.onlyC) {
+                returnValue = "static_cast<Result>(" + resultVar.identifier() + ")";
+            }
+            else {
+                returnValue = resultVar.identifier();
+            }
+
+        }
+        return output;
+    }
+
 
     MemberResolverVectorCtor::MemberResolverVectorCtor(const Generator &gen, ClassCommand &d, MemberContext &refCtx) : MemberResolverCtor(gen, d, refCtx) {
         if (cmd->params.empty()) {
@@ -2928,15 +3065,15 @@ for (auto const &{2} : {3}) {
             } else {
                 if (!gen.getConfig().gen.globalMode) {
                     ctx.insertSuperclassVar = true;
+                    ctx.generateInline      = true;
                 }
                 ctx.isStatic            = true;
-                ctx.generateInline      = true;
             }
         // }
     }
 
     void MemberGenerator::generateStructChain() {
-        if (!m.src->isStructChain()) {
+        if (!m.src->isStructChain() || (ctx.globalModeStatic && ctx.globalUseCAPI)) {
             return;
         }
 
@@ -3064,18 +3201,24 @@ for (auto const &{2} : {3}) {
     void MemberGenerator::generateDestroy(ClassCommand &m, MemberContext &ctx, const std::string &name) {
         const auto &orig = m.src->name.original;
         if (gen.getConfig().gen.globalMode && !gen.getConfig().gen.allocatorParam) {
-            if (orig == "vkDestroyInstance" || orig != "vkDestroyDevice") {
+            if (orig == "vkDestroyInstance" || orig == "vkDestroyDevice") {
                 ctx.globalModeStatic = false;
                 generate<MemberResolverDefault>();
+                if (ctx.globalUseCAPI) {
+                    return;
+                }
+                ctx.globalModeStatic = true;
             }
-            return;
         }
-        generate<MemberResolverDefault>();
+        else {
+            generate<MemberResolverDefault>();
+        }
 
         if (orig != "vkDestroyInstance" && orig != "vkDestroyDevice" && m.src->hasOverloadedDestroy()) {
             // std::cerr << "skip generate destroy overload: " << m.src->name.original << '\n';
             return;
         }
+
 
         const auto &type = m.cls->name;
 
@@ -3093,7 +3236,7 @@ for (auto const &{2} : {3}) {
         const auto &lastType = last->type();
         // deprecated if
         if (last->original.type() == m.src->name.original) {
-            std::cerr << "can't generate destroy: " << last->original.type() << " != " << m.src->name.original << '\n';
+            // std::cerr << "can't generate destroy: " << last->original.type() << " != " << m.src->name.original << '\n';
             return;
         }
 
