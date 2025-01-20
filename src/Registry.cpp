@@ -575,7 +575,7 @@ namespace vkgen
                 }
             }
             if (!retarray) {
-                hist[c.successCodes.size()] += 1;
+                hist[c.successCodes.size()]++;
             }
             else {
                 arraycnt++;
@@ -2009,7 +2009,7 @@ namespace vkgen::vkr
         else {
             value += std::to_string(v);
         }
-        numericValue = negative? -v : v;
+        numericValue = negative? -static_cast<int64_t>(v) : static_cast<int64_t>(v);
     }
 
     Enum::Enum(Generator &gen, xml::Element elem, const std::string_view name, const std::string_view type, bool isBitmask)
@@ -2053,7 +2053,7 @@ namespace vkgen::vkr
                 }
                 if (p->isStruct()) {
                     const auto &s = reg.structs.find(p->original.type());
-                    if (!s->extends.empty()) {
+                    if (s != reg.structs.end() && !s->extends.empty()) {
                         structChain = &*s;
                     }
                 }

@@ -1622,7 +1622,7 @@ bool vkgen::GUI::drawContainerHeader(const char *name, SelectableGUI *s, bool em
             }
         }
 
-        if (!vkgen::GUI::menuOpened && BeginPopupContextItem()) {
+        if (!vkgen::GUI::menuOpened && BeginPopupContextItem("options")) {
             Text("-- %s --", name);
             if (MenuItem("Select all")) {
                 s->setSelected(true);
@@ -1861,7 +1861,6 @@ static void draw(vkgen::GenericType *data, bool filterNested) {
     bool check = supported && data->isEnabled();
 
     // PushID(xid++);
-
     if (Checkbox("", &check)) {
         // std::cout << "set enabled: " << check << ": " << data->name << '\n';
         if (supported) {
@@ -1979,9 +1978,6 @@ void vkgen::GUI::Container<T>::draw(int id, bool filterNested) {
         n += std::to_string(cnt);
         n += " / ";
         n += std::to_string(total);
-        // n += " (";
-        // n += std::to_string(this->data->size());
-        // n += ")";
         open = drawContainerHeader(n.c_str(), this, false, info);
     }
     if (open) {
@@ -1996,143 +1992,6 @@ void vkgen::GUI::Container<T>::draw(int id, bool filterNested) {
     }
     PopID();
 }
-
-/*
-void vkgen::GUI::Type::draw(int id) {
-    if (Type::drawFiltered && !filtered) {
-        return;
-    }
-    bool supported = data->isSuppored() && data->vulkanSpec != 0;
-    if (!supported) {
-        return;
-    }
-    std::string disabler;
-//    if (data->vulkanSpec > 0) {
-//        disabler += "vk: " + std::to_string(data->vulkanSpec);
-//    }
-
-    if (visualizeDisabled) {
-        if (data->ext) {
-            if (!data->ext->isEnabled()) {
-                disabler = data->ext->name;
-            }
-            else if (data->ext->platform) {
-                if (!data->ext->platform->isEnabled()) {
-                    disabler = data->ext->platform->name;
-                }
-            }
-        }
-    }
-//    if (!supported) {
-//        disabler += "unsupported\n";
-//    }
-
-    if (!disabler.empty()) {
-        PushStyleVar(ImGuiStyleVar_Alpha,
-                            GetStyle().Alpha * 0.6f);
-    }
-
-    std::string n = data->name.original;
-    PushID(id);
-    Dummy(ImVec2(5.0f, 0.0f));
-    SameLine();
-    bool check = supported && data->isEnabled();
-
-    PushID(xid++);
-
-    if (Checkbox("", &check)) {
-        // std::cout << "set enabled: " << check << ": " << data->name << '\n';
-        if (supported) {
-            data->setEnabled(check);
-        }
-    }
-    PopID();
-
-    SameLine();
-    drawSelectable(n.c_str(), this);
-
-    std::string text = "(" + data->metaTypeString() + ")\n";
-
-    if (!disabler.empty()) {
-        text += disabler + " is disabled\n\n";
-    }
-    text += "Requires:\n";
-    for (const auto &d : data->dependencies) {
-        text += "  " + d->name;
-        text += " (" + d->metaTypeString() + ")";
-        text += "\n";
-    }
-    if (!data->subscribers.empty()) {
-        text += "\nRequired by:\n";
-        for (const auto &d : data->subscribers) {
-            text += "  " + d->name;
-            text += " (" + d->metaTypeString() + ")";
-            text += "\n";
-        }
-    }
-
-    if (!text.empty()) {
-        SameLine();
-        TextDisabled("[?]");
-        if (IsItemHovered()) {
-            BeginTooltip();
-            PushTextWrapPos(GetFontSize() * 100.0f);
-            TextUnformatted(text.c_str());
-            PopTextWrapPos();
-            EndTooltip();
-        }
-    }
-
-    // if ( !data->dependencies.empty()) {
-
-    if (!disabler.empty()) {
-        PopStyleVar();
-    }
-    PopID();
-}
-
-void vkgen::GUI::Extension::draw(int id) {
-    if (Type::drawFiltered && !filtered) {
-        return;
-    }
-    if (!data->isSuppored()) {
-        return;
-    }
-    bool hasNone = true;
-    for (const auto &c : commands) {
-        if (!Type::drawFiltered || c->filtered) {
-            hasNone = false;
-            break;
-        }
-    }
-
-    PushID(id);
-    if (drawContainerHeader(name, this, hasNone)) {
-        this->commands.draw(0);
-        TreePop();
-    }
-    PopID();
-}
-
-void vkgen::GUI::Platform::draw(int id) {
-    if (Type::drawFiltered && !filtered) {
-        return;
-    }
-    bool hasNone = true;
-    for (const auto &c : extensions) {
-        if (!Type::drawFiltered || c->filtered) {
-            hasNone = false;
-            break;
-        }
-    }
-    PushID(id);
-    if (drawContainerHeader(name, this, hasNone)) {
-        this->extensions.draw(0);
-        TreePop();
-    }
-    PopID();
-}
-*/
 
 void vkgen::GUI::Collection::draw(int &id, bool filtered) {
     //    Type::visualizeDisabled = true;

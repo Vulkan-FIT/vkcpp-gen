@@ -40,7 +40,7 @@ if(GENERATOR_GUI)
     )
 
     add_compile_definitions(GENERATOR_GUI)
-endif(GENERATOR_GUI)
+endif()
 
 SET(HEADERS
     src/ArgumentsParser.hpp
@@ -71,14 +71,14 @@ SET(SOURCES
 
 add_executable(${CMAKE_PROJECT_NAME} ${SOURCES} ${HEADERS} ${IMGUI_SOURCES})
 
-if(TRUE)
+if(ENABLE_TOOL)
     add_compile_definitions(GENERATOR_TOOL)
     target_sources(${CMAKE_PROJECT_NAME}
         PRIVATE
         src/tool/tool.hpp
         src/tool/tool.cpp
     )
-endif ()
+endif()
 
 target_link_libraries(${CMAKE_PROJECT_NAME} tinyxml2)
 
@@ -103,7 +103,12 @@ if(GENERATOR_GUI)
                                )
 
     target_link_libraries(${CMAKE_PROJECT_NAME} glfw ${Vulkan_LIBRARIES})
-endif(GENERATOR_GUI)
+endif()
 
+if( MSVC )
+    if(${CMAKE_VERSION} VERSION_GREATER_EQUAL "3.6.0")
+        set_property( DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT ${CMAKE_PROJECT_NAME} )
+    endif()
+endif()
 
 # add_subdirectory(src/tool)
