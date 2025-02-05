@@ -656,6 +656,10 @@ namespace vkgen
             append(arg.type, arg.id, arg.assignment, initId, ref);
         }
 
+        size_t size() const {
+            return args.size();
+        }
+
         operator std::string() const noexcept {
             return str;
         }

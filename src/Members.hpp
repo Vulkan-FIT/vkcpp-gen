@@ -324,6 +324,27 @@ namespace vkgen
         }
     };
 
+    class MemberResolverPassReference final : public MemberResolver
+    {
+      public:
+        MemberResolverPassReference(const Generator &gen, ClassCommand &d, MemberContext &ctx) : MemberResolver(gen, d, ctx) {
+            ctx.disableSubstitution = true;
+            enhanced                = false;
+            dbgtag                  = "pass ref";
+
+            for (VariableData &p : cmd->params) {
+                if (p.isPointer() && !p.isArray() && p.original.type() != "void" && p.original.type() != "VkAllocationCallbacks") {
+                    p.convertToReference();
+                }
+            }
+
+        }
+
+        virtual std::string generateMemberBody() override {
+            return "      " + generatePFNcall(true) + "\n";
+        }
+    };
+
     class MemberResolverVectorRAII final : public MemberResolverDefault
     {
       protected:
@@ -458,6 +479,10 @@ namespace vkgen
         void generatePass() {
             // protects.emplace_back("VULKAN_HPP_EXPERIMENTAL_CSTYLE", false);
             generate<MemberResolverPass>();
+
+            if (m.src->flags & Command::CommandFlags::REFERENCE_PARAM) {
+                generate<MemberResolverPassReference>();
+            }
         }
 
         void generateStructChain();

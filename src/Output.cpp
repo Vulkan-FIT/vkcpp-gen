@@ -145,12 +145,20 @@ extern "C" {
     }
 
     void GuardedOutput::clear() {
-        output->clear();
+        if (output) {
+            output->clear();
+        }
+        else {
+            output = std::make_unique<OutputBuffer>();
+        }
         segments.clear();
     }
 
     size_t GuardedOutput::size() const {
-        size_t s = output->size();
+        size_t s = 0;
+        if (output) {
+            s += output->size();
+        }
         for (const auto &k : segments) {
             s += k.second.size();
         }

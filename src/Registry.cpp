@@ -2037,6 +2037,7 @@ namespace vkgen::vkr
 
         initParams();
 
+        bool toReference    = false;
         bool hasHandle    = false;
         bool hasTopHandle    = false;
         bool canTransform = false;
@@ -2055,6 +2056,9 @@ namespace vkgen::vkr
                     const auto &s = reg.structs.find(p->original.type());
                     if (s != reg.structs.end() && !s->extends.empty()) {
                         structChain = &*s;
+                        if (p->isArray()) {
+                            structChainVector = true;
+                        }
                     }
                 }
                 canTransform = true;
@@ -2067,6 +2071,12 @@ namespace vkgen::vkr
             if (p->isPointer() && p->isStructOrUnion()) {
                 canTransform = true;
             }
+
+            if (p->isPointer() && !p->isArray() && p->original.type() != "void" && p->original.type() != "VkAllocationCallbacks") {
+                if (!p->isStructOrUnion() || p->isOutParam()) {
+                    toReference = true;
+                }
+            }
         }
 
         if (hasHandle) {
@@ -2077,6 +2087,9 @@ namespace vkgen::vkr
         }
         if (canTransform) {
             setFlagBit(CommandFlags::CPP_VARIANT, true);
+        }
+        if (toReference) {
+            setFlagBit(CommandFlags::REFERENCE_PARAM, true);
         }
 
         prepared = true;

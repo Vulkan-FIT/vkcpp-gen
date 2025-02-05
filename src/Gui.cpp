@@ -303,7 +303,7 @@ void vkgen::GUI::createInstance() {
 
     static std::vector<const char *> layers;
     // layers.push_back("VK_LAYER_LUNARG_monitor");
-    // layers.push_back("VK_LAYER_KHRONOS_validation");
+    layers.push_back("VK_LAYER_KHRONOS_validation");
 
     VkInstanceCreateInfo instanceInfo{ .sType                   = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
                                        .pApplicationInfo        = &appInfo,
@@ -312,7 +312,8 @@ void vkgen::GUI::createInstance() {
                                        .enabledExtensionCount   = glfwExtensionCount,
                                        .ppEnabledExtensionNames = glfwExtensions };
 
-    if (vkCreateInstance(&instanceInfo, nullptr, &instance) != VK_SUCCESS) {
+    auto result = vkCreateInstance(&instanceInfo, nullptr, &instance);
+    if (result != VK_SUCCESS) {
         throw std::runtime_error("VK Error: failed to create instance!");
     }
 }

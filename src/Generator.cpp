@@ -380,7 +380,7 @@ static constexpr char const *RES_UNIQUE_HANDLE{ R"(
   private:
     Type m_value;
   };
-
+  /*
   template <typename UniqueType>
   VULKAN_HPP_INLINE std::vector<typename UniqueType::element_type> uniqueToRaw( std::vector<UniqueType> const & handles )
   {
@@ -388,7 +388,7 @@ static constexpr char const *RES_UNIQUE_HANDLE{ R"(
     std::transform( handles.begin(), handles.end(), newBuffer.begin(), []( UniqueType const & handle ) { return handle.get(); } );
     return newBuffer;
   }
-
+  */
   template <typename Type, typename Dispatch>
   VULKAN_HPP_INLINE void swap( UniqueHandle<Type, Dispatch> & lhs, UniqueHandle<Type, Dispatch> & rhs ) VULKAN_HPP_NOEXCEPT
   {
@@ -514,7 +514,7 @@ static constexpr char const *RES_UNIQUE_HANDLE_EXP{ R"(
   private:
     Type m_value;
   };
-
+  /*
   template <typename UniqueType>
   VULKAN_HPP_INLINE std::vector<typename UniqueType::element_type> uniqueToRaw( std::vector<UniqueType> const & handles )
   {
@@ -522,7 +522,7 @@ static constexpr char const *RES_UNIQUE_HANDLE_EXP{ R"(
     std::transform( handles.begin(), handles.end(), newBuffer.begin(), []( UniqueType const & handle ) { return handle.get(); } );
     return newBuffer;
   }
-
+  */
   template <typename Type>
   VULKAN_HPP_INLINE void swap( UniqueHandle<Type> & lhs, UniqueHandle<Type> & rhs ) VULKAN_HPP_NOEXCEPT
   {
@@ -541,7 +541,7 @@ static constexpr char const *RES_RESULT_CHECK_CPP{ R"(
 #else
     if ( result != Result::eSuccess ){0}
     {{
-      detail::throwResultException( result, message );
+      detail::throwResultException( static_cast<VkResult>(result), message );
     }}
 #endif
   }}
@@ -556,7 +556,7 @@ static constexpr char const *RES_RESULT_CHECK_CPP{ R"(
 #else
     if ( std::find( successCodes.begin(), successCodes.end(), result ) == successCodes.end() ){0}
     {{
-      detail::throwResultException( result, message );
+      detail::throwResultException( static_cast<VkResult>(result), message );
     }}
 #endif
   }}
@@ -570,7 +570,7 @@ static constexpr char const *RES_RESULT_CHECK_CPP{ R"(
 #else
     if ( result != VK_SUCCESS ){0}
     {{
-      detail::throwResultException( static_cast<Result>(result), message );
+      detail::throwResultException( result, message );
     }}
 #endif
   }}
@@ -585,7 +585,7 @@ static constexpr char const *RES_RESULT_CHECK_CPP{ R"(
 #else
     if ( std::find( successCodes.begin(), successCodes.end(), result ) == successCodes.end() ){0}
     {{
-      detail::throwResultException( static_cast<Result>(result), message );
+      detail::throwResultException( result, message );
     }}
 #endif
   }}
@@ -1078,7 +1078,7 @@ namespace detail {
   };
 }
 
-template<typename T, size_t N, bool s = N != 0>
+template<typename T, size_t N = 0, bool s = N != 0>
 class Vector;
 
 template<typename T, size_t N>
@@ -1088,7 +1088,7 @@ class Vector<T, N, true> {
   using reference = value_type&;
   using const_reference = const value_type&;
   using iterator = detail::Iterator<T>;
-  using const_iterator = detail::Iterator<std::add_const<T>>;
+  using const_iterator = detail::Iterator<T>;
 
   T *m_begin = buffer;
   T *m_end   = buffer;
@@ -1379,7 +1379,7 @@ class Vector<T, N, false> {
   using reference = value_type&;
   using const_reference = const value_type&;
   using iterator = detail::Iterator<T>;
-  using const_iterator = detail::Iterator<std::add_const<T>>;
+  using const_iterator = detail::Iterator<T>;
 
   T *m_begin = {};
   T *m_end   = {};
@@ -2404,11 +2404,9 @@ import std;
 #include <array>   // ArrayWrapperND
 )";
         }
-        if (!cfg.gen.globalMode) {
-            output += R"(
+        output += R"(
 #include <cstring> // strcmp, std::memcpy
 )";
-        }
         output += R"(
 #include <string>  // std::string
 
@@ -2431,11 +2429,9 @@ import std;
 #  include <system_error>  // std::is_error_code_enum
 #endif
 
-/*
 #if defined( VULKAN_HPP_SUPPORT_SPAN )
 #  include <span>
 #endif
-*/
 )";
 
         if (cfg.gen.globalMode) {
@@ -2948,10 +2944,12 @@ import std;
                 out.sPrivate += "    Dispatch const *                    m_dispatch            = nullptr;\n";
             }
 
-            out.sPublic += "    " + name + "(" + args.string() + ") VULKAN_HPP_NOEXCEPT\n";
-            out.sPublic += "     " + args.initializer() + "\n";
-            out.sPublic += "    {\n";
-            out.sPublic += "    }\n";
+            if (args.size() > 0) {
+                out.sPublic += "    " + name + "(" + args.string() + ") VULKAN_HPP_NOEXCEPT\n";
+                out.sPublic += "     " + args.initializer() + "\n";
+                out.sPublic += "    {\n";
+                out.sPublic += "    }\n";
+            }
 
             if (owner) {
                 out.sPublic += vkgen::format(R"(
@@ -4407,6 +4405,7 @@ import std;
             impl += "#define VULKAN_HPP_INLINE\n";
             impl += "#include \"vulkan_funcs_impl.hpp\"\n\n";
             impl += "#include \"vulkan_to_string_impl.hpp\"\n\n";
+            impl += "#include \"vulkan_global.hpp\"\n\n";
             // impl += beginNamespace();
         }
 
@@ -4435,6 +4434,11 @@ import std;
         };
 
         if (cfg.gen.globalMode) {
+            funcs += R"(
+#if ( __cpp_lib_span >= 201803L )
+#  include <span>
+#endif
+)";
             funcs += "#include \"vulkan_context.hpp\"\n";
             funcs += "#include \"vulkan_array.hpp\"\n";
             funcs += "#include \"vulkan_types.hpp\"\n";
@@ -4449,11 +4453,95 @@ import std;
         funcs  += beginNamespace();
         funcs_impl += beginNamespace();
 
+        funcs += R"(
+  void resultCheck( Result result, char const * message );
+
+  void resultCheck( Result result, char const * message, std::initializer_list<Result> successCodes );
+
+  void resultCheck( VkResult result, char const * message );
+
+  void resultCheck( VkResult result, char const * message, std::initializer_list<VkResult> successCodes );
+)";
+
+        // funcs_impl += vkgen::format(RES_RESULT_CHECK, cfg.gen.branchHint ? "VULKAN_HPP_UNLIKELY" : "");
+        funcs_impl += vkgen::format(RES_RESULT_CHECK_CPP, cfg.gen.branchHint ? "VULKAN_HPP_UNLIKELY" : "");
+
         if (cfg.gen.globalMode) {
-            funcs += vkgen::format(RES_RESULT_CHECK, cfg.gen.branchHint ? "VULKAN_HPP_UNLIKELY" : "");
-        }
-        else {
-            funcs += vkgen::format(RES_RESULT_CHECK_CPP, cfg.gen.branchHint ? "VULKAN_HPP_UNLIKELY" : "");
+            funcs += vkgen::format(R"(
+  void loadLib();
+
+  void initInstance(const {0}::InstanceCreateInfo& createInfo);
+
+  {0}::Result initInstance_noThrow(const {0}::InstanceCreateInfo& createInfo);
+
+  void initInstance(const {0}::InstanceCreateInfo& createInfo, bool& vulkan10enforced);
+
+  void initDevice({0}::PhysicalDevice physicalDevice, const {0}::DeviceCreateInfo& createInfo);
+
+  {0}::Result initDevice_noThrow({0}::PhysicalDevice physicalDevice, const {0}::DeviceCreateInfo& createInfo);
+
+  bool isExtensionSupported(std::span<{0}::ExtensionProperties> extensionList, const char* extensionName) noexcept;
+)",
+                                   m_ns);
+
+
+            funcs_impl += vkgen::format(R"(
+  VULKAN_HPP_INLINE void loadLib() {{
+    if (!{0}::context.load()) {{
+      throw std::runtime_error(VULKAN_HPP_NAMESPACE_STRING "::loadLib");
+    }}
+  }}
+
+  VULKAN_HPP_INLINE void initInstance(const {0}::InstanceCreateInfo& createInfo) {{
+    Result result = {0}::instance.init({0}::context, createInfo);
+    {0}::resultCheck(static_cast<VkResult>(result), VULKAN_HPP_NAMESPACE_STRING "::initInstance");
+  }}
+
+  VULKAN_HPP_INLINE {0}::Result initInstance_noThrow(const {0}::InstanceCreateInfo& createInfo) {{
+    return {0}::instance.init({0}::context, createInfo);
+  }}
+
+  VULKAN_HPP_INLINE void initInstance(const {0}::InstanceCreateInfo& createInfo, bool& vulkan10enforced) {{
+    Result result = {0}::initInstance_noThrow(createInfo);
+
+    if(result == Result::eErrorIncompatibleDriver && createInfo.pApplicationInfo &&
+       createInfo.pApplicationInfo->apiVersion != vk::ApiVersion10)
+    {{
+      // replace requested Vulkan version by 1.0 to avoid eErrorIncompatibleDriver error
+      ApplicationInfo appInfo2(*createInfo.pApplicationInfo);
+      appInfo2.apiVersion = ApiVersion10;
+      InstanceCreateInfo createInfo2(createInfo);
+      createInfo2.pApplicationInfo = &appInfo2;
+
+      // create instance (second attempt)
+      result = {0}::initInstance_noThrow(createInfo2);
+      vulkan10enforced = true;
+    }}
+    else {{
+      vulkan10enforced = false;
+    }}
+
+    {0}::resultCheck(static_cast<VkResult>(result), VULKAN_HPP_NAMESPACE_STRING "::initInstance");
+  }}
+
+  VULKAN_HPP_INLINE void initDevice({0}::PhysicalDevice physicalDevice, const {0}::DeviceCreateInfo& createInfo) {{
+    Result result = {0}::device.init({0}::instance, physicalDevice, createInfo);
+    {0}::resultCheck(static_cast<VkResult>(result), VULKAN_HPP_NAMESPACE_STRING "::initDevice");
+  }}
+
+  VULKAN_HPP_INLINE {0}::Result initDevice_noThrow({0}::PhysicalDevice physicalDevice, const {0}::DeviceCreateInfo& createInfo) {{
+    return {0}::device.init({0}::instance, physicalDevice, createInfo);
+  }}
+
+  VULKAN_HPP_INLINE bool isExtensionSupported(const std::span<{0}::ExtensionProperties> extensionList, const char* extensionName) noexcept
+  {{
+    for(const ExtensionProperties &extension : extensionList)
+      if(strcmp(extension.extensionName, extensionName) == 0)
+        return true;
+    return false;
+  }}
+)",
+                                        m_ns);
         }
 
         // funcs2 += beginNamespace();
@@ -6891,7 +6979,9 @@ namespace std {
             if (cfg.gen.cppStd >= 20) {
                 output += "#include <bit>\n";
             }
-            output += "#include \"vulkan_vector.hpp\"\n";
+            if (cfg.gen.functionsVecAndArray) {
+                output += "#include \"vulkan_vector.hpp\"\n";
+            }
         }
 
         output += R"(

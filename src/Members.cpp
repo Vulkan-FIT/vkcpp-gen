@@ -636,7 +636,8 @@ namespace vkgen
 
         if (returnSuccessCodes() > 1) {
             if (type.empty() || type == "void") {
-                type = gen.getConfig().gen.globalMode? "VkResult" : "Result";
+                // type = gen.getConfig().gen.globalMode? "VkResult" : "Result";
+                type = "Result";
             }
         }
 
@@ -848,12 +849,12 @@ namespace vkgen
 
         clsname = cls->name;
 
-        if (cfg.gen.globalMode) {
-            returnType           = std::string(cmd->type);
-        }
-        else {
-            returnType           = strStripVk(std::string(cmd->type));  // TODO unnecessary?
-        }
+//        if (cfg.gen.globalMode) {
+//            returnType           = std::string(cmd->type);
+//        }
+//        else {
+            returnType           = strStripVk(std::string(cmd->type));
+        // }
 
 
         dbgtag               = "default";
@@ -1296,14 +1297,8 @@ namespace vkgen
                 else if (v.isOptional()) {
                     if (v.isPointer()) {
                         v.setAssignment(" VULKAN_HPP_DEFAULT_ARGUMENT_NULLPTR_ASSIGNMENT");
-                    } else {
-                        if (v.original.isPointer()) {
-                            v.setAssignment(" VULKAN_HPP_DEFAULT_ARGUMENT_NULLPTR_ASSIGNMENT");
-                        } else {
-                            v.setAssignment(" VULKAN_HPP_DEFAULT_ARGUMENT_ASSIGNMENT");
-                            // if (v->isReference() && !v->isConst())
-                            // integrity check?
-                        }
+                    } else if (v.isEnum()) {
+                        v.setAssignment(" VULKAN_HPP_DEFAULT_ARGUMENT_ASSIGNMENT");
                     }
                 }
                 if (v.getAssignment().empty()) {
@@ -2641,7 +2636,9 @@ for (auto const &{2} : {3}) {
     {
         name.assign("init");
 
-        returnType = cmd->pfnReturn == Command::PFNReturnCategory::VK_RESULT ? (gen.getConfig().gen.onlyC? "VkResult" : "Result") : "void";
+        returnType = cmd->pfnReturn == Command::PFNReturnCategory::VK_RESULT ? "Result"
+                                                                             // (gen.getConfig().gen.onlyC? "VkResult" : "Result")
+            : "void";
     }
 
     std::string MemberResolverInit::generateMemberBody() {
@@ -2806,8 +2803,6 @@ for (auto const &{2} : {3}) {
         if (last->isArray() && !ctx.returnSingle) {
             return MemberResolverDefault::generateMemberBody();
         }
-
-        output += "// TEST\n";
 
         if (ctx.returnSingle && last->isLenAttribIndirect()) {
             auto rhs = last->getLenAttribRhs();
@@ -3096,6 +3091,9 @@ for (auto const &{2} : {3}) {
             ctx.staticVector = true;
             generate<MemberResolverDefault>();
             ctx.staticVector = false;
+        }
+        if (m.src->structChainVector) {
+
         }
         ctx.structureChain = false;
     }

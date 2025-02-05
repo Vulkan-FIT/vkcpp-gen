@@ -459,7 +459,7 @@ namespace vkgen
                 CREATES_TOP_HANDLE     = 1 << 4,
                 CPP_VARIANT            = 1 << 5,
                 OVERLOADED_DESTROY     = 1 << 6,
-                VK_PARAM               = 1 << 7,
+                REFERENCE_PARAM        = 1 << 7,
             };
 
             enum class PFNReturnCategory
@@ -480,6 +480,7 @@ namespace vkgen
             EnumFlag<CommandFlags>   flags{};
             vkr::Handle             *top{};
             const vkr::Struct       *structChain{};
+            bool                     structChainVector = false;
 
             Command(Generator &gen, xml::Element elem, const std::string_view name);
 
