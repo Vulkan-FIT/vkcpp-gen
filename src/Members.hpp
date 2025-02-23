@@ -43,6 +43,7 @@ namespace vkgen
         bool      returnSingle               = {};
         bool      insertClassVar             = {};
         bool      insertSuperclassVar        = {};
+        bool      removeSuperclassVar        = {};
         bool      addVectorAllocator         = {};
         bool      commentOut                 = {};
         bool      templateVector             = {};
@@ -51,6 +52,8 @@ namespace vkgen
         bool      globalModeStatic           = {};
         bool      globalUseCAPI              = {};
         bool      exp                        = {};
+        bool      suffixNoThrow              = {};
+        bool      suffixThrow                = {};
     };
 
     class MemberResolver
@@ -81,6 +84,7 @@ namespace vkgen
         std::string guard;
 
         MemberContext ctx;
+        bool          isNothrow            = true;
         bool          enhanced             = true;
         bool          constructor          = {};
         bool          constructorInterop   = {};
@@ -161,13 +165,13 @@ namespace vkgen
 
         std::string generateReturnType() const;
 
-        std::string createReturnType() const;
+        std::string createReturnType();
 
         std::string generateNodiscard();
 
         std::string getSpecifiers(bool decl);
 
-        std::string getProto(const std::string &indent, const std::string &prefix, bool declaration, bool &usesTemplate);
+        std::string getProto(const std::string &indent, const std::string &prefix, const std::string &name, bool declaration, bool &usesTemplate);
 
         std::string getDbgtag(const std::string &prefix, bool bypass = false);
 
@@ -227,6 +231,8 @@ namespace vkgen
         std::string createPassArgumentsRAII() const;
 
         std::string createPassArguments(bool hasAllocVar) const;
+
+        std::string createAliasArguments() const;
 
         std::string createStaticPassArguments(bool hasAllocVar) const;
 
@@ -292,6 +298,15 @@ namespace vkgen
         std::string temporary() const;
 
         std::string generateMemberBody() override;
+    };
+
+    class MemberResolverDestroy final : public MemberResolverDefault
+
+    {
+      public:
+        MemberResolverDestroy(const Generator &gen, ClassCommand &d, MemberContext &ctx);
+
+        // std::string generateMemberBody() override;
     };
 
     class MemberResolverClearRAII final : public MemberResolver
@@ -440,6 +455,7 @@ namespace vkgen
     class MemberResolverCreateUnique final : public MemberResolverCreate
     {
         std::string poolSource;
+        std::string createSource;
         std::unique_ptr<VariableData> uniqueVector;
         bool isSubclass = {};
 
@@ -455,6 +471,9 @@ namespace vkgen
         ClassCommand                 &m;
         GuardedOutput                &decl;
         GuardedOutputFuncs           &out;
+        bool noThrowGenerated = false;
+        bool throwGenerated = false;
+        std::string dbg;
       public:
         MemberContext                 ctx;
         bool isGlobalModeStatic = {};
@@ -468,6 +487,12 @@ namespace vkgen
 //                }
 //            }
             resolver.generate(out.decl, out, protects);
+            if (resolver.isNothrow) {
+                noThrowGenerated = true;
+            }
+            else {
+                throwGenerated = true;
+            }
         }
 
         template <typename T>

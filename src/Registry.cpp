@@ -554,6 +554,8 @@ namespace vkgen
     void Registry::orderCommands() {
         std::sort(commands.ordered.begin(), commands.ordered.end(), [](const Command &a, const Command &b){ return a.successCodes.size() < b.successCodes.size(); });
 
+        return;
+
         const auto findCode = [](const Command &cmd, const std::string_view code) {
             for (const auto &c : cmd.successCodes) {
                 if (c == code) {
@@ -756,8 +758,8 @@ namespace vkgen
                 std::cerr << "  " << c.name << '\n';
             }
         }
-        std::cout << "instance: " << instance.members.size() * 8<< " commands\n";
-        std::cout << "device: " << device.members.size() * 8<< " commands\n";
+        // std::cout << "instance: " << instance.members.size() << " commands\n";
+        // std::cout << "device: " << device.members.size() << " commands\n";
         if (verbose)
             std::cout << "Assign commands done" << '\n';
     }

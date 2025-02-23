@@ -275,6 +275,8 @@ namespace vkgen
 
         void generateHandles(OutputBuffer &output, OutputBuffer &output_smart, GenOutput &out);
 
+        void generateUniqueHandlesBase(OutputBuffer &output);
+
         void generateUniqueHandles(OutputBuffer &output);
 
         std::string generateStructsInclude() const;
@@ -296,6 +298,8 @@ namespace vkgen
         void generateStruct(OutputBuffer &output, const Struct &data, bool exp);
 
         std::string generateIncludeRAII(GenOutput &out) const;
+
+        void generateDestroyMember(const Handle &h, GuardedOutput &decl, GuardedOutputFuncs &def);
 
         void generateClassWithPFN(OutputBuffer &output, Handle &h);
 

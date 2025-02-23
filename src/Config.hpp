@@ -144,6 +144,8 @@ namespace vkgen
         ConfigWrapper<bool> noStdVector{ "no_std_vector", { true } };
         ConfigWrapper<bool> splitFiles{ "split_files", { true } };
 
+        ConfigWrapper<bool> extendedFunctions{ "extended_functions", { false } };
+
         ConfigWrapper<bool>    spaceshipOperator{ "spaceship_operator", true };
         ConfigWrapper<bool>    branchHint{ "branch_hint", false };
         ConfigWrapper<bool>    importStdMacro{ "import_std_macro", false };
@@ -192,6 +194,7 @@ namespace vkgen
                             globalMode,
                             onlyC,
                             // internalFunctions,
+                            extendedFunctions,
                             allocatorParam,
                             resultValueType,
                             functionsVecAndArray,

@@ -81,11 +81,22 @@ namespace vkgen
         // std::string const indent = ctx.isStatic ? "  " : "    ";
         std::string const indent       = "    ";
         bool              usesTemplate = false;  // TODO
-        output += getProto(indent, "(declaration)", true, usesTemplate) + ";\n";
-//        if (usesTemplate) {
-//            output += "#endif // VULKAN_HPP_EXPERIMENTAL_NO_TEMPLATES\n";
+
+
+//        if (cmd->pfnReturn == Command::PFNReturnCategory::VK_RESULT) {
+//            output += "// " + std::string(isNothrow ? "NOTHROW" : "THROW") + " " + dbgtag + "\n";
 //        }
-        output += "\n";
+//        else {
+//            output += "// void\n";
+//        }
+
+        output += getProto(indent, "(declaration)", name, true, usesTemplate) + ";\n\n";
+
+        if (gen.getConfig().gen.extendedFunctions && !constructor && !ctx.suffixThrow && !ctx.suffixNoThrow) {
+            // output += "// alias\n";
+            output += getProto(indent, "(declaration)", name + (isNothrow? "_noThrow" : "_throw"), true, usesTemplate) + ";\n\n";
+        }
+
         if (ctx.commentOut) {
             output += "*/\n";
         }
@@ -102,7 +113,7 @@ namespace vkgen
 
         // if (last) output += "// last: " + last->fullType(gen) + "\n";
         bool usesTemplate = false;
-        output += getProto(indent, "(definition)", genInline, usesTemplate) + "\n    {\n";
+        output += getProto(indent, "(definition)", name, genInline, usesTemplate) + "\n    {\n";
         if (ctx.ns == Namespace::RAII && isIndirect() && !constructor) {
             if (cls->ownerhandle.empty()) {
                 std::cerr << "Error: can't generate function: class has "
@@ -135,11 +146,47 @@ namespace vkgen
         if (generateReturnType() != "void" && !returnValue.empty()) {
             output += "      return " + returnValue + ";\n";
         }
-        output += "    }\n";
-//        if (usesTemplate) {
-//            output += "#endif // VULKAN_HPP_EXPERIMENTAL_NO_TEMPLATES\n";
-//        }
-        output += "\n";
+        output += "    }\n\n";
+
+        if (gen.getConfig().gen.extendedFunctions && !constructor && !ctx.suffixThrow && !ctx.suffixNoThrow) {
+            output += getProto(indent, "(definition)", name + (isNothrow? "_noThrow" : "_throw"), genInline, usesTemplate) + "\n    {\n";
+            output += "      ";
+            if (returnType != "void") {
+                output += "return ";
+            }
+            if (!clsname.empty()) {
+                output += "this->";
+            }
+            else {
+                output += gen.m_ns + "::";
+            }
+            output += name;
+            std::string temp;
+            const auto addTemplate = [&](const VariableData::Template &t) {
+                if (!t.pass.empty()) {
+                    temp += t.pass;
+                    temp += ", ";
+                }
+                else if (!t.type.empty()) {
+                    temp += t.type;
+                    temp += ", ";
+                }
+            };
+            for (VariableData &p : cmd->params) {
+                addTemplate(p.dataTemplate);
+                addTemplate(p.sizeTemplate);
+                addTemplate(p.allocatorTemplate);
+            }
+            if (!temp.empty()) {
+                strStripSuffix(temp, ", ");
+                output += "<";
+                output += std::move(temp);
+                output += ">";
+            }
+            output += "(" + createAliasArguments() + ");\n";
+            output += "    }\n\n";
+        }
+
         if (ctx.commentOut) {
             output += "*/\n";
         }
@@ -561,7 +608,7 @@ namespace vkgen
     }
 
     bool MemberResolver::usesResultValue() const {
-        if (returnSuccessCodes() <= 1) {
+        if (returnSuccessCodes() <= 1 || ctx.suffixThrow) {
             return false;
         }
         // if (cmd->outParams.size() > 1) {
@@ -601,7 +648,7 @@ namespace vkgen
         return returnType;
     }
 
-    std::string MemberResolver::createReturnType() const {
+    std::string MemberResolver::createReturnType() {
         if (constructor) {
             return "";
         }
@@ -633,11 +680,17 @@ namespace vkgen
         } else if (count >= 2) {
             type = "std::pair<" + str + ">";
         }
+        if (cmd->pfnReturn == Command::PFNReturnCategory::VK_RESULT) {
+            isNothrow = false;
+        }
 
         if (returnSuccessCodes() > 1) {
             if (type.empty() || type == "void") {
                 // type = gen.getConfig().gen.globalMode? "VkResult" : "Result";
-                type = "Result";
+                if (!ctx.suffixThrow) {
+                    type = "Result";
+                    isNothrow = true;
+                }
             }
         }
 
@@ -677,7 +730,7 @@ namespace vkgen
         return output;
     }
 
-    std::string MemberResolver::getProto(const std::string &indent, const std::string &prefix, bool declaration, bool &usesTemplate) {
+    std::string MemberResolver::getProto(const std::string &indent, const std::string &prefix, const std::string &name, bool declaration, bool &usesTemplate) {
         std::string dbg = getDbgtag(prefix);
         std::string output;
         if (!dbg.empty()) {
@@ -738,7 +791,7 @@ namespace vkgen
         if (!ret.empty()) {
             output += ret + " ";
         }
-        if (!declaration && !ctx.isStatic) {
+        if (!declaration && !ctx.isStatic && !clsname.empty()) {
             //                if (constructorInterop) {
             //                    output += gen.getConfig().macro.mNamespace->get() + "::";
             //                }
@@ -752,7 +805,8 @@ namespace vkgen
         if (specifierConst && !ctx.isStatic && !constructor && !ctx.globalModeStatic) {
             output += " const";
         }
-        if (returnType == "void" || returnType == "Result" || returnType == "VkResult") {
+        // if (returnType == "void" || returnType == "Result" || returnType == "VkResult") {
+        if (isNothrow) {
             output += " " + gen.m_noexcept;
         }
         if (ctx.ns == Namespace::RAII && !temp.empty()) {
@@ -832,6 +886,13 @@ namespace vkgen
         }
         // std::cerr << "MemberResolver() prepare  " << cmd->name.original << '\n';
         cmd->prepare();
+
+        if (ctx.suffixNoThrow) {
+            name += "_noThrow";
+        }
+        else if (ctx.suffixThrow) {
+            name += "_throw";
+        }
         //            size_t i = 0;
         //            for (auto &p : cmd->params) {
         //                std::stringstream s;
@@ -854,6 +915,7 @@ namespace vkgen
 //        }
 //        else {
             returnType           = strStripVk(std::string(cmd->type));
+            // isNothrow = cmd->pfnReturn != Command::PFNReturnCategory::VK_RESULT;
         // }
 
 
@@ -950,13 +1012,18 @@ namespace vkgen
         }
 
 
-        if (ctx.globalModeStatic) {
+        if (ctx.globalModeStatic || gen.getConfig().gen.globalMode) {
             VariableData &first = *cmd->params.begin();
             if (first.isHandle()) {
                 auto &h = gen.findHandle(first.type());
                 if (!h.isSubclass) {
-                    first.setIgnoreProto(true);
-                    first.setIgnoreFlag(true);
+                    if (ctx.globalModeStatic || ctx.removeSuperclassVar) {
+                        first.setIgnorePass(true);
+                        first.setIgnoreProto(true);
+                        first.setIgnoreFlag(true);
+                    }
+                    first.setConst(true);
+                    first.convertToReference();
                     // std::cout << "H: " << first.type() << ", " << cmd->name.original << "\n";
                 }
             }
@@ -1136,6 +1203,11 @@ namespace vkgen
         output += createArguments(
           filterPass, [&](const VariableData &v) { return v.identifier(); }, false, false);
         return output;
+    }
+
+    std::string MemberResolver::createAliasArguments() const {
+        return createArguments(
+          filterProto, [&](const VariableData &v) { return v.identifier(); }, false, false);
     }
 
     std::string MemberResolver::createStaticPassArguments(bool hasAllocVar) const {
@@ -1474,23 +1546,25 @@ namespace vkgen
                     structChainType = p.type();
                     structChainIdentifier = p.identifier();
                     std::string type = "StructureChain";
-                    std::string templ;
+                    // std::string templ;
+                    std::string pass;
+                    if (!p.dataTemplate.type.empty()) {
+                        std::cout << "Warning: overriding template with structureChain\n";
+                    }
                     if (p.isArrayOut()) {
                         p.setNamespace(Namespace::NONE);
-                        templ = "typename StructureChain";
+                        // templ = "typename StructureChain";
+                        p.dataTemplate = {"typename ", "StructureChain"};
                     }
                     else {
                         type += "<X, Y, Z...>";
-                        templ = "typename X, typename Y, typename... Z";
+                        p.dataTemplate = {"", "typename X, typename Y, typename... Z"};
+                        p.dataTemplate.pass = "X, Y, Z...";
                     }
                     //                    const auto &t = p.getTemplate();
                     //                    if (!t.empty()) {
                     //                        templ += ", " + t;
                     //                    }
-                    if (!p.dataTemplate.type.empty()) {
-                        std::cout << "Warning: overriding template with structureChain\n";
-                    }
-                    p.dataTemplate = {"", templ};
 
                     p.setType(type);
                     p.setIdentifier("structureChain");
@@ -2379,6 +2453,38 @@ for (auto const &{2} : {3}) {
         return "";
     }
 
+
+    MemberResolverDestroy::MemberResolverDestroy(const Generator &gen, ClassCommand &d, MemberContext &ctx) : MemberResolverDefault(gen, d, ctx) {
+        bool isArray = false;
+        for (VariableData &p : cmd->params) {
+            // const auto &handle = gen.findHandle(last->original.type());
+            if (!p.isHandle() || p.type() == clsname) {
+                p.setIgnoreFlag(true);
+                p.setIgnoreProto(true);
+            }
+            if (p.isArrayIn()) {
+                isArray = true;
+                auto *v = p.getLengthVar();
+                if (v) {
+                    v->setAltPFN("1");
+                }
+            }
+        }
+
+        if (isArray) {
+            strStripSuffix(name, "s");
+        }
+
+        if (name.starts_with("free")) {
+            name = "free";
+        }
+        else if (name.starts_with("destroy")) {
+            name = "destroy";
+        }
+
+        dbgtag = "raii clear";
+    }
+
     MemberResolverClearRAII::MemberResolverClearRAII(const Generator &gen, ClassCommand &d, MemberContext &ctx) : MemberResolver(gen, d, ctx) {
         for (VariableData &p : cmd->params) {
             p.setIgnoreFlag(true);
@@ -2951,6 +3057,18 @@ for (auto const &{2} : {3}) {
         }
 
         // original = name;
+        if (ctx.globalModeStatic) {
+            name = name.original;
+            strStripPrefix(name, "vk");
+            name = strFirstLower(name);
+            if (ctx.returnSingle) {
+                auto tag = gen.strRemoveTag(name);
+                strStripSuffix(name, "s");
+                name += tag;
+            }
+            clsname = "";
+            createSource = name;
+        }
         name += "Unique";
         dbgtag = "create unique";
 
@@ -2962,28 +3080,31 @@ for (auto const &{2} : {3}) {
     std::string MemberResolverCreateUnique::generateMemberBody() {
         std::string output;
 
-        const auto &cfg = gen.getConfig();
         std::string deleter;
-        if (isSubclass) {
-            deleter += "*this";
-        }
-        if (!poolSource.empty()) {
-            if (!deleter.empty()) {
-                deleter += ", ";
+        if (!ctx.globalModeStatic) {
+
+            const auto &cfg = gen.getConfig();
+            if (isSubclass) {
+                deleter += "*this";
             }
-            deleter += poolSource;
-        }
-        if (cfg.gen.allocatorParam && allocatorVar && !allocatorVar->getIgnoreProto()) {
-            if (!deleter.empty()) {
-                deleter += ", ";
+            if (!poolSource.empty()) {
+                if (!deleter.empty()) {
+                    deleter += ", ";
+                }
+                deleter += poolSource;
             }
-            deleter += "allocator";
-        }
-        if (!cfg.gen.expApi && cfg.gen.dispatchParam) {
-            if (!deleter.empty()) {
-                deleter += ", ";
+            if (cfg.gen.allocatorParam && allocatorVar && !allocatorVar->getIgnoreProto()) {
+                if (!deleter.empty()) {
+                    deleter += ", ";
+                }
+                deleter += "allocator";
             }
-            deleter += "d";
+            if (!cfg.gen.expApi && cfg.gen.dispatchParam) {
+                if (!deleter.empty()) {
+                    deleter += ", ";
+                }
+                deleter += "d";
+            }
         }
 
         if (uniqueVector) {
@@ -3008,7 +3129,15 @@ for (auto const &{2} : {3}) {
 
         std::string args;
 
-        if (ctx.isStatic) {
+        if (ctx.globalModeStatic) {
+            args += gen.m_ns;
+            args += "::";
+            args += createSource;
+            args += "(";
+            args += createPassArguments(false);
+            args += ")";
+        }
+        else if (ctx.isStatic) {
             // output += "      " + last->original.type() + " = " + cmd->name.original + "\n";
             const auto &id = last->identifier();
             output += "      " + last->original.type() + " " + id + ";\n";
@@ -3297,12 +3426,32 @@ for (auto const &{2} : {3}) {
             case Command::NameCategory::ALLOCATE:
             case Command::NameCategory::CREATE:
                 generateCreate();
-                return;
-            case Command::NameCategory::DESTROY: generateDestroy(m, ctx, "destroy"); return;
-            case Command::NameCategory::FREE: generateDestroy(m, ctx, "free"); return;
+                break;
+            case Command::NameCategory::DESTROY:
+                generateDestroy(m, ctx, "destroy");
+                break;
+            case Command::NameCategory::FREE:
+                generateDestroy(m, ctx, "free");
+                break;
             default:
                 generateDefault();
-                return;
+                break;
+        }
+
+        if (gen.getConfig().gen.extendedFunctions &&  m.src->pfnReturn == Command::PFNReturnCategory::VK_RESULT) {
+            if (!noThrowGenerated) {
+                // std::cout << "nt miss: " << m.src->name << "\n";
+                ctx.suffixNoThrow = true;
+                generatePass();
+            }
+            if (!throwGenerated) {
+                // std::cout << "t miss:  " << m.src->name << "\n";
+                ctx.suffixThrow = true;
+                generateDefault();
+            }
+            decl += "\n";
+            decl += dbg;
+            decl += "\n";
         }
 
     }

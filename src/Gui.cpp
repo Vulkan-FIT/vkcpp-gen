@@ -1136,28 +1136,29 @@ vkgen::GUI::GUI(vkgen::Generator &gen) {
         make_config_option(Level::L2, 0, BoolGUI{ &cfg.gen.proxyPassByCopy.data, "Pass ArrayProxy as copy" }, "Pass ArrayProxy parameter as copy instead of reference"),
         make_config_option(Level::L2, 0, BoolGUI{ &cfg.gen.unifiedException.data, "Unified exception" }, "Generates only vk::Error exeption"),
         make_config_option(Level::L2, 0, BoolGUI{ &cfg.gen.branchHint.data, "Branch hints" }, "Add compiler C++20 hints (likely, unlikely)")),
-      std::make_unique<RenderableColumn<8>>(
+      std::make_unique<RenderableColumn<9>>(
         1,
         std::make_unique<RenderableText>("Handles"),
-        make_config_option(Level::L0, 0, BoolDefineGUI(&cfg.gen.handleConstructors.data, "constructors", "Removes handle constructors")),
-        make_config_option(Level::L1, 0, BoolDefineGUI(&cfg.gen.smartHandles.data, "smart handles", "Removes smart (unique) handles")),
-        make_config_option(Level::L1, 0, BoolDefineGUI(&cfg.gen.handleTemplates.data, "type traits", "Removes CppType and isVulkanHandleType")),
+        make_config_option(Level::L0, 0, BoolDefineGUI(&cfg.gen.handleConstructors.data, "constructors", "Generates handle constructors")),
+        make_config_option(Level::L1, 0, BoolDefineGUI(&cfg.gen.smartHandles.data, "smart handles", "Generates smart (unique) handles")),
+        make_config_option(Level::L1, 0, BoolDefineGUI(&cfg.gen.handleTemplates.data, "type traits", "Generates CppType and isVulkanHandleType")),
         std::make_unique<RenderableText>("Functions"),
-        make_config_option(0, BoolGUI{ &cfg.gen.dispatchParam.data, "Dispatch parameter" }, "Removes dispatch from handles and functions"),
-        make_config_option(0, BoolGUI{ &cfg.gen.allocatorParam.data, "Allocator parameter" }, "Removes allocationcallbacks from handles and functions"),
+        make_config_option(0, BoolGUI{ &cfg.gen.dispatchParam.data, "Dispatch parameter" }, "Generates dispatch template parameter"),
+        make_config_option(0, BoolGUI{ &cfg.gen.allocatorParam.data, "Allocator parameter" }, "Generates allocationCallbacks parameter"),
+        make_config_option(0, BoolGUI{ &cfg.gen.extendedFunctions.data, "Extended functions" }, "Generates throwing and nothrowing variants where applicable"),
         make_config_option(Level::L2, 0, BitSelector{ cfg.gen.classMethods.data, 1, "Methods from subobjects" }, "Methods from subobjects will be added to top level handle")),
       std::make_unique<RenderableColumn<9>>(
         2,
         Level::L1,
         std::make_unique<RenderableText>("C++ Structs"),
-        make_config_option(Level::L1, 0, BoolDefineGUI(&cfg.gen.structConstructors.data, "struct constructors", "Removes struct constructors")),
-        make_config_option(Level::L1, 0, BoolDefineGUI(&cfg.gen.structSetters.data, "struct setters", "Removes struct setter functions")),
-        make_config_option(Level::L1, 0, BoolDefineGUI(&cfg.gen.structCompare.data, "compares", "Removes struct compare operator")),
-        make_config_option(Level::L1, 0, BoolDefineGUI(&cfg.gen.structReflect.data, "reflect", "Removes struct reflection")),
-        make_config_option(Level::L1, 0, NestedOption<BoolGUI>{ &cfg.gen.spaceshipOperator.data, "spaceship operator" }, "Removes spaceship operator from API"),
+        make_config_option(Level::L1, 0, BoolDefineGUI(&cfg.gen.structConstructors.data, "struct constructors", "Generates struct constructors")),
+        make_config_option(Level::L1, 0, BoolDefineGUI(&cfg.gen.structSetters.data, "struct setters", "Generates struct setter functions")),
+        make_config_option(Level::L1, 0, BoolDefineGUI(&cfg.gen.structCompare.data, "compares", "Generates struct compare operator")),
+        make_config_option(Level::L1, 0, BoolDefineGUI(&cfg.gen.structReflect.data, "reflect", "Generates struct reflection")),
+        make_config_option(Level::L1, 0, NestedOption<BoolGUI>{ &cfg.gen.spaceshipOperator.data, "spaceship operator" }, "Generates spaceship operator from API"),
         std::make_unique<RenderableText>("C++ Unions"),
-        make_config_option(Level::L1, 0, BoolDefineGUI(&cfg.gen.unionConstructors.data, "union constructors","Removes union constructors")),
-        make_config_option(Level::L1, 0, BoolDefineGUI(&cfg.gen.unionSetters.data, "union setters", "Removes union setter functions")))
+        make_config_option(Level::L1, 0, BoolDefineGUI(&cfg.gen.unionConstructors.data, "union constructors","Generates union constructors")),
+        make_config_option(Level::L1, 0, BoolDefineGUI(&cfg.gen.unionSetters.data, "union setters", "Generates union setter functions")))
       );
 
     tableMacros = std::make_unique<RenderableTable<1>>(

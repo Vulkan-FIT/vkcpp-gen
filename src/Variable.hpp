@@ -187,10 +187,12 @@ namespace vkgen
             std::string prefix;
             std::string type;
             std::string assignment;
+            std::string pass;
 
             void clear() {
               type.clear();
               assignment.clear();
+              pass.clear();
             }
         };
 
