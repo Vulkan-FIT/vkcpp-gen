@@ -16,13 +16,11 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
+#pragma once
 #ifndef XMLVARIABLEPARSER_H
 #define XMLVARIABLEPARSER_H
 
-#include "Enums.hpp"
-#include "Utils.hpp"
-#include "tinyxml2.h"
-
+#ifndef USE_PCH
 #include <array>
 #include <functional>
 #include <iostream>
@@ -31,6 +29,12 @@
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
+#endif
+
+#include "Enums.hpp"
+#include "Utils.hpp"
+#include "Types.hpp"
+#include "tinyxml2.h"
 
 namespace vkgen
 {
@@ -174,7 +178,7 @@ namespace vkgen
         std::vector<std::string> lenExpressions;
     };
 
-    // holds variable information broken into 4 sections
+    // holds variable information
     struct VariableData
       : public VariableBase2
       , public MetaType
@@ -425,6 +429,11 @@ namespace vkgen
 
         bool getIgnorePass() const {
             return ignorePass;
+        }
+
+        void setVectorReference(bool enabled)
+        {
+            vectorReference = enabled;
         }
 
         bool isLocalVar() const {
@@ -744,6 +753,7 @@ namespace vkgen
         bool          ignorePass  = false;
         bool          localVar    = false;
         bool          structChain = false;
+        bool          vectorReference = false;
 
         bool nullTerminated = false;
 
@@ -878,6 +888,22 @@ namespace vkgen
 
         virtual bool Visit(const tinyxml2::XMLText &text) override;
     };
+
+    class XMLFuncPointerParser : protected tinyxml2::XMLVisitor
+    {
+        const tinyxml2::XMLNode *root = {};
+        const tinyxml2::XMLNode *prev = {};
+        std::unordered_map<std::string, std::string> fields;
+    public:
+        std::string text;
+
+        // std::string& operator[](const std::string &field);
+
+        XMLFuncPointerParser(xml::Element element);
+
+        virtual bool Visit(const tinyxml2::XMLText &text) override;
+    };
+
 
     /*
     class XMLBaseTypeParser : protected tinyxml2::XMLVisitor

@@ -15,20 +15,20 @@
 // ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 // WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
+#pragma once
 #ifndef GENERATOR_REGISTRY_HPP
 #define GENERATOR_REGISTRY_HPP
 
-#include "Utils.hpp"
-#include "Variable.hpp"
-
-#include <functional>
-#include <map>
+#ifndef USE_PCH
 #include <memory>
-#include <regex>
-#include <set>
 #include <string>
 #include <unordered_set>
 #include <vector>
+#endif
+
+#include "Utils.hpp"
+#include "Variable.hpp"
+#include "Collection.hpp"
 
 namespace vkgen
 {
@@ -84,25 +84,7 @@ namespace vkgen
         return std::find(std::begin(array), std::end(array), entry) != std::end(array);
     }
 
-#ifdef GENERATOR_GUI
-    struct SelectableGUI
-    {
-        bool selected = {};
-        bool hovered  = {};
-        bool filtered = true;
 
-        virtual void setEnabledChildren(bool value, bool ifSelected = false) {}
-
-        void setSelected(bool value) {
-            selected = value;
-        }
-
-        bool isSelected() const {
-            return selected;
-        }
-    };
-
-#endif
 
     class Generator;
 
@@ -150,146 +132,14 @@ namespace vkgen
         }
     };
 
-    namespace vkr
-    {
-        struct Feature;
-        struct Handle;
-        struct Extension;
-        struct Command;
-        struct Platform;
-    }  // namespace vkr
 
-    struct GenericType
-      : public MetaType
-#ifdef GENERATOR_GUI
-      , public SelectableGUI
-#endif
-    {
-      private:
-        vkr::Extension *ext = {};
-        vkr::Feature   *feature = {};
+    struct Handle;
+    struct Command;
+    struct Platform;
 
-      public:
-        String name;
 
-        std::set<GenericType *>   dependencies;
-        std::set<GenericType *>   subscribers;
-        std::vector<GenericType>  aliases;
-        std::string_view     protect;
-        const char          *version       = {};
-        std::string          tempversion;
-        bool                 forceRequired = {};
-        vkr::Extension      *parentExtension = {};
 
-        GenericType() = default;
-
-        explicit GenericType(MetaType::Value type) noexcept : MetaType(type) {}
-
-        GenericType(MetaType::Value type, std::string_view name, bool firstCapital = false) : name(std::string{ name }, firstCapital), MetaType(type) {}
-
-        GenericType(const GenericType &parent, std::string_view name, bool firstCapital = false);
-
-        std::string_view getProtect() const;
-
-        vkr::Platform* getPlatfrom() const;
-
-        std::string getVersionDebug() const;
-
-        vkr::Extension *getExtension() const {
-            return ext;
-        }
-
-        vkr::Feature *getFeature() const {
-            return feature;
-        }
-
-        void setProtect(const std::string_view);
-
-        bool hasProtect() const {
-            return !protect.empty();
-        }
-
-        void setExtension(vkr::Extension *ext);
-
-        void bind(vkr::Feature *feature, vkr::Extension *ext, const std::string_view protect = "");
-
-        void setUnsupported() {
-            supported = false;
-            version   = nullptr;
-        }
-
-        bool isEnabled() const {
-            return enabled && supported;
-        }
-
-        bool isSupported() const {
-            return supported;
-        }
-
-        bool isRequired() const {
-            return !subscribers.empty() || forceRequired;
-        }
-
-        bool canGenerate() const {
-            return supported && (enabled || isRequired());
-        }
-
-        void addAlias(const std::string_view alias, bool firstCapital) {
-            aliases.emplace_back(*this, std::string{ alias }, firstCapital);
-        }
-
-        void setEnabled(bool value) {
-            if (enabled == value || !supported) {
-                return;
-            }
-            enabled = value;
-
-            if (enabled) {
-                // std::cout << "    enable: " << name << '\n';
-                for (auto &d : dependencies) {
-                    if (!subscribers.contains(d)) {
-                        d->subscribe(this);
-                    }
-                }
-            } else {
-                // std::cout << "     disable: " << name << '\n';
-                for (auto &d : dependencies) {
-                    if (!subscribers.contains(d)) {
-                        d->unsubscribe(this);
-                    }
-                }
-            }
-        }
-
-      protected:
-        void subscribe(GenericType *s) {
-            if (!subscribers.contains(s)) {
-                bool empty = subscribers.empty();
-                subscribers.emplace(s);
-                // std::cout << "  subscribed to: " << name << '\n';
-                if (empty) {
-                    setEnabled(true);
-                }
-            }
-        }
-
-        void unsubscribe(GenericType *s) {
-            auto it = subscribers.find(s);
-            if (it != subscribers.end()) {
-                subscribers.erase(it);
-                // std::cout << "  unsubscribed to: " << name << '\n';
-                if (subscribers.empty()) {
-                    setEnabled(false);
-                }
-            }
-        }
-
-        bool enabled   = false;
-        bool supported = true;
-    };
-
-    namespace vkr
-    {
+    // namespace vkr {
 
         struct Snippet : public GenericType
         {
@@ -362,7 +212,7 @@ namespace vkgen
             std::vector<ClassCommand>   members;
             std::vector<ClassCommand *> filteredMembers;
             std::vector<ClassCommand>   ctorCmds;
-            vkr::Command               *dtorCmd = {};
+            Command               *dtorCmd = {};
             std::vector<ClassCommand>   vectorCmds;
 
             std::vector<std::reference_wrapper<const VariableData>> vars;
@@ -381,7 +231,7 @@ namespace vkgen
             bool isSubclass       = false;
             bool vectorVariant    = false;
 
-            explicit Handle(Generator &gen) : GenericType(MetaType::Handle), superclass(""), vkhandle(VariableData::TYPE_INVALID) {}
+            explicit Handle(Generator &gen) : GenericType(MetaType::Value::Handle), superclass(""), vkhandle(VariableData::TYPE_INVALID) {}
 
             Handle(Generator &gen, xml::Element elem, const std::string_view name, std::string &&code);
 
@@ -398,9 +248,9 @@ namespace vkgen
 
             void setParent(const Registry &reg, Handle *h);
 
-            void addCommand(const Generator &gen, vkr::Command &cmd, bool raiiOnly = false);
+            void addCommand(const Generator &gen, Command &cmd, bool raiiOnly = false);
 
-            void setDestroyCommand(const Generator &gen, vkr::Command &cmd);
+            void setDestroyCommand(const Generator &gen, Command &cmd);
 
             bool hasPFNs() const {
                 return effectiveMembers > 0 && !isSubclass;
@@ -478,8 +328,8 @@ namespace vkgen
             NameCategory             nameCat;
             PFNReturnCategory        pfnReturn;
             EnumFlag<CommandFlags>   flags{};
-            vkr::Handle             *top{};
-            const vkr::Struct       *structChain{};
+            Handle             *top{};
+            const Struct       *structChain{};
             bool                     structChainVector = false;
 
             Command(Generator &gen, xml::Element elem, const std::string_view name);
@@ -660,7 +510,7 @@ namespace vkgen
                 return true;
             }
 
-            vkr::Handle *secondIndirectCandidate(Generator &gen) const;
+            Handle *secondIndirectCandidate(Generator &gen) const;
 
             void setName(const Registry &reg, const std::string &name);
 
@@ -737,20 +587,24 @@ namespace vkgen
         struct Feature : public GenericType {
             std::vector<std::string>                                 constants;
             std::vector<std::reference_wrapper<std::string>>         includes;
-            std::vector<std::reference_wrapper<vkr::Enum>>           enums;
-            std::vector<std::reference_wrapper<vkr::Struct>>         forwardStructs;
-            std::vector<std::reference_wrapper<vkr::Struct>>         structs;
-            std::vector<std::reference_wrapper<vkr::Command>>        commands;
-            std::vector<std::reference_wrapper<vkr::Handle>>         handles;
-            std::vector<std::reference_wrapper<vkr::DefineSnippet>>  defines;
-            std::vector<std::reference_wrapper<vkr::BaseType>>       baseTypes;
-            std::vector<std::reference_wrapper<vkr::FuncPointer>>    funcPointers;
-            std::vector<std::reference_wrapper<GenericType>>         aliases;
+            std::vector<std::reference_wrapper<Enum>>           enums;
+            std::vector<std::reference_wrapper<Struct>>         forwardStructs;
+            std::vector<std::reference_wrapper<Struct>>         structs;
+            std::vector<std::reference_wrapper<Command>>        commands;
+            std::vector<std::reference_wrapper<Handle>>         handles;
+            std::vector<std::reference_wrapper<DefineSnippet>>  defines;
+            std::vector<std::reference_wrapper<BaseType>>       baseTypes;
+            std::vector<std::reference_wrapper<FuncPointer>>    funcPointers;
             std::vector<std::reference_wrapper<GenericType>>         promotedTypes;
+            float number;
             unsigned int                                             elements = 0;
 
-            Feature(const std::string_view name) : GenericType(MetaType::Feature) {
-                GenericType::name.reset(std::string{ name });
+            explicit Feature(Registry &reg, const xml::Element &element)
+                : GenericType(MetaType::Value::Feature)
+            {
+                xmlElement = element;
+                name.reset(std::string{ element["name"] });
+                number = std::stof(std::string(element["number"]));
             }
 
             bool tryInsert(Registry &reg, const std::string &name);
@@ -767,7 +621,7 @@ namespace vkgen
 
             template<typename T, typename C>
             bool tryInsertFrom(C &src, const std::string &name, std::vector<std::reference_wrapper<T>> &dst) {
-                if (auto it = src.find(name); it != src.end()) {
+                if (auto it = src.find(name); it) {
                     this->insert<T>(dst, *it);
                     elements++;
                     return true;
@@ -789,33 +643,24 @@ namespace vkgen
 
         struct Platform : public GenericType
         {
-            std::string_view protect;
-            std::vector<std::reference_wrapper<vkr::Extension>> extensions;
+            std::string protect;
+            std::vector<std::reference_wrapper<Extension>> extensions;
             std::unordered_set<std::string> includes;
 
-            Platform(const std::string_view name, const std::string_view protect, bool enabled) : GenericType(MetaType::Platform), protect(protect) {
-                GenericType::name.reset(std::string{ name });
-                GenericType::enabled = enabled;
-            }
+            explicit Platform(Registry &reg, const xml::Element &element);
+
         };
 
         struct Extension : public Feature
         {
-            struct Platform             *platform;
+            Platform             *platform = nullptr;
             std::string                  protect;
             unsigned int                 number = 0;
-            std::vector<vkr::Extension*> depends;
+            std::vector<Extension*> depends;
             std::string                  versiondepends;
             std::string                  comment;
 
-            Extension(const std::string &name, struct Platform *platform, bool supported, bool enabled) : Feature(name), platform(platform) {
-                setMetaType(MetaType::Extension);
-                GenericType::enabled   = enabled;
-                GenericType::supported = supported;
-                if (platform) {
-                    protect = platform->protect;
-                }
-            }
+            explicit Extension(Registry &reg, const xml::Element &element);
         };
 
         struct EnumValue : public GenericType
@@ -827,7 +672,7 @@ namespace vkgen
 
             EnumValue(const Registry &reg, std::string name, const std::string &value, const std::string &enumName, bool isBitmask = false);
 
-            void setValue(uint64_t value, bool negative, const vkr::Enum &parent);
+            void setValue(uint64_t value, bool negative, const Enum &parent);
 
             static std::string toHex(uint64_t value, bool is64bit);
         };
@@ -843,11 +688,11 @@ namespace vkgen
 
         struct Enum : public GenericType
         {
-            std::vector<struct EnumValue> members;
+            std::vector<EnumValue> members;
             std::string type;
             String bitmask;
 
-            Enum(Generator &gen, xml::Element elem, const std::string_view name, const std::string_view type, bool bitmask = false);
+            Enum(Generator &gen, xml::Element elem, const std::string_view name, bool isBitmask);
 
             bool containsValue(const std::string &value) const;
 
@@ -859,7 +704,7 @@ namespace vkgen
                 return !bitmask.empty();
             }
 
-            struct EnumValue *find(const std::string_view value) noexcept;
+            EnumValue *find(const std::string_view value) noexcept;
 
             static std::string toFlags(const std::string &name);
             static std::string toFlagBits(const std::string &name);
@@ -874,7 +719,7 @@ namespace vkgen
             bool                  needForwardDeclare = false;
             bool                  containsFloatingPoints = false;
 
-            Struct(Generator &gen, const std::string_view name, MetaType::Value type, const xml::Element &e);
+            Struct(Generator &gen, const xml::Element &e, const std::string_view name, MetaType::Value type);
 
             Struct(const Struct &o) = delete;
 
@@ -902,8 +747,6 @@ namespace vkgen
             }
         };
 
-    }  // namespace vkr
-
     struct Define
     {
         enum Type {
@@ -928,10 +771,6 @@ namespace vkgen
 
         auto operator<=>(Define const &) const = default;
     };
-
-//    struct NDefine : public Define
-//    {
-//    };
 
     struct Macro
     {
@@ -968,10 +807,14 @@ namespace vkgen
         }
     };
 
+    class RegistryLoader;
+
     class Registry
     {
       public:
-        static std::string to_string(vkr::Command::PFNReturnCategory);
+        friend RegistryLoader;
+
+        static std::string to_string(Command::PFNReturnCategory);
 
         enum class ArraySizeArgument
         {
@@ -981,318 +824,31 @@ namespace vkgen
             CONST_COUNT
         };
 
-        static std::string to_string(vkr::Command::NameCategory);
+        static std::string to_string(Command::NameCategory);
 
         using Types = std::unordered_map<std::string, GenericType *>;
 
-        template <typename T>
-        class Container
-        {
-            static_assert(std::is_base_of<GenericType, T>::value, "T must derive from BaseType");
-
-            std::map<std::string, size_t, std::less<>> map;
-            std::map<std::string, GenericType*> aliasMap;
-
-          public:
-            using iterator       = std::vector<T>::iterator;
-            using const_iterator = std::vector<T>::const_iterator;
-
-            std::vector<T>                         items;
-            std::vector<std::reference_wrapper<T>> ordered;
-
-            bool contains(const std::string_view name) const {
-                return find(name) != end();
-            }
-
-            void prepare() {
-                map.clear();
-                aliasMap.clear();
-
-                ordered.clear();
-                ordered.reserve(items.size());
-                for (size_t i = 0; i < items.size(); ++i) {
-                    map.emplace(items[i].name.original, i);
-                    map.emplace(items[i].name, i);
-                    if constexpr (std::is_same_v<T, vkr::Enum>) {
-                        if (items[i].isBitmask()) {
-                            map.emplace(items[i].bitmask.original, i);
-                            map.emplace(items[i].bitmask, i);
-                        }
-                    }
-//                    for (const auto &a : items[i].aliases) {
-//                        aliasMap.emplace(a.name.original, &a);
-//                        aliasMap.emplace(a.name, &a);
-//                    }
-                    ordered.emplace_back(std::ref(items[i]));
-                }
-            }
-
-            void addTypes(Registry::Types &types) {
-                for (const auto &k : map) {
-                    types.emplace(k.first, &items[k.second]);
-                }
-            }
-
-            const_iterator find(const std::string_view name, bool dbg = false) const {
-                auto it = map.find(std::string{ name });
-                if (it == map.end()) {
-                    if (dbg)
-                        std::cerr << ". " << std::string{ name } << " not found in Container<" << std::string{ typeid(T).name() } << ">\n";
-                    return items.end();
-                }
-                return items.begin() + it->second;
-            }
-
-            iterator find(const std::string_view name, bool dbg = false) {
-                auto it = map.find(std::string{ name });
-                if (it == map.end()) {
-                    if (dbg)
-                        std::cerr << ". " << std::string{ name } << " not found in Container<" << std::string{ typeid(T).name() } << ">\n";
-                    return items.end();
-                }
-                return items.begin() + it->second;
-            }
-
-            T &operator[](const std::string_view name) {
-                auto it = map.find(name);
-                if (it == map.end()) {
-                    throw std::runtime_error(std::string{ name } + " not found in Container<" + std::string{ typeid(T).name() } + ">");
-                }
-                return items[it->second];
-            }
-
-            const T &operator[](const std::string_view name) const {
-                auto it = map.find(name);
-                if (it == map.end()) {
-                    throw std::runtime_error(std::string{ name } + " not found in Container<" + std::string{ typeid(T).name() } + ">");
-                }
-                return items[it->second];
-            }
-
-            iterator end() {
-                return items.end();
-            }
-
-            iterator begin() {
-                return items.begin();
-            }
-
-            const_iterator end() const {
-                return items.cend();
-            }
-
-            const_iterator begin() const {
-                return items.cbegin();
-            }
-
-            void clear() {
-                items.clear();
-                ordered.clear();
-                map.clear();
-                aliasMap.clear();
-            }
-
-            size_t size() const {
-                return items.size();
-            }
-
-            void foreach (std::function<void(const String &, T &)> func) const {
-                for (auto &item : items) {
-                    func(item.name, item);
-                    for (const auto &alias : item.aliased) {
-                        func(alias, item);
-                    }
-                }
-            }
-
-            void removeUnsupported(bool dbg = false) {
-                if (dbg) {
-                    for (auto &item : items) {
-                        if (!item.isSupported()) {
-                            std::cout << "rem: " << item.name.original << "\n";
-                        }
-                    }
-                }
-                auto count = std::erase_if(items, [](const T& item) { return !item.isSupported(); });
-                // std::cout << "Erased: " << count << '\n';
-                prepare();
-            }
-        };
-
-        template <typename T>
-        class DependencySorter
-        {
-          public:
-            struct Item
-            {
-                T *data = {};
-                std::vector<Item *>   children;
-                std::vector<Item *>   deps;
-                std::set<std::string> plats;
-                bool                  inserted = {};
-
-                void addDependency(DependencySorter<T> &sorter, const std::string &dep) {
-                    auto item = sorter.find(dep);
-                    if (!item) {
-                        return;
-                    }
-                    bool unique = true;
-                    for (const auto &d : deps) {
-                        if (d->data->name.original == dep) {
-                            unique = false;
-                            break;
-                        }
-                    }
-                    if (unique) {
-                        deps.push_back(item);
-                    }
-                    item->add(this);
-                }
-
-                void add(Item *d) {
-                    if (d->data == data) {
-                        return;
-                    }
-                    for (auto &t : children) {
-                        if (t == d) {
-                            return;
-                        }
-                    }
-                    children.push_back(d);
-                }
-
-                bool hasDepsInserted() const {
-                    for (const auto &d : deps) {
-                        if (!d->inserted) {
-                            return false;
-                        }
-                    }
-                    return true;
-                };
-            };
-
-            void sort(Container<T> &source, const std::string &msg, std::function<void(Item &i)> getDependencies) {
-                source.ordered.clear();
-                source.ordered.reserve(source.size());
-
-                items.clear();
-                items.reserve(source.size());
-                for (auto &i : source.items) {
-                    items.emplace_back(&i);
-                }
-
-                sortItems(source.ordered, msg, getDependencies);
-            }
-
-            void sort(std::vector<std::reference_wrapper<T>> &source, const std::string &msg) {
-
-                auto size = source.size();
-                items.clear();
-                items.reserve(size);
-                for (T &i : source) {
-                    items.emplace_back(&i);
-                }
-
-                source.clear();
-                source.reserve(size);
-                sortItems(source, msg, [&](DependencySorter<T>::Item &i) {
-                    for (auto *d : i.data->dependencies) {
-                        if (d->name.original == "VkBaseInStructure" || d->name.original == "VkBaseOutStructure") {
-                            continue;
-                        }
-                        i.addDependency(*this, d->name.original);
-                    }
-                });
-            }
 
 
-          private:
 
-            void sortItems(std::vector<std::reference_wrapper<T>> &dst, const std::string &msg, std::function<void(Item &i)> getDependencies) {
 
-                for (auto &i : items) {
-                    getDependencies(i);
-                }
-
-                bool empty = false;
-                while (!empty) {
-                    empty      = true;
-                    bool stuck = true;
-                    for (auto &i : items) {
-                        if (!i.inserted) {
-                            if (i.hasDepsInserted()) {
-                                dst.push_back(std::ref(*i.data));
-                                i.inserted = true;
-                                stuck      = false;
-                            }
-                            empty = false;
-                        }
-                    }
-                    if (!empty && stuck) {
-                        std::cerr << "dependcy sort: infinite loop detected" << std::endl;
-                        for (auto &i : items) {
-                            if (!i.inserted) {
-                                std::cout << i.data->name << "\n";
-                                for (auto &d : i.deps) {
-                                    std::cout << "  " << d->data->name;
-                                }
-                                std::cout << "\n";
-                            }
-                        }
-                        break;
-                    }
-                }
-            }
-
-            std::vector<Item> items;
-
-            Item *find(const std::string &name) {
-                for (auto &i : items) {
-                    if (i.data->name.original == name) {
-                        return &i;
-                    }
-                }
-                return nullptr;
-            };
-        };
-
-        using Enum         = vkr::Enum;
-        using Struct       = vkr::Struct;
-        using Handle       = vkr::Handle;
-        using Command      = vkr::Command;
-        using Extension    = vkr::Extension;
-        using Platform     = vkr::Platform;
-        using ClassCommand = vkr::ClassCommand;
-
-        using Commands   = Container<vkr::Command>;
-        using Platforms  = Container<vkr::Platform>;
-        using Extensions = Container<vkr::Extension>;
-        using Features = Container<vkr::Feature>;
+        using Commands   = Container<Command>;
+        using Platforms  = Container<Platform>;
+        using Extensions = Container<Extension>;
+        using Features   = Container<Feature>;
         using Tags       = std::unordered_set<std::string>;
-        using Handles    = Container<vkr::Handle>;
-        using Structs    = Container<vkr::Struct>;
-        using Enums      = Container<vkr::Enum>;
+        using Handles    = Container<Handle>;
+        using Structs    = Container<Struct>;
+        using Enums      = Container<Enum>;
 
       protected:
-
-        struct Parse {
-            std::vector<xml::Element> xmlSupportedFeatures;
-            std::vector<xml::Element> xmlUnsupportedFeatures;
-            std::vector<xml::Element> xmlSupportedExtensions;
-            std::vector<xml::Element> xmlUnsupportedExtensions;
-
-            std::vector<std::pair<std::string, std::string>> structExtends;
-            std::vector<std::pair<std::string, std::string>> typeRequires;
-        };
-
-        std::unique_ptr<Parse> parse;
 
         struct ErrorClass
         {
             std::string           name;
-            const vkr::EnumValue &value;
+            const EnumValue &value;
 
-            ErrorClass(const vkr::EnumValue &value) : name(value.name), value(value) {
+            ErrorClass(const EnumValue &value) : name(value.name), value(value) {
                 strStripPrefix(name, "eError");
                 name += "Error";
             }
@@ -1300,9 +856,11 @@ namespace vkgen
 
         bool defaultWhitelistOption = true;
         bool verbose                = false;
+        bool loaded = false;
 
       public:
         std::string registryPath;
+
 
         Types types;
 
@@ -1312,18 +870,17 @@ namespace vkgen
         Tags       tags;  // list of tags from <tags>
 
         Commands                                          commands;
-        std::vector<std::reference_wrapper<vkr::Command>> staticCommands;
+        std::vector<std::reference_wrapper<Command>> staticCommands;
 
 
         Handles                         handles;
         Structs                         structs;
         Enums                           enums;
-        std::vector<vkr::EnumValueType> apiConstants;
+        std::vector<EnumValueType> apiConstants;
         std::unordered_map<std::string, std::string>        includes;
-        std::unordered_map<std::string, vkr::Snippet>       defines;
-        std::unordered_map<std::string, vkr::BaseType>      baseTypes;
-        std::unordered_map<std::string, vkr::FuncPointer>   funcPointers;
-        std::unordered_map<std::string, std::reference_wrapper<GenericType>>    aliases;
+        std::unordered_map<std::string, Snippet>       defines;
+        std::unordered_map<std::string, BaseType>      baseTypes;
+        std::unordered_map<std::string, FuncPointer>   funcPointers;
 
         std::string strRemoveTag(std::string &str) const;
 
@@ -1335,19 +892,20 @@ namespace vkgen
 
         std::string enumConvertCamel(const std::string &enumName, std::string value, bool isBitmask = false) const;
 
-        bool containsFuncPointer(const vkr::Struct &data) const;
+        bool containsFuncPointer(const Struct &data) const;
 
-        vkr::Handle &findHandle(const std::string &name) {
-            const auto &handle = handles.find(name);
-            if (handle == handles.end()) {
+        // TODO deprecate
+        Handle &findHandle(const std::string &name) {
+            auto* handle = handles.find(name);
+            if (!handle) {
                 throw std::runtime_error("Handle not found: " + std::string(name));
             }
             return *handle;
         }
 
-        const vkr::Handle &findHandle(const std::string &name) const {
-            const auto &handle = handles.find(name);
-            if (handle == handles.end()) {
+        const Handle &findHandle(const std::string &name) const {
+            const auto* handle = handles.find(name);
+            if (!handle) {
                 throw std::runtime_error("Handle not found: " + std::string(name));
             }
             return *handle;
@@ -1356,47 +914,15 @@ namespace vkgen
         String& getHandleSuperclass(const Handle &data);
 
       private:
-        tinyxml2::XMLDocument doc;
-        tinyxml2::XMLElement *root = {};
 
         std::function<void(void)> onLoadCallback;
 
         static std::string systemRegistryPath;
         static std::string localRegistryPath;
 
-        void parsePlatforms(Generator &gen, xml::Element elem, xml::Element children);
-
-        void parseTags(Generator &gen, xml::Element elem, xml::Element children);
-
-        void parseTypes(Generator &gen, xml::Element elem, xml::Element children);
-
-        void parseEnums(Generator &gen, xml::Element elem, xml::Element children);
-
-        void parseApiConstants(Generator &gen, xml::Element elem);
-
-        void parseCommands(Generator &gen, xml::Element elem, xml::Element children);
-
         void orderCommands();
 
-        void assignCommands(Generator &gen);
-
-        void parseFeature(Generator &gen, xml::Element elem, xml::Element children);
-
-        void parseExtensions(Generator &gen, xml::Element elem, xml::Element children);
-
-        void parseEnumValue(const xml::Element &elem, vkr::Enum &e, vkr::Feature *feature = {}, vkr::Extension *ext = {}, const std::string_view protect = "");
-
         void loadFinished();
-
-        bool loadXML(const std::string &xmlPath);
-
-        void parseXML(Generator &gen);
-
-        void removeUnsupportedFeatures();
-
-        void buildDependencies(Generator &gen);
-
-        void buildTypesMap();
 
       public:
         GenericType &get(const std::string &name);
@@ -1410,17 +936,6 @@ namespace vkgen
         GenericType *find(const std::string_view name) noexcept {
             return find(std::string{ name });
         }
-
-        const Command* findCommand(const std::string &name) const noexcept {
-            if (auto type = commands.find(name); type != commands.end()) {
-                return &*type;
-            }
-            return nullptr;
-        }
-
-        void orderStructs();
-
-        void orderHandles();
 
         static void loadSystemRegistryPath();
 
@@ -1439,7 +954,7 @@ namespace vkgen
         static std::string getDefaultRegistryPath();
 
         bool isLoaded() const {
-            return root != nullptr;
+            return loaded;
         }
 
         std::string getRegistryPath() const {
@@ -1463,17 +978,15 @@ namespace vkgen
     public:
         std::vector<ErrorClass> errorClasses;
         std::string headerVersion;
-        std::vector<std::reference_wrapper<vkr::Handle>>  topLevelHandles;
-        std::vector<std::reference_wrapper<vkr::Command>> orderedCommands;
+        std::vector<std::reference_wrapper<Handle>>  topLevelHandles;
+        std::vector<std::reference_wrapper<Command>> orderedCommands;
 
-        vkr::Handle                                       loader;
+        Handle                                       loader;
 
         std::unique_ptr<VideoRegistry> video;
 
     public:
         VulkanRegistry(Generator &gen);
-
-        String& getHandleSuperclass(const Handle &data);
 
         void createErrorClasses();
 
@@ -1481,9 +994,10 @@ namespace vkgen
 
         void unload();
 
-        vkr::Handle &findHandle(const std::string &name) {
-            const auto &handle = handles.find(name);
-            if (handle == handles.end()) {
+        // TODO deprecate
+        Handle &findHandle(const std::string &name) {
+            auto* handle = handles.find(name);
+            if (!handle) {
                 if (name == loader.name.original) {
                     return loader;
                 }
@@ -1492,9 +1006,9 @@ namespace vkgen
             return *handle;
         }
 
-        const vkr::Handle &findHandle(const std::string &name) const {
-            const auto &handle = handles.find(name);
-            if (handle == handles.end()) {
+        const Handle &findHandle(const std::string &name) const {
+            const auto* handle = handles.find(name);
+            if (!handle) {
                 if (name == loader.name.original) {
                     return loader;
                 }

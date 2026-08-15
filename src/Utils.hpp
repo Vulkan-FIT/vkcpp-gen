@@ -16,11 +16,11 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
+#pragma once
 #ifndef UTILS_H
 #define UTILS_H
 
-#include "tinyxml2.h"
-
+#ifndef USE_PCH
 #include <algorithm>
 #include <charconv>
 #include <iostream>
@@ -31,6 +31,10 @@
 #include <tuple>
 #include <type_traits>
 #include <vector>
+#endif
+
+#include "tinyxml2.h"
+
 namespace rg = std::ranges;
 
 namespace vkgen
@@ -537,15 +541,10 @@ namespace vkgen
       public:
         std::string original;
 
-//        String &operator=(const std::string &rhs) {
-//            std::string::assign(rhs);
-//            return *this;
-//        }
-
         String() = default;
 
-        explicit String(const std::string &src) {
-            reset(src);
+        explicit String(const std::string_view str) {
+            reset(str);
         }
 
         explicit String(const String &src) {
@@ -564,18 +563,18 @@ namespace vkgen
             return *this;
         }
 
-        String(const std::string &src, bool firstCapital) {
-            convert(src, firstCapital);
+        String(const std::string_view str, bool firstCapital) {
+            convert(str, firstCapital);
         }
 
-        void reset(const std::string &src = "") {
-            std::string::assign(src);
-            original = src;
+        void reset(const std::string_view str = "") {
+            original = str;
+            std::string::assign(str);
         }
 
-        void convert(const std::string &src, bool firstCapital = false) {
-            original = src;
-            std::string::assign(toCppStyle(src, firstCapital));
+        void convert(const std::string_view str, bool firstCapital = false) {
+            original = str;
+            std::string::assign(toCppStyle(std::string{str}, firstCapital));
         }
     };
 

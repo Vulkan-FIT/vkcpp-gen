@@ -16,8 +16,13 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
+#pragma once
 #ifndef GENERATOR_CONFIG_HPP
 #define GENERATOR_CONFIG_HPP
+
+#ifndef USE_PCH
+#include <regex>
+#endif
 
 #include "Registry.hpp"
 
@@ -127,7 +132,12 @@ namespace vkgen
         ConfigWrapper<bool> expApi  { "exp_api", false };
         // ConfigWrapper<bool> expApi  { "vkg_api", false };
         ConfigWrapper<bool> globalMode  { "global_mode", true };
+        ConfigWrapper<bool> globalFunctions  { "global_functions", false };
+        // ConfigWrapper<bool> staticObject  { "static_object_interface", true };
+        // ConfigWrapper<bool> globalMode  { "global_mode", true };
         ConfigWrapper<bool> onlyC{ "only_c", false };
+
+        ConfigWrapper<bool> noExceptions{ "no_exceptions", false };
 
         ConfigWrapper<bool> internalFunctions{ "internal_functions", false };
         ConfigWrapper<bool> internalVkResult{ "internal_vkresult", true };
@@ -135,6 +145,7 @@ namespace vkgen
         ConfigWrapper<bool> dispatchParam{ "dispatch_param", true };
         ConfigWrapper<bool> dispatchTemplate{ "dispatch_template", true };
         ConfigWrapper<bool> dispatchLoaderStatic{ "dispatch_loader_static", true };
+
         ConfigWrapper<bool> useStaticCommands{ "static_link_commands", false };  // move
         ConfigWrapper<bool> allocatorParam{ "allocator_param", true };
         ConfigWrapper<bool> resultValueType{ "use_result_value_type", true };
@@ -153,6 +164,7 @@ namespace vkgen
         ConfigWrapper<bool>    proxyPassByCopy{ "proxy_pass_by_copy", false };
         ConfigWrapper<bool>    unifiedException{ "unified_exception", false };
 
+        ConfigWrapper<bool>    altFlagTraits{ "alt_flag_traits", false };
         // ConfigWrapper<bool>    globalFunctions{ "global_functions", true };
 
         ConfigWrapper<bool>    expandMacros{ "expand_macros", true };
@@ -177,8 +189,7 @@ namespace vkgen
         ConfigWrapper<int> classMethods{ "class_methods", { 1 } };
         ConfigWrapper<int> cppStd{ "cpp_standard", 20 };
 
-        ConfigWrapper<int> structMock{ "struct_mock", 0 };
-        ConfigWrapper<int> enumMock{ "enum_mock",   0 };
+        // ConfigWrapper<int> structMock{ "struct_mock", 0 };
 
         ConfigGroupRAII raii;
 
@@ -192,8 +203,9 @@ namespace vkgen
                             expApi,
                             cppStd,
                             globalMode,
+                            globalFunctions,
                             onlyC,
-                            // internalFunctions,
+                            noExceptions,
                             extendedFunctions,
                             allocatorParam,
                             resultValueType,
@@ -216,9 +228,8 @@ namespace vkgen
                             moduleName,
                             classMethods,
                             raii,
-                            structMock,
-                            enumMock,
-                            expandMacros
+                            expandMacros,
+                            altFlagTraits
                             );
         }
     };
@@ -242,7 +253,7 @@ namespace vkgen
         //        Config& operator=(Config&&) = delete;
         //        Config& operator=(const Config&) = delete;
 
-        void save(Generator &, const std::string &filename);
+        void save(Generator &, const std::string &filename, bool verbose);
 
         void load(Generator &, const std::string &filename);
 
@@ -260,7 +271,6 @@ namespace vkgen
     class WhitelistBuilder
     {
         std::string text;
-        bool        hasDisabledElement = false;
 
       public:
         template <typename T>
@@ -278,29 +288,19 @@ namespace vkgen
             if (t.isEnabled() || t.isRequired()) {
                 auto name = t.name.original;
                 text += "            " + name + "\n";
-            } else if (t.isSupported()) {
-                hasDisabledElement = true;
-                // std::cout << "disabled elem: " << t.name << " " << t.metaTypeString() << std::endl;
             }
         }
 
         void insertToParent(tinyxml2::XMLElement *parent, const std::string &name, const std::string &comment) {
-            if (!hasDisabledElement) {
-                //                XMLElement *reg = parent->GetDocument()->NewElement("regex");
-                //                reg->SetText(".*");
-                //                elem->InsertEndChild(reg);
-                return;
-            } else {
-                if (!text.empty()) {
-                    text = "\n" + text + "        ";
-                }
-                auto *elem = parent->GetDocument()->NewElement(name.c_str());
-                elem->SetText(text.c_str());
-                if (!comment.empty()) {
-                    elem->SetAttribute("comment", comment.c_str());
-                }
-                parent->InsertEndChild(elem);
+            if (!text.empty()) {
+                text = "\n" + text + "        ";
             }
+            auto *elem = parent->GetDocument()->NewElement(name.c_str());
+            elem->SetText(text.c_str());
+            if (!comment.empty()) {
+                elem->SetAttribute("comment", comment.c_str());
+            }
+            parent->InsertEndChild(elem);
         }
     };
 

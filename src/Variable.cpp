@@ -443,6 +443,10 @@ std::string vkgen::VariableData::createVectorType(const std::string_view vectorT
         output += allocatorTemplate.type;
     }
     output += ">";
+    if (vectorReference) {
+        output += " &";
+
+    }
     return output;
 }
 
@@ -451,14 +455,14 @@ std::string vkgen::VariableData::fullType(const Generator &gen, bool forceNamesp
     if (!fields[TYPE].starts_with("Vk")) {
         type += namespaceString(gen, forceNamespace);
     }
-    // type += "/*" + std::to_string((int)ns) + "*/";
-    if (gen.getConfig().gen.enumMock == 1 && !fields[TYPE].starts_with("Vk")) {
 
-        type += std::regex_replace(fields[TYPE], std::regex("FlagBits"), "Flags");
-    }
-    else {
+    // if (gen.config().gen.enumMock == 1 && !fields[TYPE].starts_with("Vk")) {
+    //
+    //     type += std::regex_replace(fields[TYPE], std::regex("FlagBits"), "Flags");
+    // }
+    // else {
         type += fields[TYPE];
-    }
+    // }
     type += fields[SUFFIX];
     switch (specialType) {
         case TYPE_ARRAY:
@@ -474,7 +478,7 @@ std::string vkgen::VariableData::fullType(const Generator &gen, bool forceNamesp
                 return out;
             }
         case TYPE_ARRAY_PROXY:
-            if (gen.getConfig().gen.proxyPassByCopy) {
+            if (gen.config().gen.proxyPassByCopy) {
                 return "const ArrayProxy<" + type + "> ";
             }
             else {
@@ -837,6 +841,33 @@ bool vkgen::XMLTextParser::Visit(const tinyxml2::XMLText &text) {
     std::string_view tag   = node->Value();
     std::string_view value = xml::value(text);
     // std::cout << "P: " << text.ToText() << ", " << text.Parent() << ", " << prev << ", <" << tag << ">: " << value << "\n";
+    if (prev != root && node != root && prev != node) {
+        this->text += ' ';
+    }
+    if (node != root) {
+        // std::cout << "  <" << tag << ">: " << value << "\n";
+        fields[std::string(tag)] = value;
+    }
+    this->text += value;
+    prev = node;
+    return true;
+}
+
+vkgen::XMLFuncPointerParser::XMLFuncPointerParser(xml::Element element) {
+    prev = element.toElement();
+    root = element.toElement();
+    auto name = element.optional("name");
+    if (name) {
+        fields["name"] = name.value();
+    }
+    element->Accept(this);
+}
+
+bool vkgen::XMLFuncPointerParser::Visit(const tinyxml2::XMLText &text) {
+    const auto *node = text.Parent();
+    std::string_view tag   = node->Value();
+    std::string_view value = xml::value(text);
+    std::cout << "P: " << text.ToText() << ", " << text.Parent() << ", " << prev << ", <" << tag << ">: " << value << "\n";
     if (prev != root && node != root && prev != node) {
         this->text += ' ';
     }

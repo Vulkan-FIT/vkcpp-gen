@@ -16,6 +16,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
+#pragma once
 #ifndef GENERATOR_MEMBERS_HPP
 #define GENERATOR_MEMBERS_HPP
 
@@ -24,8 +25,6 @@
 
 namespace vkgen
 {
-
-    using namespace vkr;
 
     class Generator;
 
@@ -51,7 +50,9 @@ namespace vkgen
         bool      structureChain             = {};
         bool      globalModeStatic           = {};
         bool      globalUseCAPI              = {};
+        bool      globalPass                 = {};
         bool      exp                        = {};
+        bool      returnResult               = {};
         bool      suffixNoThrow              = {};
         bool      suffixThrow                = {};
     };
@@ -171,9 +172,9 @@ namespace vkgen
 
         std::string getSpecifiers(bool decl);
 
-        std::string getProto(const std::string &indent, const std::string &prefix, const std::string &name, bool declaration, bool &usesTemplate);
+        std::string getProto(const std::string &indent, std::string_view debugSpecifier, const std::string &name, bool declaration, bool &usesTemplate);
 
-        std::string getDbgtag(const std::string &prefix, bool bypass = false);
+        std::string getDebugText(std::string_view debugSpecifier, bool bypass = false);
 
         std::string createProtoArguments(bool declaration = false);
 
@@ -256,7 +257,7 @@ namespace vkgen
 
         std::string generateDeclaration();
 
-        std::string generateDefinition(bool genInline, bool bypass = false);
+        std::string generateDefinition(std::string_view debugSpecifier, bool genInline, bool bypass = false);
 
         bool compareSignature(const MemberResolver &o) const;
     };
@@ -486,7 +487,15 @@ namespace vkgen
 //                    return;
 //                }
 //            }
-            resolver.generate(out.decl, out, protects);
+            if constexpr (std::is_same_v<T, MemberResolverPass>) {
+                const auto &sig = resolver.createSignature();
+                if (sig.args.empty()) {
+                    std::cout << "Skipping " << m.name << ", " << typeid(T).name() << "\n";
+                    return;
+                }
+            }
+
+            resolver.generate(decl, out, protects);
             if (resolver.isNothrow) {
                 noThrowGenerated = true;
             }
@@ -496,17 +505,14 @@ namespace vkgen
         }
 
         template <typename T>
-        void generate(const std::span<Protect> protects = {}) {
-            T resolver{ gen, m, ctx };
-            generate(resolver, protects);
-        }
+        void generate(const std::span<Protect> protects = {});
 
         void generatePass() {
             // protects.emplace_back("VULKAN_HPP_EXPERIMENTAL_CSTYLE", false);
             generate<MemberResolverPass>();
 
             if (m.src->flags & Command::CommandFlags::REFERENCE_PARAM) {
-                generate<MemberResolverPassReference>();
+                // generate<MemberResolverPassReference>();
             }
         }
 
@@ -520,6 +526,8 @@ namespace vkgen
 
       public:
         MemberGenerator(const Generator &gen, ClassCommand &m, GuardedOutput &decl, GuardedOutputFuncs &out, bool isStatic = false);
+
+        MemberGenerator(const Generator &gen, ClassCommand &m, GuardedOutputFuncs &out, bool isStatic = false);
 
         void generate();
     };

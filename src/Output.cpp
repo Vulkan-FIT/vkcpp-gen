@@ -16,12 +16,13 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-#include "Output.hpp"
-
-#include "Generator.hpp"
-
+#ifndef USE_PCH
 #include <fstream>
 #include <ostream>
+#endif
+
+#include "Output.hpp"
+#include "Generator.hpp"
 
 namespace vkgen
 {
@@ -221,7 +222,7 @@ extern "C" {
     }
 
     OutputBuffer::OutputBuffer() {
-        this->operator+=(std::string_view{}); // sentinel
+        // this->operator<<(std::string_view{}); // sentinel
     }
 
     OutputBuffer::OutputBuffer(std::string &&str) {
@@ -257,20 +258,20 @@ extern "C" {
         //    std::cout << output << std::endl;
     }
 
-    OutputBuffer &OutputBuffer::operator+=(const std::string_view str) {
+    OutputBuffer &OutputBuffer::operator<<(const std::string_view str) {
         list.emplace_back(std::string_view{ str });
         m_size += str.size();
         return *this;
     }
 
-    OutputBuffer &OutputBuffer::operator+=(std::string &&str) {
+    OutputBuffer &OutputBuffer::operator<<(std::string &&str) {
         m_size += str.size();
         list.emplace_back(vkgen::UnmutableString{ std::move(str) });
         return *this;
     }
 
-    OutputBuffer &OutputBuffer::operator+=(const std::string &str) {
-        if (list.rbegin()->index() == 0) {
+    OutputBuffer &OutputBuffer::operator<<(const std::string &str) {
+        if (!list.empty() && list.rbegin()->index() == 0) {
             std::get<std::string>(*list.rbegin()) += str;
             m_size += str.size();
         } else {
@@ -280,26 +281,26 @@ extern "C" {
         return *this;
     }
 
-    OutputBuffer &OutputBuffer::operator+=(const char * const str) {
+    OutputBuffer &OutputBuffer::operator<<(const char * const str) {
         const auto &s = std::string::traits_type::length(str);
         list.emplace_back(std::string_view{ str, s });
         m_size += s;
         return *this;
     }
 
-    OutputBuffer &OutputBuffer::operator+=(OutputBuffer &&out) {
+    OutputBuffer &OutputBuffer::operator<<(OutputBuffer &&out) {
         m_size += out.size();
         list.emplace_back(std::move(out));
         return *this;
     }
 
-    OutputBuffer &OutputBuffer::operator+=(GuardedOutput &&out) {
+    OutputBuffer &OutputBuffer::operator<<(GuardedOutput &&out) {
         m_size += out.size();
         list.emplace_back(std::move(out));
         return *this;
     }
 
-    OutputBuffer &OutputBuffer::operator+=(OutputClass &&out) {
+    OutputBuffer &OutputBuffer::operator<<(OutputClass &&out) {
         m_size += out.size();
         list.emplace_back(std::move(out));
         return *this;

@@ -16,97 +16,27 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
+#pragma once
 #ifndef GENERATOR_HPP
 #define GENERATOR_HPP
+
+#ifndef USE_PCH
+#include <string>
+#include <optional>
+#include <variant>
+#include <vector>
+#endif
 
 #include "Config.hpp"
 #include "Members.hpp"
 #include "Output.hpp"
 #include "Registry.hpp"
 
-#include <string>
-#include <optional>
-#include <variant>
-#include <vector>
-
 namespace vkgen
 {
 
     using namespace Utils;
 
-    /*
-    struct FunctionGenerator {
-        using StringSource = std::variant<const char*, const std::string_view, std::string>;
-
-        StringSource type;
-    };
-    */
-
-    class FunctionGenerator
-    {
-      protected:
-        using ArgVar = std::variant<Argument, const VariableData*>;
-        struct ArgInit {
-            std::string dst;
-            std::string src;
-        };
-
-        const Generator &gen;
-        std::vector<ArgVar> arguments;
-        std::vector<ArgInit> inits;
-
-        std::string getTemplate() const;
-
-        void generatePrefix(std::string &output, bool declaration, bool isInline = false);
-
-        void generateSuffix(std::string &output, bool declaration);
-
-        void generateArguments(std::string &output, bool declaration);
-
-        void generateArgument(std::string &output, const Argument &arg, bool declaration);
-
-        void generateArgument(std::string &output, const VariableData *var, bool declaration);
-
-        void generatePrototype(std::string &output, bool declaration, bool isInline = false);
-
-        // TODO
-        std::string generate(bool declaration, bool isInline = false);
-
-      public:
-        explicit FunctionGenerator(const Generator &gen) noexcept : gen(gen) {}
-
-        FunctionGenerator(const Generator &gen, const std::string &type, const std::string &name) noexcept
-          : gen(gen), type(type), name(name)
-        {}
-
-        std::string generate();
-
-        std::string generate(GuardedOutputFuncs &impl);
-
-        Argument& add(const std::string &type, const std::string &id, const std::string &assignment = "") {
-            return get<Argument>(arguments.emplace_back(Argument{type, id, assignment}));
-        }
-
-        void addInit(const std::string &dst, const std::string &src) {
-            inits.emplace_back(dst, src);
-        }
-
-        std::string      type;
-        std::string      name;
-        std::string      code;
-        std::string      className;
-        std::string      additonalTemplate;
-        std::string      indent = "    ";
-        Protect          optionalProtect;
-        const GenericType *base = nullptr;
-        bool          allowInline          = true;
-        bool          specifierInline      = {};
-        bool          specifierExplicit    = {};
-        bool          specifierNoexcept    = {};
-        bool          specifierConst       = {};
-        bool          specifierConstexpr   = {};
-        bool          specifierConstexpr14 = {};
-    };
 
     class Generator : public VulkanRegistry
     {
@@ -129,6 +59,7 @@ namespace vkgen
         std::string                            m_constexpr;
         std::string                            m_constexpr14;
         std::string                            m_inline;
+        std::string                            m_explicit;
         std::string                            m_noexcept;
         std::string                            m_nodiscard;
 
@@ -140,25 +71,37 @@ namespace vkgen
         GuardedOutputFuncs outputFuncs;
         GuardedOutputFuncs outputFuncsRAII;
 
-        // std::string genWithProtect(const std::string &code, const std::string &protect) const;
+        using Expression = void (Generator::*)(OutputBuffer &output);
 
-        // std::string genWithProtectNegate(const std::string &code, const std::string &protect) const;
+        void gen2(OutputBuffer &output, const std::initializer_list<Expression> &expressions) {
+            for (const auto &e : expressions) {
+                std::invoke(e, this, output);
+            }
+        }
 
-//        std::pair<std::string, std::string>
-//          genCodeAndProtect(const GenericType &type, const std::function<void(std::string &)> &function, bool bypass = false) const;
+        template<typename T>
+        void generate(OutputBuffer &output, const std::vector<std::reference_wrapper<T>> &items, std::function<void(OutputBuffer&, const T&)> function) {
+            for (const T &item : items) {
+               // genOptional(output, item, function);
+                if (!item.canGenerate()) {
+                    continue;
+                }
+                const auto &protect = item.getProtect();
+                if (!protect.empty()) {
+                    output << "#if defined(" << protect << ")\n";
+                }
+                function(output, item);
+                if (!protect.empty()) {
+                    output << "#endif // " << protect << "\n";
+                }
+            }
+        }
+
+        void gen(OutputBuffer &output, const Define &define, const std::function<void(OutputBuffer&)> &function) const;
 
         void genOptional(OutputBuffer &output, const GenericType &type, const std::function<void(OutputBuffer&)> &function) const;
 
-        // std::string genOptional(const GenericType &type, std::function<void(std::string &)> function, bool bypass = false) const;
-
         void genPlatform(OutputBuffer &output, const GenericType &type, const std::function<void(OutputBuffer&)> &function);
-        // std::string genPlatform(const GenericType &type, std::function<void(std::string &)> function, bool bypass = false);
-
-        // std::string gen(const Define &define,  std::function<void(std::string &)> function) const;
-
-        // std::string gen(const NDefine &define, std::function<void(std::string &)> function) const;
-
-        void gen(OutputBuffer &output, const Define &define, const std::function<void(OutputBuffer&)> &function) const;
 
         std::string genNamespaceMacro(const Macro &m);
 
@@ -192,6 +135,8 @@ namespace vkgen
 
         void generateEnum(const Enum &data, OutputBuffer &output, OutputBuffer &output_forward);
 
+        void generateStructToString();
+
         std::string generateToStringInclude() const;
 
         void generateCore(OutputBuffer &output);
@@ -215,7 +160,6 @@ namespace vkgen
         void generateDispatchLoaderStatic(OutputBuffer &output);
 
         bool useDispatchLoader() const {
-            const auto &cfg = getConfig();
             return cfg.gen.dispatchLoaderStatic && !cfg.gen.useStaticCommands;
         }
 
@@ -427,14 +371,18 @@ namespace vkgen
 
         void loadConfigPreset();
 
-        void setOutputFilePath(const std::string &path);
+        void setOutputPath(const std::string &path);
 
-        bool isOuputFilepathValid() const {
+        bool isOuputPathValid() const {
             return std::filesystem::is_directory(outputFilePath);
         }
 
-        std::string getOutputFilePath() const {
+        std::string getOutputPath() const {
             return outputFilePath;
+        }
+
+        const Config &config() const noexcept {
+            return cfg;
         }
 
         bool load(const std::string &xmlPath);
@@ -443,43 +391,7 @@ namespace vkgen
 
         std::string_view getNamespace(Namespace ns) const;
 
-        Platforms &getPlatforms() {
-            return platforms;
-        };
-
-        Extensions &getExtensions() {
-            return extensions;
-        };
-
-        Features &getFeatures() {
-            return features;
-        };
-
-        auto &getHandles() {
-            return handles;
-        }
-
-        auto &getCommands() {
-            return commands;
-        }
-
-        auto &getStructs() {
-            return structs;
-        }
-
-        auto &getEnums() {
-            return enums;
-        }
-
-        Config &getConfig() {
-            return cfg;
-        }
-
-        const Config &getConfig() const {
-            return cfg;
-        }
-
-        void saveConfigFile(const std::string &filename);
+        void saveConfigFile(const std::string &filename, bool verbose);
 
         void loadConfigFile(const std::string &filename);
     };

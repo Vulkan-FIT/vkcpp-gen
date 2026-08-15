@@ -1,6 +1,8 @@
 #include "Utils.hpp"
 
+#ifndef USE_PCH
 #include <optional>
+#endif
 
 static bool checkVulkanElement(const tinyxml2::XMLElement *e, const std::string_view attribute, const std::string_view target) {
     using namespace vkgen;
@@ -97,7 +99,7 @@ namespace vkgen::xml
     std::string_view Element::value() const {
         const auto *value = data->Value();
         return value? std::string_view{value} : "";
-    };
+    }
 
     std::string_view Element::getNested(const std::string_view attrib) const {
         auto a = optional(attrib);

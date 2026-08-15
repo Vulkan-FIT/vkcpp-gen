@@ -16,15 +16,18 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
+#pragma once
 #ifndef GENERATOR_OUTPUT_HPP
 #define GENERATOR_OUTPUT_HPP
 
+#ifndef USE_PCH
 #include <filesystem>
 #include <functional>
 #include <list>
 #include <map>
 #include <span>
 #include <variant>
+#endif
 
 namespace vkgen
 {
@@ -54,8 +57,8 @@ namespace vkgen
         }
 
         template <typename T>
-        GuardedOutput &operator+=(T &&v) {
-            *output += std::forward<T>(v);
+        GuardedOutput &operator<<(T &&v) {
+            *output << std::forward<T>(v);
             return *this;
         }
 
@@ -150,19 +153,19 @@ namespace vkgen
 
         // std::string &emplace();  // deprecate
 
-        OutputBuffer &operator+=(std::string_view str);
+        OutputBuffer &operator<<(std::string_view str);
 
-        OutputBuffer &operator+=(std::string &&str);
+        OutputBuffer &operator<<(std::string &&str);
 
-        OutputBuffer &operator+=(const std::string &str);
+        OutputBuffer &operator<<(const std::string &str);
 
-        OutputBuffer &operator+=(const char *str);
+        OutputBuffer &operator<<(const char *str);
 
-        OutputBuffer &operator+=(OutputBuffer &&);
+        OutputBuffer &operator<<(OutputBuffer &&);
 
-        OutputBuffer &operator+=(GuardedOutput &&);
+        OutputBuffer &operator<<(GuardedOutput &&);
 
-        OutputBuffer &operator+=(OutputClass &&);
+        OutputBuffer &operator<<(OutputClass &&);
 
         void print() const;
 

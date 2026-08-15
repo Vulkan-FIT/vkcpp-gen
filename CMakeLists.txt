@@ -43,7 +43,6 @@ if(GENERATOR_GUI)
 endif()
 
 SET(HEADERS
-    src/ArgumentsParser.hpp
     src/Enums.hpp
     src/Config.hpp
     src/Variable.hpp
@@ -53,6 +52,8 @@ SET(HEADERS
     src/Generator.hpp
     src/Utils.hpp
     src/Output.hpp
+    src/Collection.hpp
+    src/Types.hpp
 )
 
 SET(SOURCES
@@ -67,9 +68,47 @@ SET(SOURCES
     src/Enums.cpp
     src/Format.hpp
     src/Output.cpp
+    src/Types.cpp
 )
 
 add_executable(${CMAKE_PROJECT_NAME} ${SOURCES} ${HEADERS} ${IMGUI_SOURCES})
+
+if(PRECOMPILED_HEADERS)
+    add_compile_definitions(USE_PCH)
+    target_precompile_headers(${CMAKE_PROJECT_NAME}
+        PUBLIC
+        <algorithm>
+        <array>
+        <bit>
+        <charconv>
+        <filesystem>
+        <fstream>
+        <functional>
+        <future>
+        <iostream>
+        <list>
+        <map>
+        <mutex>
+        <numeric>
+        <numbers>
+        <optional>
+        <regex>
+        <ranges>
+        <set>
+        <span>
+        <sstream>
+        <stdexcept>
+        <string>
+        <thread>
+        <tuple>
+        <type_traits>
+        <unordered_map>
+        <unordered_set>
+        <utility>
+        <variant>
+        <vector>
+    )
+endif()
 
 if(ENABLE_TOOL)
     add_compile_definitions(GENERATOR_TOOL)

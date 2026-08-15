@@ -16,14 +16,17 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
+#pragma once
 #ifndef GUI_HPP
 #define GUI_HPP
 
+#ifndef USE_PCH
 #include <fstream>
 #include <future>
 #include <optional>
 #include <thread>
 #include <vector>
+#endif
 
 #define GLFW_INCLUDE_VULKAN
 #include "GLFW/glfw3.h"
@@ -585,13 +588,13 @@ namespace vkgen
 
         struct Collection
         {
-            Container<vkr::Platform>  platforms;
-            Container<vkr::Feature>   features;
-            Container<vkr::Extension> extensions;
-            Container<vkr::Handle>    handles;
-            Container<vkr::Struct>    structs;
-            Container<vkr::Enum>      enums;
-            Container<vkr::Command>   commands;
+            Container<Platform>  platforms;
+            Container<Feature>   features;
+            Container<Extension> extensions;
+            Container<Handle>    handles;
+            Container<Struct>    structs;
+            Container<Enum>      enums;
+            Container<Command>   commands;
 
             void draw(int &id, bool filtered = false);
         };

@@ -24,21 +24,21 @@ namespace vkgen
 {
 
     template <size_t I = 0, typename... T>
-    void saveConfigParam(tinyxml2::XMLElement *parent, const std::tuple<T...> &t) {
+    void saveConfigParam(tinyxml2::XMLElement *parent, const std::tuple<T...> &t, bool verbose) {
         const auto &data = std::get<I>(t);
-        saveConfigParam(parent, data);
+        saveConfigParam(parent, data, verbose);
         // unroll tuple
         if constexpr (I + 1 != sizeof...(T)) {
-            saveConfigParam<I + 1>(parent, t);
+            saveConfigParam<I + 1>(parent, t, verbose);
         }
     }
 
     template <typename T>
-    void saveConfigParam(tinyxml2::XMLElement *parent, const T &data) {
+    void saveConfigParam(tinyxml2::XMLElement *parent, const T &data, bool verbose) {
         if constexpr (std::is_base_of<ConfigGroup, T>::value) {
             // std::cout << "export: " << data.name << '\n';
             auto *elem = parent->GetDocument()->NewElement(data.name.c_str());
-            saveConfigParam(elem, data.reflect());
+            saveConfigParam(elem, data.reflect(), verbose);
             if (elem->NoChildren()) {
                 parent->GetDocument()->DeleteNode(elem);
             }
@@ -48,7 +48,7 @@ namespace vkgen
         } else {
             // std::cout << "export:   * leaf" << '\n';
             // export
-            if (data.isDirty()) {
+            if (data.isDirty() || verbose) {
                 auto *elem = parent->GetDocument()->NewElement("");
                 elem->SetAttribute("name", data.name.c_str());
                 data.xmlExport(elem);
@@ -162,7 +162,7 @@ namespace vkgen
         }
     }
 
-    void Config::save(Generator &gen, const std::string &filename) {
+    void Config::save(Generator &gen, const std::string &filename, bool verbose) {
         using namespace tinyxml2;
 
         XMLDocument doc;
@@ -185,7 +185,7 @@ namespace vkgen
         }
         // std::cout << "WL children: " << whitelist->NoChildren() << "\n";
 
-        saveConfigParam(root, gen.cfg.reflect());
+        saveConfigParam(root, gen.cfg.reflect(), verbose);
         if (!whitelist->NoChildren()) {
             root->InsertEndChild(whitelist);
         }
@@ -299,7 +299,7 @@ namespace vkgen
             gen.orderedCommands.reserve(bCmds.ordered.size());
             for (auto &c : bCmds.ordered) {
                 auto it = gen.commands.find(c);
-                if (it != gen.commands.end()) {
+                if (it) {
                     gen.orderedCommands.emplace_back(*it);
                 }
             }

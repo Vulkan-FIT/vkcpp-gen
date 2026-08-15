@@ -19,7 +19,9 @@
 #ifndef ENUMS_H
 #define ENUMS_H
 
+#ifndef USE_PCH
 #include <string>
+#endif
 
 namespace vkgen
 {
@@ -32,101 +34,7 @@ namespace vkgen
         STD
     };
 
-    class MetaType
-    {
-      public:
-        enum class Value
-        {
-            Unknown,
-            Enum,
-            Struct,
-            Union,
-            Handle,
-            Command,
-            EnumValue,
-            BaseType,
-            FuncPointer,
-            Feature,
-            Extension,
-            Platform
-        };
-        using enum Value;
 
-        MetaType() = default;
-
-        explicit MetaType(Value type) : value(type) {}
-
-        explicit operator Value() const {
-            return value;
-        }
-
-        MetaType & operator=(Value type) {
-            value = type;
-            return *this;
-        }
-
-        std::string metaTypeDeclaration() const noexcept {
-            switch (value) {
-                case Enum: return "enum";
-                case Struct: return "struct";
-                case Union: return "union";
-                case Handle: return "class";
-                default: return "unknown";
-            }
-        }
-
-        std::string metaTypeString() const noexcept {
-            switch (value) {
-                case Enum: return "enum";
-                case Struct: return "struct";
-                case Union: return "union";
-                case Handle: return "handle";
-                case Command: return "command";
-                case EnumValue: return "enumvalue";
-                case BaseType: return "basetype";
-                case FuncPointer: return "funcpointer";
-                case Feature: return "feature";
-                case Extension: return "extension";
-                case Platform: return "platform";
-                default: return "unknown";
-            }
-        }
-
-        void setMetaType(Value type) noexcept {
-            value = type;
-        }
-
-        Value metaType() const {
-            return value;
-        }
-
-        bool isEnum() const noexcept {
-            return value == Enum;
-        }
-
-        bool isStruct() const noexcept {
-            return value == Struct;
-        }
-
-        bool isUnion() const noexcept {
-            return value == Union;
-        }
-
-        bool isHandle() const noexcept {
-            return value == Handle;
-        }
-
-        bool isCommand() const noexcept {
-            return value == Command;
-        }
-
-        bool isStructOrUnion() const noexcept {
-            return isStruct() || isUnion();
-        }
-
-      private:
-        Value value = {};
-    };
 
 }  // namespace vkgen
 
