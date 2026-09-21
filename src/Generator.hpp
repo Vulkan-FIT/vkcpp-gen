@@ -37,10 +37,15 @@ namespace vkgen
 
     using namespace Utils;
 
+    class MemberResolver;
+    class FunctionGenerator;
 
     class Generator : public VulkanRegistry
     {
-      public:
+      // public:
+        // friend FunctionGenerator;
+        // friend MemberResolver;
+
         struct ClassVariables
         {
             VariableData raiiAllocator;
@@ -50,34 +55,12 @@ namespace vkgen
             VariableData uniqueDispatch;
         };
 
-        Config         cfg;
-        ClassVariables cvars;
-
-        std::string                            m_ns;
-        std::string                            m_ns_raii;
-        std::string                            m_cast;
-        std::string                            m_constexpr;
-        std::string                            m_constexpr14;
-        std::string                            m_inline;
-        std::string                            m_explicit;
-        std::string                            m_noexcept;
-        std::string                            m_nodiscard;
-
-
         std::string outputFilePath;
 
         GuardedOutput outputToStringDecl;
         GuardedOutput outputToStringDef;
         GuardedOutputFuncs outputFuncs;
         GuardedOutputFuncs outputFuncsRAII;
-
-        using Expression = void (Generator::*)(OutputBuffer &output);
-
-        void gen2(OutputBuffer &output, const std::initializer_list<Expression> &expressions) {
-            for (const auto &e : expressions) {
-                std::invoke(e, this, output);
-            }
-        }
 
         template<typename T>
         void generate(OutputBuffer &output, const std::vector<std::reference_wrapper<T>> &items, std::function<void(OutputBuffer&, const T&)> function) {
@@ -98,8 +81,6 @@ namespace vkgen
         }
 
         void gen(OutputBuffer &output, const Define &define, const std::function<void(OutputBuffer&)> &function) const;
-
-        void genOptional(OutputBuffer &output, const GenericType &type, const std::function<void(OutputBuffer&)> &function) const;
 
         void genPlatform(OutputBuffer &output, const GenericType &type, const std::function<void(OutputBuffer&)> &function);
 
@@ -159,10 +140,6 @@ namespace vkgen
 
         void generateDispatchLoaderStatic(OutputBuffer &output);
 
-        bool useDispatchLoader() const {
-            return cfg.gen.dispatchLoaderStatic && !cfg.gen.useStaticCommands;
-        }
-
         std::string getDispatchArgument(bool assignment) const {
             if (!cfg.gen.dispatchParam) {
                 return "";
@@ -172,16 +149,6 @@ namespace vkgen
                 out += " " + cfg.macro.mDispatch.get();
             }
             return out;
-        }
-
-        std::string getDispatchType() const {
-            if (cfg.gen.dispatchTemplate) {
-                return "Dispatch";
-            }
-            if (cfg.macro.mDispatchType.usesDefine) {
-                return cfg.macro.mDispatchType.define;
-            }
-            return cfg.macro.mDispatchType.value;
         }
 
         Argument getDispatchArgument() const {
@@ -194,13 +161,6 @@ namespace vkgen
             }
             auto type = "::VULKAN_HPP_NAMESPACE::DispatchLoaderStatic const &";
             return Argument(type, "d", assignment);
-        }
-
-        std::string getDispatchCall(const std::string &var = "d.") const {
-            if (cfg.gen.dispatchParam) {
-                return var;
-            }
-            return "::";
         }
 
         void generateUnit(const std::string_view file, GenOutput &out, OutputBuffer &parent, OutputBuffer &&code);
@@ -235,7 +195,7 @@ namespace vkgen
 
         void generateStructChain(GenOutput &files, OutputBuffer &parent);
 
-        void generateStructChains(OutputBuffer &output, bool ctype = false);
+        void generateStructChains(OutputBuffer &output);
 
         bool generateStructConstructor(OutputBuffer &output, const Struct &data, bool transform);
 
@@ -328,11 +288,30 @@ namespace vkgen
 
         void generateClassesRAII(OutputBuffer &output, bool exp = false);
 
-        // std::string generatePFNs(const Handle &data, OutputClass &out) const;
-
-        void generateLoader(OutputBuffer &output, bool exp = false);
-
         std::string genMacro(const Macro &m);
+
+
+
+        std::string expEndif(const std::string &name) const {
+            if (!cfg.gen.expApi) {
+                return "";
+            }
+            return "#endif // " + name + "\n";
+        }
+
+      public:
+        Config         cfg;
+        ClassVariables cvars;
+
+        std::string                            m_ns;
+        std::string                            m_ns_raii;
+        std::string                            m_cast;
+        std::string                            m_constexpr;
+        std::string                            m_constexpr14;
+        std::string                            m_inline;
+        std::string                            m_explicit;
+        std::string                            m_noexcept;
+        std::string                            m_nodiscard;
 
         std::string beginNamespace(bool noExport = false) const;
 
@@ -357,14 +336,29 @@ namespace vkgen
             return "#ifndef " + name + "\n";
         }
 
-        std::string expEndif(const std::string &name) const {
-            if (!cfg.gen.expApi) {
-                return "";
-            }
-            return "#endif // " + name + "\n";
+        bool useDispatchLoader() const {
+            return cfg.gen.dispatchLoaderStatic && !cfg.gen.useStaticCommands;
         }
 
-      public:
+        std::string getDispatchCall(const std::string &var = "d.") const {
+            if (cfg.gen.dispatchParam) {
+                return var;
+            }
+            return "::";
+        }
+
+        std::string getDispatchType() const {
+            if (cfg.gen.dispatchTemplate) {
+                return "Dispatch";
+            }
+            if (cfg.macro.mDispatchType.usesDefine) {
+                return cfg.macro.mDispatchType.define;
+            }
+            return cfg.macro.mDispatchType.value;
+        }
+
+        void genOptional(OutputBuffer &output, const GenericType &type, const std::function<void(OutputBuffer&)> &function) const;
+
         Generator();
 
         void resetConfig();

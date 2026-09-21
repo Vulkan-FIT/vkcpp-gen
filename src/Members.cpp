@@ -2436,38 +2436,6 @@ namespace vkgen
             if (cmd->outParams.size() > 1) {
                 std::cerr << "Warning: unhandled returning multiple RAII types. " << name << '\n';
             }
-            /*
-            for (const VariableData &v : cmd->outParams) {
-                const std::string &id = v.identifier();
-                const auto &handle = gen.findHandle(v.original.type());
-
-                if (!constructor) {
-                    output += "    " + v.getReturnType() + " _" + id + ";";
-                    if (dbg) {
-                        // output += "//var ref";
-                    }
-                    output += '\n';
-                }
-                std::string iter = strFirstLower(v.type());
-                std::string dst = constructor? "this->" : "_" + id + ".";
-                std::string arg = getSuperclassArgument(handle.superclass);
-                std::string poolArg;
-                if (handle.secondOwner) {
-                    poolArg += ", " + createArgumentWithType(handle.secondOwner->type());
-                    if (dbg) {
-                        output += "// pool: " + poolArg + " \n";
-                    }
-                    hasPoolArg = true;
-                }
-
-                output += format(R"(
-{0}reserve({1}.size());
-for (auto const &{2} : {3}) {
-  {0}emplace_back({4}, {2}{5});
-}
-)",                     dst, id, iter, id, arg, poolArg);
-
-            }*/
 
             const VariableData &v = cmd->outParams[0];
             output += createEmplaceRAII();
@@ -2481,68 +2449,6 @@ for (auto const &{2} : {3}) {
             }
             output += '\n';
         }
-
-        // const auto createInternalCall = [&]() {
-        //     auto       &var   = cmd->outParams[0].get();
-        //     std::string type  = var.namespaceString(gen, true) + var.type();
-        //     std::string ctype = var.original.type();
-        //     var.setIgnorePFN(true);
-        //     var.getLengthVar()->setIgnorePFN(true);
-        //
-        //     std::string func = "createArray";
-        //     if (cmd->pfnReturn == Command::PFNReturnCategory::VOID) {
-        //         func += "VoidPFN";
-        //     }
-        //
-        //     std::string pfn      = getDispatchPFN();
-        //     std::string msg      = createCheckMessageString();
-        //     std::string pfnType  = "PFN_" + name.original;
-        //     std::string sizeType = var.getLengthVar()->type();
-        //     // output = "#if 0\n" + output + "#endif\n";
-        //     std::string output;
-        //     output += "internal::" + func;
-        //     output += "<" + type + ", " + ctype + ", " + sizeType + ", " + pfnType + ">";
-        //     output += "(" + pfn + ", " + msg;
-        //
-        //     for (const VariableData &p : cmd->params) {
-        //         if (!p.getIgnorePFN()) {
-        //             output += ", " + createPFNArguments();
-        //             break;
-        //         }
-        //     }
-        //     output += ")";
-        //     return output;
-        // };
-
-//        if (arrayVariation && gen.config().gen.internalFunctions && cmd->outParams.size() == 1) {
-//            if (returnsRAII) {
-//                if (hasPoolArg) {
-//                    ////                        output += "// TODO createHandlesWithPoolRAII " + t + "\n";
-//                } else {
-//                    if (!inputSizeVar && !usesResultValue() && cmd->outParams.size() == 1) {
-//                        VariableData &var = cmd->outParams[0];
-//                        output            = "";
-//                        // output += "// TODO createHandlesRAII \n";
-//                        var.createLocalVar(gen, "      ", dbg ? "/*var def*/" : "", output, createInternalCall());
-//                        output += createEmplaceRAII();
-//                        if (!returnId.empty() && !immediate && !constructor) {
-//                            output += "      return " + generateReturnValue(returnId) + ";";
-//                            if (dbg) {
-//                                // output += "/*.R*/";
-//                            }
-//                            output += '\n';
-//                        }
-//                    }
-//                }
-//            } else {
-//                if (!inputSizeVar && !usesResultValue()) {
-//                    output = "";
-//                    output += "      return ";
-//                    output += createInternalCall();
-//                    output += ";\n";
-//                }
-//            }
-//        }
 
         return output;
     }

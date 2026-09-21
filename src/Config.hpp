@@ -139,7 +139,6 @@ namespace vkgen
 
         ConfigWrapper<bool> noExceptions{ "no_exceptions", false };
 
-        ConfigWrapper<bool> internalFunctions{ "internal_functions", false };
         ConfigWrapper<bool> internalVkResult{ "internal_vkresult", true };
 
         ConfigWrapper<bool> dispatchParam{ "dispatch_param", true };
